@@ -7,3 +7,6 @@ window.HB_FIREBASE = {
   messagingSenderId: "413202535680",
   appId: "1:413202535680:web:4919bad6572b217ced4fe5"
 };
+
+// Hof-ID: Pfad der Daten in Firestore (hoefe/{HB_HOF}/...)
+window.HB_HOF = 'bannhalde';

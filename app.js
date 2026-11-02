@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -50,7 +50,8 @@ const COLLS = ['tiere', 'ereignisse', 'behandlungen', 'auslauf', 'feld'];
 const S = { tiere: [], ereignisse: [], behandlungen: [], auslauf: [], feld: [], set: { ...DEF } };
 let W = null; // writer
 let mode = 'local';
-let KEY = localStorage.getItem('hb-key') || '';
+const HOF = window.HB_HOF || 'bannhalde';
+let USER = null, AUTH = null;
 
 function setSync(state, title) { const el = $('#sync'); el.className = 'sync ' + state; el.title = title || ''; }
 function toast(msg) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 2600); }
@@ -59,16 +60,15 @@ function showErr(e) {
   console.error(e); const code = e && e.code || '';
   setSync('err', String(e && e.message || e));
   if (lastErr === code) return; lastErr = code;
-  toast(code === 'permission-denied' ? 'Zugriff verweigert - Hof-Schlüssel prüfen' : 'Fehler: ' + (code || e && e.message || e));
+  toast(code === 'permission-denied' ? 'Zugriff verweigert - Konto nicht freigegeben' : 'Fehler: ' + (code || e && e.message || e));
   schedule();
 }
 function errBanner() {
   if (!lastErr) return '';
-  const k = KEY ? `Schlüssel auf diesem Gerät: <span class="mono">${esc(KEY.slice(0, 3))}…${esc(KEY.slice(-3))}</span> (${KEY.length} Zeichen)` : 'Kein Schlüssel gesetzt';
   const why = lastErr === 'permission-denied'
-    ? 'Firestore verweigert den Zugriff. Entweder sind die Regeln nicht veröffentlicht oder der Schlüssel in den Regeln weicht vom Schlüssel auf diesem Gerät ab (Gross-/Kleinschreibung, Leerzeichen, Anführungszeichen).'
+    ? `Das Konto <b>${esc(USER && USER.email || '?')}</b> hat keinen Zugriff. In den Firestore-Regeln muss genau diese E-Mail-Adresse stehen und die Regeln müssen veröffentlicht sein.`
     : `Fehlercode: ${esc(lastErr)}`;
-  return `<div class="note" style="margin:8px 0"><b>Speichern nicht möglich</b><br>${why}<br><span class="small">${k}</span><div class="btns" style="margin-top:10px"><button class="btn" data-act="newkey">Schlüssel neu eingeben</button></div></div>`;
+  return `<div class="note" style="margin:8px 0"><b>Speichern nicht möglich</b><br>${why}<div class="btns" style="margin-top:10px"><button class="btn" data-act="logout">Abmelden / anderes Konto</button></div></div>`;
 }
 
 function initLocal() {
@@ -88,22 +88,27 @@ async function initFirebase(cfg) {
   setSync('', 'Verbinde...');
   const V = '10.12.2';
   const { initializeApp } = await import(`https://www.gstatic.com/firebasejs/${V}/firebase-app.js`);
+  const A = await import(`https://www.gstatic.com/firebasejs/${V}/firebase-auth.js`);
   const F = await import(`https://www.gstatic.com/firebasejs/${V}/firebase-firestore.js`);
   const app = initializeApp(cfg);
+  const auth = A.getAuth(app); AUTH = { auth, A };
+  try { await A.getRedirectResult(auth); } catch (e) { loginScreen(e.message); }
+  USER = await new Promise(res => A.onAuthStateChanged(auth, u => u ? res(u) : loginScreen()));
+  $('#tabbar').classList.remove('hidden');
   let db;
   try { db = F.initializeFirestore(app, { localCache: F.persistentLocalCache({ tabManager: F.persistentMultipleTabManager() }) }); }
   catch (e) { db = F.getFirestore(app); }
-  const ref = c => F.collection(db, 'hoefe', KEY, c);
+  const ref = c => F.collection(db, 'hoefe', HOF, c);
   COLLS.forEach(c => F.onSnapshot(ref(c), { includeMetadataChanges: true }, snap => {
     S[c] = snap.docs.map(d => ({ ...d.data(), id: d.id })); if (!snap.metadata.fromCache && lastErr) { lastErr = null; }
     setSync(snap.metadata.fromCache ? 'off' : 'ok', snap.metadata.fromCache ? 'Offline - wird später synchronisiert' : 'Synchronisiert');
     schedule();
   }, showErr));
-  F.onSnapshot(F.doc(db, 'hoefe', KEY, 'einstellungen', 'main'), d => { S.set = { ...DEF, ...(d.data() || {}) }; schedule(); }, showErr);
+  F.onSnapshot(F.doc(db, 'hoefe', HOF, 'einstellungen', 'main'), d => { S.set = { ...DEF, ...(d.data() || {}) }; schedule(); }, showErr);
   W = {
-    put: (c, o) => { F.setDoc(F.doc(db, 'hoefe', KEY, c, o.id), clean(o)).catch(showErr); },
-    del: (c, id) => { F.deleteDoc(F.doc(db, 'hoefe', KEY, c, id)).catch(showErr); },
-    setSettings: o => { F.setDoc(F.doc(db, 'hoefe', KEY, 'einstellungen', 'main'), clean(o)).catch(showErr); }
+    put: (c, o) => { F.setDoc(F.doc(db, 'hoefe', HOF, c, o.id), clean(o)).catch(showErr); },
+    del: (c, id) => { F.deleteDoc(F.doc(db, 'hoefe', HOF, c, id)).catch(showErr); },
+    setSettings: o => { F.setDoc(F.doc(db, 'hoefe', HOF, 'einstellungen', 'main'), clean(o)).catch(showErr); }
   };
 }
 
@@ -163,6 +168,7 @@ function schedule() { if (rq) return; rq = true; requestAnimationFrame(() => { r
 const UI = { tierFilter: { kat: '', lakt: '', q: '', sort: 'name', abg: false }, jTab: 'behandlung', fTab: 'austrag', jahr: String(new Date().getFullYear()) };
 
 function render() {
+  if (mode === 'firebase' && !USER) return;
   if (document.querySelector('.sheet.show [data-dirty="1"]')) return; // Formular offen und bearbeitet: nicht neu zeichnen
   const h = location.hash.replace(/^#\/?/, '') || 'start';
   const p = h.split('/');
@@ -450,8 +456,8 @@ function vSettings() {
   <button class="btn pri block" type="submit">Einstellungen speichern</button>
   </form>
   <div class="sec-t">Daten</div>
-  <div class="card"><p class="small muted" style="margin:0 0 10px">Speicherort: <b>${mode === 'firebase' ? 'Firebase (synchronisiert)' : 'nur dieses Gerät'}</b>${mode === 'firebase' ? ` · Hof-Schlüssel: <span class="mono">${esc(KEY.slice(0, 4))}…</span>` : ''} · Version ${VERSION}</p>
-  <div class="btns"><button class="btn" data-act="backup">Backup herunterladen (JSON)</button><label class="btn">TVD-Import (Excel)<input type="file" accept=".xlsx,.xls,.csv" data-act="tvdimport" class="hidden"></label><label class="btn">Backup einlesen<input type="file" accept="application/json" data-act="restore" class="hidden"></label>${mode === 'firebase' ? '<button class="btn" data-act="copylink">Link für weiteres Gerät kopieren</button><button class="btn" data-act="newkey">Hof-Schlüssel ändern</button>' : ''}</div></div>`;
+  <div class="card"><p class="small muted" style="margin:0 0 10px">Speicherort: <b>${mode === 'firebase' ? 'Firebase (synchronisiert)' : 'nur dieses Gerät'}</b>${mode === 'firebase' && USER ? ` · angemeldet als <b>${esc(USER.email)}</b>` : ''} · Version ${VERSION}</p>
+  <div class="btns"><button class="btn" data-act="backup">Backup herunterladen (JSON)</button><label class="btn">TVD-Import (Excel)<input type="file" accept=".xlsx,.xls,.csv" data-act="tvdimport" class="hidden"></label><label class="btn">Backup einlesen<input type="file" accept="application/json" data-act="restore" class="hidden"></label>${mode === 'firebase' ? '<button class="btn" data-act="logout">Abmelden</button>' : ''}</div></div>`;
 }
 
 /* ---------- Formulare ---------- */
@@ -787,8 +793,7 @@ document.addEventListener('click', e => {
   else if (a === 'ftab') { UI.fTab = el.dataset.v; if (el.tagName === 'BUTTON') render(); }
   else if (a === 'pdf') { el.disabled = true; pdf(el.dataset.p, el.dataset.id).catch(showErr).finally(() => el.disabled = false); }
   else if (a === 'backup') { const d = { version: VERSION, exportiert: new Date().toISOString(), set: S.set }; COLLS.forEach(c => d[c] = S[c]); const b = new Blob([JSON.stringify(d, null, 1)], { type: 'application/json' }); const u = URL.createObjectURL(b); const l = document.createElement('a'); l.href = u; l.download = `hofbuech_backup_${today()}.json`; l.click(); setTimeout(() => URL.revokeObjectURL(u), 2000); }
-  else if (a === 'newkey') { localStorage.removeItem('hb-key'); location.hash = ''; location.reload(); }
-  else if (a === 'copylink') { const u = location.origin + location.pathname + '#k=' + KEY; navigator.clipboard.writeText(u).then(() => toast('Link kopiert - nur an eigene Geräte senden'), () => prompt('Link kopieren:', u)); }
+  else if (a === 'logout') { if (AUTH) AUTH.A.signOut(AUTH.auth).then(() => location.reload()); }
 });
 document.addEventListener('input', e => {
   const a = e.target.dataset && e.target.dataset.act;
@@ -829,15 +834,23 @@ $('#back').addEventListener('click', () => history.length > 1 ? history.back() :
 window.addEventListener('hashchange', () => { closeSheet(true); render(); window.scrollTo(0, 0); });
 
 /* ---------- Start ---------- */
-function setupScreen() {
-  $('#view').innerHTML = `<div class="setup card"><h2 style="margin-top:0">Hof-Schlüssel</h2><p class="muted">Einmalig pro Gerät. Am einfachsten den Link mit <span class="mono">#k=...</span> öffnen, dann ist der Schlüssel automatisch gesetzt.</p><form class="form" id="keyform"><label class="fld"><span>Schlüssel</span><input name="k" autocomplete="off" autocapitalize="off"></label><button class="btn pri block">Weiter</button></form></div>`;
-  $('#keyform').onsubmit = e => { e.preventDefault(); const k = e.target.k.value.trim(); if (k) { localStorage.setItem('hb-key', k); location.reload(); } };
+function loginScreen(err) {
+  $('#tabbar').classList.add('hidden');
+  $('#title').textContent = 'hofbuech';
+  $('#view').innerHTML = `<div class="setup card"><h2 style="margin-top:0">Anmelden</h2><p class="muted">Einmal pro Gerät mit deinem Google-Konto anmelden. Danach bleibst du angemeldet.</p>${err ? `<div class="note small" style="margin-bottom:12px">${esc(err)}</div>` : ''}<button class="btn pri block" id="glogin">Mit Google anmelden</button></div>`;
+  $('#glogin').onclick = async () => {
+    const { auth, A } = AUTH; const prov = new A.GoogleAuthProvider(); prov.setCustomParameters({ prompt: 'select_account' });
+    try { await A.signInWithPopup(auth, prov); }
+    catch (e) {
+      if (['auth/popup-blocked', 'auth/operation-not-supported-in-this-environment', 'auth/cancelled-popup-request'].includes(e.code)) return A.signInWithRedirect(auth, prov);
+      if (e.code !== 'auth/popup-closed-by-user') loginScreen(e.code === 'auth/unauthorized-domain' ? 'Domain nicht freigegeben: Firebase > Authentication > Einstellungen > Autorisierte Domains > itnesh.github.io hinzufügen.' : e.message);
+    }
+  };
 }
 async function boot() {
-  const m = location.hash.match(/^#k=([A-Za-z0-9_-]{8,})/);
-  if (m) { KEY = m[1]; localStorage.setItem('hb-key', KEY); history.replaceState(null, '', location.pathname + '#/start'); }
+  localStorage.removeItem('hb-key');
+  if (/^#k=/.test(location.hash)) history.replaceState(null, '', location.pathname + '#/start');
   const cfg = window.HB_FIREBASE;
-  if (cfg && !KEY) { setupScreen(); return; }
   if (cfg) { try { await initFirebase(cfg); } catch (e) { showErr(e); initLocal(); } }
   else initLocal();
   render();
