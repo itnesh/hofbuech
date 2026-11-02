@@ -1,13 +1,9 @@
-// Firebase-Konfiguration eintragen (Firebase Console > Projekteinstellungen > Meine Apps > Web-App).
-// Solange hier null steht, speichert die App nur lokal auf diesem Geraet.
-window.HB_FIREBASE = null;
-/* Beispiel:
+// Firebase-Konfiguration (oeffentlich, kein Geheimnis). Zugriffsschutz ueber den Hof-Schluessel in den Firestore-Regeln.
 window.HB_FIREBASE = {
-  apiKey: "...",
-  authDomain: "hofbuech-xxxx.firebaseapp.com",
-  projectId: "hofbuech-xxxx",
-  storageBucket: "hofbuech-xxxx.appspot.com",
-  messagingSenderId: "...",
-  appId: "..."
+  apiKey: "AIzaSyDmrHNhrMIYMkTXaaK2wa1jxMHN6CMq8lA",
+  authDomain: "hofbuech-8a0a3.firebaseapp.com",
+  projectId: "hofbuech-8a0a3",
+  storageBucket: "hofbuech-8a0a3.firebasestorage.app",
+  messagingSenderId: "413202535680",
+  appId: "1:413202535680:web:4919bad6572b217ced4fe5"
 };
-*/
