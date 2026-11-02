@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.4.0';
+const VERSION = '1.4.1';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -575,7 +575,12 @@ for (const [k, d] of Object.entries(FELD)) {
 }
 FORMS.tiere = { ...FORMS.zugang, t: 'Tier bearbeiten', more: false };
 
-let sheetOpen = null;
+let sheetOpen = null, lockY = 0;
+function lockScroll(on) {
+  const b = document.body;
+  if (on && !b.classList.contains('lock')) { lockY = window.scrollY; b.style.top = -lockY + 'px'; b.classList.add('lock'); }
+  if (!on && b.classList.contains('lock')) { b.classList.remove('lock'); b.style.top = ''; window.scrollTo(0, lockY); }
+}
 function openSheet(title, body, { onSave, saveLabel = 'Sichern', onDelete } = {}) {
   closeSheet(true);
   const wrap = $('#sheets');
@@ -585,12 +590,13 @@ function openSheet(title, body, { onSave, saveLabel = 'Sichern', onDelete } = {}
   bd.onclick = () => closeSheet(); $('[data-x]', sh).onclick = () => closeSheet();
   if (onSave) $('[data-s]', sh).onclick = onSave;
   if (onDelete) $('[data-d]', sh).onclick = () => { if (confirm('Wirklich löschen?')) { onDelete(); closeSheet(); } };
-  sheetOpen = sh;
+  sheetOpen = sh; lockScroll(true);
   return sh;
 }
 function closeSheet(instant) {
   const wrap = $('#sheets'); $('#plus').classList.remove('open');
   if (!wrap.innerHTML) return;
+  lockScroll(false);
   if (instant) { wrap.innerHTML = ''; sheetOpen = null; return; }
   $$('.sheet,.backdrop', wrap).forEach(e => e.classList.remove('show'));
   setTimeout(() => { wrap.innerHTML = ''; sheetOpen = null; schedule(); }, 200);
