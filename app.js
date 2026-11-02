@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -42,7 +42,7 @@ const DEF = {
   hofname: 'Hof Bannhalde', tragzeit: 285, kalbMonate: 12, laktAbMonate: 16, abgekalbtTage: 60,
   alpVon: '06-15', alpBis: '09-15', puffer: 14,
   parzellen: ['Parzelle 1', 'Parzelle 2'], orte: ['Weide 1', 'Weide 2', 'Stall mit Laufhof'],
-  medikamente: [], startHeu: 0, startSilo: 0, rasse: 'Galloway'
+  medikamente: [], startHeu: 0, startSilo: 0
 };
 
 /* ---------- Datenhaltung ---------- */
@@ -54,7 +54,22 @@ let KEY = localStorage.getItem('hb-key') || '';
 
 function setSync(state, title) { const el = $('#sync'); el.className = 'sync ' + state; el.title = title || ''; }
 function toast(msg) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 2600); }
-function showErr(e) { console.error(e); setSync('err', String(e && e.message || e)); toast('Fehler: ' + (e && e.code || e && e.message || e)); }
+let lastErr = null;
+function showErr(e) {
+  console.error(e); const code = e && e.code || '';
+  setSync('err', String(e && e.message || e));
+  if (lastErr === code) return; lastErr = code;
+  toast(code === 'permission-denied' ? 'Zugriff verweigert - Hof-Schlüssel prüfen' : 'Fehler: ' + (code || e && e.message || e));
+  schedule();
+}
+function errBanner() {
+  if (!lastErr) return '';
+  const k = KEY ? `Schlüssel auf diesem Gerät: <span class="mono">${esc(KEY.slice(0, 3))}…${esc(KEY.slice(-3))}</span> (${KEY.length} Zeichen)` : 'Kein Schlüssel gesetzt';
+  const why = lastErr === 'permission-denied'
+    ? 'Firestore verweigert den Zugriff. Entweder sind die Regeln nicht veröffentlicht oder der Schlüssel in den Regeln weicht vom Schlüssel auf diesem Gerät ab (Gross-/Kleinschreibung, Leerzeichen, Anführungszeichen).'
+    : `Fehlercode: ${esc(lastErr)}`;
+  return `<div class="note" style="margin:8px 0"><b>Speichern nicht möglich</b><br>${why}<br><span class="small">${k}</span><div class="btns" style="margin-top:10px"><button class="btn" data-act="newkey">Schlüssel neu eingeben</button></div></div>`;
+}
 
 function initLocal() {
   mode = 'local';
@@ -80,7 +95,7 @@ async function initFirebase(cfg) {
   catch (e) { db = F.getFirestore(app); }
   const ref = c => F.collection(db, 'hoefe', KEY, c);
   COLLS.forEach(c => F.onSnapshot(ref(c), { includeMetadataChanges: true }, snap => {
-    S[c] = snap.docs.map(d => ({ ...d.data(), id: d.id }));
+    S[c] = snap.docs.map(d => ({ ...d.data(), id: d.id })); if (!snap.metadata.fromCache && lastErr) { lastErr = null; }
     setSync(snap.metadata.fromCache ? 'off' : 'ok', snap.metadata.fromCache ? 'Offline - wird später synchronisiert' : 'Synchronisiert');
     schedule();
   }, showErr));
@@ -96,6 +111,7 @@ function put(c, o) { o.id = o.id || uid(); o.geaendert = Date.now(); W.put(c, o)
 function del(c, id) { W.del(c, id); }
 
 /* ---------- Fachlogik ---------- */
+const rassen = () => [...new Set(S.tiere.map(t => (t.rasse || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'de'));
 const tierById = id => S.tiere.find(t => t.id === id);
 const tName = id => { const t = tierById(id); return t ? (t.name || t.ohrmarke || '?') : '?'; };
 const aktiv = (t, d = today()) => (!t.zugang || t.zugang <= d) && (!t.geburt || t.geburt <= d) && (!t.abgang || t.abgang > d);
@@ -166,7 +182,7 @@ function render() {
   back.classList.toggle('hidden', !showBack);
   $$('#tabbar a').forEach(a => a.classList.toggle('on', a.dataset.tab === tab));
   const sx = window.scrollY, same = view.dataset.route === h;
-  view.innerHTML = html; view.dataset.route = h;
+  view.innerHTML = errBanner() + html; view.dataset.route = h;
   if (same) window.scrollTo(0, sx);
   afterRender();
 }
@@ -411,7 +427,6 @@ function vSettings() {
   return `<form class="form" id="setform" style="margin-top:8px">
   <div class="card form">
   <label class="fld"><span>Hofname</span><input name="hofname" value="${esc(s.hofname)}"></label>
-  <label class="fld"><span>Standard-Rasse</span><input name="rasse" value="${esc(s.rasse)}"></label>
   </div>
   <div class="sec-t">Zucht</div><div class="card form">
   <label class="fld"><span>Tragzeit (Tage)</span><input name="tragzeit" type="number" inputmode="numeric" value="${s.tragzeit}"></label>
@@ -435,7 +450,7 @@ function vSettings() {
   </form>
   <div class="sec-t">Daten</div>
   <div class="card"><p class="small muted" style="margin:0 0 10px">Speicherort: <b>${mode === 'firebase' ? 'Firebase (synchronisiert)' : 'nur dieses Gerät'}</b>${mode === 'firebase' ? ` · Hof-Schlüssel: <span class="mono">${esc(KEY.slice(0, 4))}…</span>` : ''} · Version ${VERSION}</p>
-  <div class="btns"><button class="btn" data-act="backup">Backup herunterladen (JSON)</button><label class="btn">Backup einlesen<input type="file" accept="application/json" data-act="restore" class="hidden"></label>${mode === 'firebase' ? '<button class="btn" data-act="copylink">Link für weiteres Gerät kopieren</button>' : ''}</div></div>`;
+  <div class="btns"><button class="btn" data-act="backup">Backup herunterladen (JSON)</button><label class="btn">Backup einlesen<input type="file" accept="application/json" data-act="restore" class="hidden"></label>${mode === 'firebase' ? '<button class="btn" data-act="copylink">Link für weiteres Gerät kopieren</button><button class="btn" data-act="newkey">Hof-Schlüssel ändern</button>' : ''}</div></div>`;
 }
 
 /* ---------- Formulare ---------- */
@@ -444,10 +459,10 @@ const FORMS = {
   zugang: { t: 'Zugang', coll: 'tiere', fields: [
     { k: 'name', l: 'Name', t: 'text' }, { k: 'ohrmarke', l: 'Ohrmarke', t: 'text', ph: 'CH 120.1234.5678.9' },
     { k: 'geschlecht', l: 'Geschlecht', t: 'seg', o: [['w', 'weiblich'], ['m', 'männlich']], def: 'w' },
-    { k: 'geburt', l: 'Geburtsdatum', t: 'date', def: '' }, { k: 'zugang', l: 'Zugangsdatum', t: 'date' },
+    { k: 'geburt', l: 'Geburtsdatum', t: 'date', def: '' }, { k: 'zugang', l: 'Zugangsdatum (leer = Geburtsdatum)', t: 'date' },
     { k: 'mutterId', l: 'Mutter (falls im Bestand)', t: 'tier', opt: true, filter: t => t.geschlecht === 'w' },
     { k: 'mutterName', l: 'Mutter (Name, falls nicht im Bestand)', t: 'text' },
-    { k: 'rasse', l: 'Rasse', t: 'text', def: () => S.set.rasse }, { k: 'notiz', l: 'Notiz', t: 'textarea' }],
+    { k: 'rasse', l: 'Rasse', t: 'tag', list: rassen }, { k: 'notiz', l: 'Notiz', t: 'textarea' }],
     more: true },
   tiere: null,
   abgang: { t: 'Abgang', fields: [
@@ -460,11 +475,11 @@ const FORMS = {
     { k: 'verlauf', l: 'Verlauf', t: 'seg', o: [['leicht', 'leicht'], ['mittel', 'mittel'], ['schwer', 'schwer'], ['Kaiserschnitt', 'Kaiserschnitt']], def: 'leicht' },
     { k: 'kalbName', l: 'Name Kalb', t: 'text' }, { k: 'kalbOhrmarke', l: 'Ohrmarke Kalb', t: 'text' },
     { k: 'kalbGeschlecht', l: 'Geschlecht Kalb', t: 'seg', o: [['w', 'weiblich'], ['m', 'männlich']], def: 'w' },
+    { k: 'kalbRasse', l: 'Rasse Kalb', t: 'tag', list: rassen },
     { k: 'notiz', l: 'Notiz', t: 'textarea' }],
     hint: 'Legt das Kalb als neues Tier an und meldet die Abkalbung bei der Mutter. TVD-Meldung nicht vergessen.',
     save(v) {
-      const m = tierById(v.tierId);
-      const k = put('tiere', { name: v.kalbName, ohrmarke: v.kalbOhrmarke, geschlecht: v.kalbGeschlecht, geburt: v.datum, zugang: v.datum, mutterId: v.tierId, rasse: m && m.rasse || S.set.rasse });
+      const k = put('tiere', { name: v.kalbName, ohrmarke: v.kalbOhrmarke, geschlecht: v.kalbGeschlecht, geburt: v.datum, zugang: v.datum, mutterId: v.tierId, rasse: v.kalbRasse });
       put('ereignisse', { typ: 'abkalbung', tierId: v.tierId, datum: v.datum, verlauf: v.verlauf, kalbId: k.id, notiz: v.notiz });
     } },
   abkalbung: { t: 'Abkalbung', coll: 'ereignisse', fields: [
@@ -540,6 +555,10 @@ function fieldHtml(f, v) {
   const id = 'f_' + f.k;
   const dl = f.list ? `<datalist id="dl_${f.k}">${f.list().map(o => `<option value="${esc(o)}">`).join('')}</datalist>` : '';
   if (f.t === 'seg') return `<div class="fld"><span>${f.l}</span><div class="seg" role="radiogroup">${f.o.map(([ov, ol]) => `<label><input type="radio" name="${f.k}" value="${esc(ov)}" ${String(val) === ov ? 'checked' : ''}>${esc(ol)}</label>`).join('')}</div></div>`;
+  if (f.t === 'tag') {
+    const opts = f.list(); if (val && !opts.includes(val)) opts.push(val);
+    return `<div class="fld"><span>${f.l}</span><div class="chips" data-tag="${f.k}">${opts.map(o => `<button type="button" class="chip ${o === val ? 'on' : ''}" data-v="${esc(o)}">${esc(o)}</button>`).join('')}<input name="${f.k}__neu" placeholder="${opts.length ? '+ neu' : 'eingeben'}" autocomplete="off" style="flex:1 1 120px;min-height:36px;border:1px dashed #8A918C;border-radius:99px;padding:0 12px;background:transparent;font-size:14px"></div></div>`;
+  }
   if (f.t === 'textarea') return `<label class="fld"><span>${f.l}</span><textarea name="${f.k}" rows="2">${esc(val)}</textarea></label>`;
   if (f.t === 'tier') {
     const opts = S.tiere.filter(t => (aktiv(t) || t.id === val) && (!f.filter || f.filter(t))).sort(sortName);
@@ -563,7 +582,7 @@ function openForm(key, rec = null, pre = {}) {
   def.fields.forEach(f => { v[f.k] = f.t === 'date' ? today() : f.t === 'tiere' ? (f.allDefault ? aktiveTiere().filter(t => !f.filter || f.filter(t)).map(t => t.id) : []) : (typeof f.def === 'function' ? f.def() : (f.def ?? '')); });
   if (rec) { Object.assign(v, rec); if (def.multi && rec.tierId) v.tierIds = [rec.tierId]; }
   if (pre.tier) { if ('tierIds' in v) v.tierIds = [pre.tier]; if ('tierId' in v) v.tierId = pre.tier; }
-  if (key === 'tiere' || key === 'zugang') { if (!rec) v.geburt = ''; }
+  if (key === 'tiere' || key === 'zugang') { if (!rec) { v.geburt = ''; v.zugang = ''; } }
   const body = `${def.hint ? `<div class="note blue small" style="margin-bottom:14px">${def.hint}</div>` : ''}<form class="form" data-form>${def.fields.map(f => fieldHtml(f, v)).join('')}<div class="calc" data-calc></div>
   ${def.more && !isEdit ? '<button type="button" class="btn block" data-more>Sichern + nächstes Tier</button>' : ''}</form>`;
   const sh = openSheet(def.t, body, {
@@ -579,6 +598,7 @@ function openForm(key, rec = null, pre = {}) {
     const o = {};
     def.fields.forEach(f => {
       if (f.t === 'tiere') o[f.k] = $$(`[data-picker="${f.k}"] .chip.on`, form).map(b => b.dataset.id);
+      else if (f.t === 'tag') { const c = $(`[data-tag="${f.k}"] .chip.on`, form); const n = (form.elements[f.k + '__neu'].value || '').trim(); o[f.k] = n || (c ? c.dataset.v : ''); }
       else if (f.t === 'seg') { const c = $(`input[name="${f.k}"]:checked`, form); o[f.k] = c ? c.value : ''; }
       else o[f.k] = (form.elements[f.k] && form.elements[f.k].value || '').trim();
     });
@@ -587,11 +607,15 @@ function openForm(key, rec = null, pre = {}) {
   const upd = () => { const c = $('[data-calc]', form); if (def.calc) c.innerHTML = def.calc(read()); $$('[data-cnt]', form).forEach(el => el.textContent = `(${$$(`[data-picker="${el.dataset.cnt}"] .chip.on`, form).length} gewählt)`); };
   form.addEventListener('input', e => {
     form.dataset.dirty = '1';
+    if (e.target.name && e.target.name.endsWith('__neu')) $$('.chip', e.target.closest('[data-tag]')).forEach(c => c.classList.remove('on'));
+    if (e.target.name === 'zugang') form.dataset.zugTouched = '1';
+    if (e.target.name === 'geburt' && form.elements.zugang && !form.dataset.zugTouched) form.elements.zugang.value = e.target.value;
     if (e.target.name === 'medikament') { const m = (S.set.medikamente || []).find(m => m.name === e.target.value); if (m && form.elements.frist) form.elements.frist.value = m.frist; }
     upd();
   });
   form.addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
+    if (b.closest('[data-tag]')) { const on = b.classList.contains('on'); $$('.chip', b.closest('[data-tag]')).forEach(c => c.classList.remove('on')); if (!on) b.classList.add('on'); const n = b.closest('[data-tag]').querySelector('input'); if (n) n.value = ''; form.dataset.dirty = '1'; return; }
     if (b.closest('[data-picker]')) { b.classList.toggle('on'); form.dataset.dirty = '1'; upd(); }
     if (b.dataset.all) { $$(`[data-picker="${b.dataset.all}"] .chip`, form).forEach(c => c.classList.add('on')); upd(); }
     if (b.dataset.none) { $$(`[data-picker="${b.dataset.none}"] .chip`, form).forEach(c => c.classList.remove('on')); upd(); }
@@ -601,10 +625,11 @@ function openForm(key, rec = null, pre = {}) {
   function doSave(more) {
     const o = read();
     // Pflichtfelder
-    if (def.fields.some(f => f.t === 'date' && f.k !== 'geburt') && def.fields.filter(f => f.t === 'date' && f.k !== 'geburt').some(f => !o[f.k])) return toast('Datum fehlt');
+    if (def.fields.some(f => f.t === 'date' && !['geburt', 'zugang'].includes(f.k)) && def.fields.filter(f => f.t === 'date' && !['geburt', 'zugang'].includes(f.k)).some(f => !o[f.k])) return toast('Datum fehlt');
     if ('tierIds' in o && !o.tierIds.length) return toast('Mindestens ein Tier wählen');
     if ('tierId' in o && !o.tierId && !def.fields.find(f => f.k === 'tierId').opt) return toast('Tier wählen');
     if ((key === 'zugang' || key === 'tiere') && !o.name && !o.ohrmarke) return toast('Name oder Ohrmarke fehlt');
+    if (key === 'zugang' || key === 'tiere') { if (!o.zugang) o.zugang = o.geburt; if (!o.zugang) return toast('Geburts- oder Zugangsdatum fehlt'); }
     if (def.prep) def.prep(o);
     if (def.save && !isEdit) def.save(o);
     else if (def.multi) {
@@ -618,7 +643,7 @@ function openForm(key, rec = null, pre = {}) {
       put(def.coll, obj);
     }
     toast('Gespeichert');
-    if (more) { form.reset(); form.dataset.dirty = ''; $$('input[type=date]', form).forEach(i => i.value = today()); return; }
+    if (more) { form.reset(); form.dataset.dirty = ''; form.dataset.zugTouched = ''; $$('input[type=date]', form).forEach(i => i.value = ['geburt', 'zugang'].includes(i.name) ? '' : today()); $$('[data-tag] .chip', form).forEach(c => c.classList.remove('on')); return; }
     closeSheet();
   }
 }
@@ -713,6 +738,7 @@ document.addEventListener('click', e => {
   else if (a === 'ftab') { UI.fTab = el.dataset.v; if (el.tagName === 'BUTTON') render(); }
   else if (a === 'pdf') { el.disabled = true; pdf(el.dataset.p, el.dataset.id).catch(showErr).finally(() => el.disabled = false); }
   else if (a === 'backup') { const d = { version: VERSION, exportiert: new Date().toISOString(), set: S.set }; COLLS.forEach(c => d[c] = S[c]); const b = new Blob([JSON.stringify(d, null, 1)], { type: 'application/json' }); const u = URL.createObjectURL(b); const l = document.createElement('a'); l.href = u; l.download = `hofbuech_backup_${today()}.json`; l.click(); setTimeout(() => URL.revokeObjectURL(u), 2000); }
+  else if (a === 'newkey') { localStorage.removeItem('hb-key'); location.hash = ''; location.reload(); }
   else if (a === 'copylink') { const u = location.origin + location.pathname + '#k=' + KEY; navigator.clipboard.writeText(u).then(() => toast('Link kopiert - nur an eigene Geräte senden'), () => prompt('Link kopieren:', u)); }
 });
 document.addEventListener('input', e => {
@@ -739,7 +765,7 @@ document.addEventListener('submit', e => {
   e.preventDefault();
   const f = e.target.elements, lines = s => s.split('\n').map(x => x.trim()).filter(Boolean);
   W.setSettings({
-    ...S.set, hofname: f.hofname.value.trim(), rasse: f.rasse.value.trim(),
+    ...S.set, hofname: f.hofname.value.trim(),
     tragzeit: num(f.tragzeit.value) || 285, kalbMonate: num(f.kalbMonate.value) || 12, laktAbMonate: num(f.laktAbMonate.value) || 16,
     abgekalbtTage: num(f.abgekalbtTage.value) || 60, alpVon: f.alpVon.value.trim() || '06-15', alpBis: f.alpBis.value.trim() || '09-15', puffer: num(f.puffer.value),
     parzellen: lines(f.parzellen.value), orte: lines(f.orte.value),
