@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.1.0';
+const VERSION = '1.2.0';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -205,7 +205,7 @@ function vStart() {
   const tiere = aktiveTiere();
   if (!S.tiere.length) {
     return `${kpiBlock(k)}<div class="sec-t">Lager</div>${lagerKpi(L)}
-    <div class="card" style="margin-top:16px"><b>Los geht's</b><p class="muted" style="margin:6px 0 12px">Noch keine Tiere erfasst. Über den grossen + Button unten: "Zugang" für jedes Tier. Parzellen, Weiden und Medikamente unter Einstellungen.</p><div class="btns"><button class="btn pri" data-act="form" data-f="zugang">Erstes Tier erfassen</button><a class="btn" href="#/einstellungen">Einstellungen</a></div></div>`;
+    <div class="card" style="margin-top:16px"><b>Los geht's</b><p class="muted" style="margin:6px 0 12px">Noch keine Tiere erfasst. Bestand als Excel aus agate.ch importieren oder einzeln über den + Button erfassen. Parzellen, Weiden und Medikamente unter Einstellungen.</p><div class="btns"><label class="btn pri">TVD-Bestand importieren (Excel)<input type="file" accept=".xlsx,.xls,.csv" data-act="tvdimport" class="hidden"></label><button class="btn" data-act="form" data-f="zugang">Tier von Hand erfassen</button><a class="btn" href="#/einstellungen">Einstellungen</a></div></div>`;
   }
   const naechste = tiere.map(t => ({ t, l: lakt(t) })).filter(x => x.l && x.l.status === 'Besamt').sort((a, b) => a.l.erwartet < b.l.erwartet ? -1 : 1).slice(0, 5);
   const fr = tiere.map(t => ({ t, b: frist(t.id) })).filter(x => x.b);
@@ -246,6 +246,7 @@ function vTiere() {
     <input class="search" type="search" placeholder="Name oder Ohrmarke" value="${esc(F.q)}" data-act="q" aria-label="Suche">
     <select class="sel" data-act="sort" aria-label="Sortierung">${[['name', 'Name'], ['ohrmarke', 'Ohrmarke'], ['alter', 'Alter'], ['abkalbung', 'Nächste Abkalbung']].map(([v, l]) => `<option value="${v}" ${F.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
     <button type="button" class="chip ${F.abg ? 'on' : ''}" data-act="abg">Abgänge</button>
+    <label class="chip">TVD-Import<input type="file" accept=".xlsx,.xls,.csv" data-act="tvdimport" class="hidden"></label>
     ${F.kat || F.lakt || F.q ? '<button type="button" class="chip" data-act="reset">Filter löschen</button>' : ''}
   </div>
   ${tlTiere.length ? `<div class="sec-t">Zeitachse (heute ±365 Tage)</div>${timeline(tlTiere)}` : ''}
@@ -450,7 +451,7 @@ function vSettings() {
   </form>
   <div class="sec-t">Daten</div>
   <div class="card"><p class="small muted" style="margin:0 0 10px">Speicherort: <b>${mode === 'firebase' ? 'Firebase (synchronisiert)' : 'nur dieses Gerät'}</b>${mode === 'firebase' ? ` · Hof-Schlüssel: <span class="mono">${esc(KEY.slice(0, 4))}…</span>` : ''} · Version ${VERSION}</p>
-  <div class="btns"><button class="btn" data-act="backup">Backup herunterladen (JSON)</button><label class="btn">Backup einlesen<input type="file" accept="application/json" data-act="restore" class="hidden"></label>${mode === 'firebase' ? '<button class="btn" data-act="copylink">Link für weiteres Gerät kopieren</button><button class="btn" data-act="newkey">Hof-Schlüssel ändern</button>' : ''}</div></div>`;
+  <div class="btns"><button class="btn" data-act="backup">Backup herunterladen (JSON)</button><label class="btn">TVD-Import (Excel)<input type="file" accept=".xlsx,.xls,.csv" data-act="tvdimport" class="hidden"></label><label class="btn">Backup einlesen<input type="file" accept="application/json" data-act="restore" class="hidden"></label>${mode === 'firebase' ? '<button class="btn" data-act="copylink">Link für weiteres Gerät kopieren</button><button class="btn" data-act="newkey">Hof-Schlüssel ändern</button>' : ''}</div></div>`;
 }
 
 /* ---------- Formulare ---------- */
@@ -724,6 +725,54 @@ async function pdf(p, id) {
   }
 }
 
+/* ---------- TVD-Import (Excel/CSV aus agate.ch) ---------- */
+const normOM = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+function parseDatum(v) {
+  if (!v) return '';
+  if (v instanceof Date) return iso(v);
+  const t = String(v).trim();
+  let m = t.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/); if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  m = t.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return m[0];
+  return '';
+}
+async function tvdImport(file) {
+  if (!window.XLSX) await loadScript('vendor/xlsx.mini.min.js');
+  const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '', raw: true });
+  const col = (r, ...names) => { for (const k of Object.keys(r)) { const kk = k.toLowerCase(); if (names.some(n => kk.startsWith(n))) return r[k]; } return ''; };
+  const neu = [], upd = [], gleich = [];
+  for (const r of rows) {
+    const om = String(col(r, 'ohrmarke', 'tvd-nr', 'tiernummer')).trim(); if (!om) continue;
+    const g = String(col(r, 'geschlecht')).toLowerCase();
+    const d = {
+      ohrmarke: om, name: String(col(r, 'name')).trim(), geburt: parseDatum(col(r, 'geburt')),
+      geschlecht: g.startsWith('m') ? 'm' : 'w', rasse: String(col(r, 'rasse')).trim()
+    };
+    const tod = parseDatum(col(r, 'todesdatum', 'abgang'));
+    if (tod) { d.abgang = tod; d.abgangGrund = 'Tod'; }
+    const ex = S.tiere.find(t => normOM(t.ohrmarke) === normOM(om));
+    if (!ex) { d.zugang = d.geburt; neu.push(d); continue; }
+    const diffs = Object.keys(d).filter(k => d[k] && d[k] !== ex[k]);
+    if (diffs.length) upd.push({ ex, d, diffs }); else gleich.push(ex);
+  }
+  const imp = new Set(rows.map(r => normOM(col(r, 'ohrmarke', 'tvd-nr', 'tiernummer'))));
+  const fehlt = aktiveTiere().filter(t => t.ohrmarke && !imp.has(normOM(t.ohrmarke)));
+  const li = (t, extra = '') => `<div class="row" style="cursor:default"><div class="main"><span class="t">${esc(t.name || t.ohrmarke)}</span><span class="s mono">${esc(t.ohrmarke)}${t.geburt ? ' · ' + fmt(t.geburt) : ''}${t.rasse ? ' · ' + esc(t.rasse) : ''}</span></div>${extra}</div>`;
+  openSheet('TVD-Import', `
+    <div class="kpis" style="margin-bottom:12px"><div class="kpi"><span class="v">${neu.length}</span><span class="l">neu</span></div><div class="kpi"><span class="v">${upd.length}</span><span class="l">aktualisieren</span></div><div class="kpi"><span class="v">${gleich.length}</span><span class="l">unverändert</span></div></div>
+    ${neu.length ? `<div class="sec-t">Neue Tiere (Zugang = Geburtsdatum)</div><div class="list">${neu.map(t => li(t)).join('')}</div>` : ''}
+    ${upd.length ? `<div class="sec-t">Änderungen</div><div class="list">${upd.map(u => li({ ...u.ex, ...u.d }, `<span class="pill blue">${u.diffs.join(', ')}</span>`)).join('')}</div>` : ''}
+    ${fehlt.length ? `<div class="sec-t">Im hofbuech, aber nicht im Export</div><div class="note small">Diese Tiere werden nicht verändert. Abgänge bitte selbst erfassen.</div><div class="list" style="margin-top:8px">${fehlt.map(t => li(t)).join('')}</div>` : ''}
+    <p class="small muted">Mutter und Zugangsdatum sind im TVD-Export nicht enthalten und können pro Tier unter "Bearbeiten" ergänzt werden.</p>`,
+    {
+      saveLabel: 'Importieren', onSave: () => {
+        neu.forEach(d => put('tiere', d));
+        upd.forEach(u => put('tiere', { ...u.ex, ...Object.fromEntries(u.diffs.map(k => [k, u.d[k]])) }));
+        toast(`${neu.length} neu, ${upd.length} aktualisiert`); closeSheet();
+      }
+    });
+}
+
 /* ---------- Events ---------- */
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]'); if (!el) return;
@@ -749,6 +798,7 @@ document.addEventListener('change', e => {
   const a = e.target.dataset && e.target.dataset.act;
   if (a === 'sort') { UI.tierFilter.sort = e.target.value; render(); }
   if (a === 'jahr') { UI.jahr = e.target.value; render(); }
+  if (a === 'tvdimport') { const f = e.target.files[0]; e.target.value = ''; if (f) tvdImport(f).catch(showErr); }
   if (a === 'restore') {
     const f = e.target.files[0]; if (!f) return;
     f.text().then(t => {
