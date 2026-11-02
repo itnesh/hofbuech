@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.3.0';
+const VERSION = '1.4.0';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -18,6 +18,9 @@ const num = v => { const n = parseFloat(String(v ?? '').replace(',', '.')); retu
 const nf = n => (Math.round(n * 10) / 10).toLocaleString('de-CH');
 const MON = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
 const clean = o => JSON.parse(JSON.stringify(o));
+const kurzOM = om => { const d = String(om || '').replace(/\D/g, ''); return d.length >= 5 ? d.slice(-5, -1) : d; };
+const alterTxt = m => m === null || m === undefined ? '' : m <= 25 ? `${m} Mt.` : `${(m / 12).toFixed(1)} J.`;
+const relTag = d => { const n = diff(today(), d); return n === 0 ? 'heute' : n === 1 ? 'morgen' : n === -1 ? 'gestern' : n > 0 ? `in ${n} T.` : `vor ${-n} T.`; };
 
 /* ---------- Icons ---------- */
 const I = p => `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
@@ -40,8 +43,8 @@ const IC = {
 /* ---------- Einstellungen ---------- */
 const DEF = {
   hofname: 'Hof Bannhalde', tragzeit: 285, kalbMonate: 12, laktAbMonate: 16, abgekalbtTage: 60,
-  alpVon: '06-15', alpBis: '09-15', puffer: 14,
-  parzellen: ['Parzelle 1', 'Parzelle 2'], orte: ['Weide 1', 'Weide 2', 'Stall mit Laufhof'],
+  alpVon: '05-25', alpBis: '10-05', puffer: 14, unbesamtAb: 16, baldTage: 30,
+  parzellen: [], gruende: ['Winter / Vegetation', 'Zu nass', 'Kein Futter', 'Geburt', 'Eingriff am Tier', 'Kälte', 'Sturm'],
   medikamente: [], startHeu: 0, startSilo: 0
 };
 
@@ -51,6 +54,7 @@ const S = { tiere: [], ereignisse: [], behandlungen: [], auslauf: [], feld: [], 
 let W = null; // writer
 let mode = 'local';
 const HOF = window.HB_HOF || 'bannhalde';
+function mergeSet(o) { const x = { ...DEF, ...(o || {}) }; if (x.alpVon === '06-15' && x.alpBis === '09-15') { x.alpVon = DEF.alpVon; x.alpBis = DEF.alpBis; } return x; }
 let USER = null, AUTH = null;
 
 function setSync(state, title) { const el = $('#sync'); el.className = 'sync ' + state; el.title = title || ''; }
@@ -73,12 +77,12 @@ function errBanner() {
 
 function initLocal() {
   mode = 'local';
-  try { const d = JSON.parse(localStorage.getItem('hb-local') || '{}'); COLLS.forEach(c => S[c] = d[c] || []); S.set = { ...DEF, ...(d.set || {}) }; } catch (e) { }
+  try { const d = JSON.parse(localStorage.getItem('hb-local') || '{}'); COLLS.forEach(c => S[c] = d[c] || []); S.set = mergeSet(d.set); } catch (e) { }
   const persist = () => { const d = { set: S.set }; COLLS.forEach(c => d[c] = S[c]); localStorage.setItem('hb-local', JSON.stringify(d)); schedule(); };
   W = {
     put: (c, o) => { const i = S[c].findIndex(x => x.id === o.id); if (i >= 0) S[c][i] = o; else S[c].push(o); persist(); },
     del: (c, id) => { S[c] = S[c].filter(x => x.id !== id); persist(); },
-    setSettings: o => { S.set = { ...DEF, ...o }; persist(); }
+    setSettings: o => { S.set = mergeSet(o); persist(); }
   };
   setSync('off', 'Nur lokal gespeichert (Firebase nicht eingerichtet)');
 }
@@ -104,7 +108,7 @@ async function initFirebase(cfg) {
     setSync(snap.metadata.fromCache ? 'off' : 'ok', snap.metadata.fromCache ? 'Offline - wird später synchronisiert' : 'Synchronisiert');
     schedule();
   }, showErr));
-  F.onSnapshot(F.doc(db, 'hoefe', HOF, 'einstellungen', 'main'), d => { S.set = { ...DEF, ...(d.data() || {}) }; schedule(); }, showErr);
+  F.onSnapshot(F.doc(db, 'hoefe', HOF, 'einstellungen', 'main'), d => { S.set = mergeSet(d.data()); schedule(); }, showErr);
   W = {
     put: (c, o) => { F.setDoc(F.doc(db, 'hoefe', HOF, c, o.id), clean(o)).catch(showErr); },
     del: (c, id) => { F.deleteDoc(F.doc(db, 'hoefe', HOF, c, id)).catch(showErr); },
@@ -116,6 +120,8 @@ function put(c, o) { o.id = o.id || uid(); o.geaendert = Date.now(); W.put(c, o)
 function del(c, id) { W.del(c, id); }
 
 /* ---------- Fachlogik ---------- */
+const parzellen = () => [...new Set([...(S.set.parzellen || []), ...S.feld.map(f => f.parzelle), ...S.auslauf.map(a => a.parzelle)].filter(Boolean))];
+const gruende = () => [...new Set([...(S.set.gruende || []), ...S.auslauf.map(a => a.grund)].filter(Boolean))];
 const rassen = () => [...new Set(S.tiere.map(t => (t.rasse || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'de'));
 const tierById = id => S.tiere.find(t => t.id === id);
 const tName = id => { const t = tierById(id); return t ? (t.name || t.ohrmarke || '?') : '?'; };
@@ -126,7 +132,7 @@ const evOf = (id, typ) => S.ereignisse.filter(e => e.tierId === id && (!typ || e
 const alterMt = (t, d = today()) => t.geburt ? months(t.geburt, d) : null;
 
 function kategorie(t, d = today()) {
-  if (evOf(t.id, 'abkalbung').some(e => e.datum <= d)) return 'Kuh';
+  if (t.gekalbert === 'ja' || evOf(t.id, 'abkalbung').some(e => e.datum <= d)) return 'Kuh';
   const m = alterMt(t, d);
   if (m !== null && m < S.set.kalbMonate) return 'Kalb';
   return 'Rind';
@@ -141,11 +147,46 @@ function lakt(t, d = today()) {
   if (cal && diff(cal.datum, d) <= S.set.abgekalbtTage) return { status: 'Abgekalbt', cal };
   return { status: 'Unbesamt', cal };
 }
-function alpFenster(y) { return [`${y}-${S.set.alpVon}`, `${y}-${S.set.alpBis}`]; }
+let alpMemo = { k: '', m: {} };
+function alpIst() {
+  const k = S.auslauf.length + ':' + S.auslauf.reduce((a, x) => Math.max(a, x.geaendert || 0), 0);
+  if (alpMemo.k === k) return alpMemo.m;
+  const sl = sortedAuslauf(), m = {};
+  sl.forEach((a, i) => { if (a.typ !== 'Alp') return; const y = a.datum.slice(0, 4); const bis = sl[i + 1] ? addDays(sl[i + 1].datum, -1) : null; if (!m[y]) m[y] = [a.datum, bis]; else if (bis === null || (m[y][1] && bis > m[y][1])) m[y][1] = bis; });
+  alpMemo = { k, m }; return m;
+}
+// Vergangene/laufende Alp aus dem Auslaufjournal, sonst Schätzung aus den Einstellungen
+function alpFenster(y) {
+  const ist = alpIst()[String(y)], plan = [`${y}-${S.set.alpVon}`, `${y}-${S.set.alpBis}`];
+  if (!ist) return plan;
+  return [ist[0], ist[1] || (plan[1] > ist[0] ? plan[1] : addDays(ist[0], 120))];
+}
 function inAlp(d) { const [a, b] = alpFenster(d.slice(0, 4)); return d >= a && d <= b; }
 function verbotFenster(y) { const [a, b] = alpFenster(y); return [addDays(a, -S.set.tragzeit - S.set.puffer), addDays(b, -S.set.tragzeit + S.set.puffer)]; }
-function imVerbot(d) { for (const y of [+d.slice(0, 4), +d.slice(0, 4) + 1]) { const [a, b] = verbotFenster(y); if (d >= a && d <= b) return true; } return false; }
+function verbotSegmente(y) {
+  let segs = [verbotFenster(y)];
+  for (const ay of [y - 1, y]) { const [aa, ab] = alpFenster(ay); segs = segs.flatMap(([a, b]) => { if (ab < a || aa > b) return [[a, b]]; const r = []; if (a < aa) r.push([a, addDays(aa, -1)]); if (b > ab) r.push([addDays(ab, 1), b]); return r; }); }
+  return segs;
+}
+function imVerbot(d) { if (inAlp(d)) return false; for (const y of [+d.slice(0, 4), +d.slice(0, 4) + 1]) { const [a, b] = verbotFenster(y); if (d >= a && d <= b) return true; } return false; }
 
+function agenda(tage = 150) {
+  const d = today(), end = addDays(d, tage), it = [];
+  for (const t of aktiveTiere()) {
+    const n = t.name || t.ohrmarke, l = lakt(t), f = frist(t.id);
+    if (f) it.push({ d: f.freiAb, t: 'Absetzfrist endet', s: `${n} · ${f.medikament || ''}`, id: t.id, c: 'warn' });
+    if (!l) continue;
+    if (l.status === 'Besamt') {
+      it.push({ d: l.erwartet, t: 'Abkalbung erwartet', s: n + (inAlp(l.erwartet) ? ' · während Alp!' : ''), id: t.id, c: inAlp(l.erwartet) ? 'red' : 'green' });
+      const k = addDays(l.bes.datum, 21); if (k >= addDays(d, -2)) it.push({ d: k, t: 'Brunstkontrolle', s: `${n} · 21 T. nach Besamung`, id: t.id, c: 'blue' });
+    } else {
+      const br = evOf(t.id, 'brunst').filter(e => !l.cal || e.datum > l.cal.datum).pop();
+      if (br) { let nx = addDays(br.datum, 21); while (nx < addDays(d, -1)) nx = addDays(nx, 21); it.push({ d: nx, t: 'Brunst erwartet', s: n + (imVerbot(nx) ? ' · Besamungsverbot' : ''), id: t.id, c: imVerbot(nx) ? 'red' : 'blue' }); }
+    }
+  }
+  for (const y of [+d.slice(0, 4), +d.slice(0, 4) + 1]) { const [a, b] = alpFenster(y); const ist = alpIst()[String(y)]; if (!ist) it.push({ d: a, t: 'Alpauffahrt (geplant)', s: '', c: 'grey' }); if (!ist || !ist[1]) it.push({ d: b, t: 'Alpabfahrt (geplant)', s: '', c: 'grey' }); }
+  return it.filter(x => x.d >= addDays(d, -2) && x.d <= end).sort((a, b) => a.d < b.d ? -1 : a.d > b.d ? 1 : 0);
+}
 function frist(tid, d = today()) {
   return S.behandlungen.filter(b => (b.tierIds || []).includes(tid) && b.freiAb && b.freiAb > d).sort((a, b) => a.freiAb < b.freiAb ? 1 : -1)[0];
 }
@@ -160,12 +201,14 @@ function kpis(list = aktiveTiere()) {
   return k;
 }
 function sortedAuslauf() { return [...S.auslauf].sort((a, b) => (a.datum + (a.zeit || '')) < (b.datum + (b.zeit || '')) ? -1 : 1); }
+function herdeAm(d = today(), list = sortedAuslauf()) { let best = null; for (const a of list) { if (a.datum > d) break; best = a; } return best; }
+const ortTxt = a => !a ? 'Kein Eintrag' : a.typ + (a.typ === 'Weide' && a.parzelle ? ' · ' + a.parzelle : (a.typ === 'Stall' || a.typ === 'Laufhof') && a.grund ? ' · ' + a.grund : a.ort ? ' · ' + a.ort : '');
 function ortAm(tid, d, list = sortedAuslauf()) { let best = null; for (const a of list) { if (a.datum > d) break; if ((a.tierIds || []).includes(tid)) best = a; } return best; }
 
 /* ---------- Router ---------- */
 let rq = false;
 function schedule() { if (rq) return; rq = true; requestAnimationFrame(() => { rq = false; render(); }); }
-const UI = { tierFilter: { kat: '', lakt: '', q: '', sort: 'name', abg: false }, jTab: 'behandlung', fTab: 'austrag', jahr: String(new Date().getFullYear()) };
+const UI = { tierFilter: { kat: '', lakt: '', q: '', sort: 'name', abg: false }, jTab: 'auslauf', fTab: 'austrag', jahr: String(new Date().getFullYear()) };
 
 function render() {
   if (mode === 'firebase' && !USER) return;
@@ -198,40 +241,34 @@ function afterRender() {
 }
 
 /* ---------- Views ---------- */
-function kpiBlock(k, link = false) {
-  const a = (key, label, cls = '') => link
-    ? `<button type="button" class="kpi ${cls} ${UI.tierFilter.kat === key || UI.tierFilter.lakt === key ? 'sel' : ''}" data-act="filt" data-v="${key}" style="text-align:left;cursor:pointer"><span class="v">${k[key]}</span><span class="l">${label}</span></button>`
-    : `<a class="kpi ${cls}" href="#/tiere" data-act="filtlink" data-v="${key}"><span class="v">${k[key]}</span><span class="l">${label}</span></a>`;
-  return `<div class="sec-t">Bestand</div><div class="kpis">${a('Kalb', 'Kälber')}${a('Rind', 'Rinder')}${a('Kuh', 'Kühe')}</div>
-  <div class="sec-t">Laktation (ab ${S.set.laktAbMonate} Mt.)</div><div class="kpis">${a('Unbesamt', 'Unbesamt')}${a('Besamt', 'Besamt')}${a('Abgekalbt', 'Abgekalbt')}</div>`;
+function kpiBlock(k, link = false, L = null) {
+  const c = (key, label) => link
+    ? `<button type="button" class="stat ${UI.tierFilter.kat === key || UI.tierFilter.lakt === key ? 'sel' : ''}" data-act="filt" data-v="${key}"><b>${k[key]}</b><span>${label}</span></button>`
+    : `<a class="stat" href="#/tiere" data-act="filtlink" data-v="${key}"><b>${k[key]}</b><span>${label}</span></a>`;
+  const lg = L ? `<div class="stats-row"><span class="stats-h">Lager</span><a class="stat ${L.heu <= 5 ? 'low' : ''}" href="#/feld" data-act="ftab" data-v="lager"><b>${nf(L.heu)}</b><span>Heu</span></a><a class="stat ${L.silo <= 5 ? 'low' : ''}" href="#/feld" data-act="ftab" data-v="lager"><b>${nf(L.silo)}</b><span>Silo</span></a><span class="stat ghost"></span></div>` : '';
+  return `<div class="stats"><div class="stats-row"><span class="stats-h">Bestand</span>${c('Kalb', 'Kälber')}${c('Rind', 'Rinder')}${c('Kuh', 'Kühe')}</div><div class="stats-row"><span class="stats-h">Laktation</span>${c('Unbesamt', 'Unbesamt')}${c('Besamt', 'Besamt')}${c('Abgekalbt', 'Abgekalbt')}</div>${lg}</div>`;
 }
-
+function herdeBanner() {
+  const a = herdeAm(), ic = !a ? '?' : a.typ === 'Weide' ? IC.heuen : a.typ === 'Alp' ? I('<path d="M3 20l6-10 4 6 3-4 5 8z"/>') : I('<path d="M4 11l8-7 8 7v9H4z"/>');
+  return `<button type="button" class="herde ${a ? a.typ.toLowerCase() : ''}" data-act="form" data-f="auslauf"><span class="herde-ic">${ic}</span><span class="herde-t"><b>${esc(ortTxt(a))}</b><small>${a ? 'Herde seit ' + fmt(a.datum) + ' · ' + diff(a.datum, today()) + ' T.' : 'Auslaufjournal: ersten Eintrag erfassen'}</small></span><span class="herde-go">Wechseln</span></button>`;
+}
+function agendaRows(items) {
+  return items.map(x => `<${x.id ? `a href="#/tier/${x.id}"` : 'div'} class="row ag"><span class="dt ${x.c}"><b>${x.d.slice(8, 10)}</b><small>${MON[+x.d.slice(5, 7) - 1]}</small></span><div class="main"><span class="t">${esc(x.t)}</span><span class="s">${esc(x.s)}${x.s ? ' · ' : ''}${relTag(x.d)}</span></div></${x.id ? 'a' : 'div'}>`).join('');
+}
 function vStart() {
-  const k = kpis(), L = lager(), d = today();
-  const tiere = aktiveTiere();
+  const k = kpis(), L = lager();
   if (!S.tiere.length) {
-    return `${kpiBlock(k)}<div class="sec-t">Lager</div>${lagerKpi(L)}
-    <div class="card" style="margin-top:16px"><b>Los geht's</b><p class="muted" style="margin:6px 0 12px">Noch keine Tiere erfasst. Bestand als Excel aus agate.ch importieren oder einzeln über den + Button erfassen. Parzellen, Weiden und Medikamente unter Einstellungen.</p><div class="btns"><label class="btn pri">TVD-Bestand importieren (Excel)<input type="file" accept=".xlsx,.xls,.csv" data-act="tvdimport" class="hidden"></label><button class="btn" data-act="form" data-f="zugang">Tier von Hand erfassen</button><a class="btn" href="#/einstellungen">Einstellungen</a></div></div>`;
+    return `${kpiBlock(k, false, L)}
+    <div class="card" style="margin-top:16px"><b>Los geht's</b><p class="muted" style="margin:6px 0 12px">Bestand als Excel aus agate.ch importieren oder einzeln über den + Button erfassen.</p><div class="btns"><label class="btn pri">TVD-Bestand importieren<input type="file" accept=".xlsx,.xls,.csv" data-act="tvdimport" class="hidden"></label><button class="btn" data-act="form" data-f="zugang">Tier erfassen</button></div></div>`;
   }
-  const naechste = tiere.map(t => ({ t, l: lakt(t) })).filter(x => x.l && x.l.status === 'Besamt').sort((a, b) => a.l.erwartet < b.l.erwartet ? -1 : 1).slice(0, 5);
-  const fr = tiere.map(t => ({ t, b: frist(t.id) })).filter(x => x.b);
-  const sl = sortedAuslauf(); const orte = {};
-  tiere.forEach(t => { const a = ortAm(t.id, d, sl); const key = a ? `${a.typ}|${a.ort || ''}` : '|'; orte[key] = (orte[key] || 0) + 1; });
-  return `${kpiBlock(k)}
-  <div class="sec-t">Lager</div>${lagerKpi(L)}
-  ${fr.length ? `<div class="sec-t">Absetzfrist läuft</div><div class="list">${fr.map(x => `<a class="row" href="#/tier/${x.t.id}"><div class="main"><span class="t">${esc(x.t.name || x.t.ohrmarke)}</span><span class="s">${esc(x.b.medikament)}</span></div><span class="pill warn">frei ab ${fmt(x.b.freiAb)}</span></a>`).join('')}</div>` : ''}
-  <div class="cols"><div>
-  <div class="sec-t">Nächste Abkalbungen</div>
-  <div class="list">${naechste.length ? naechste.map(x => { const dd = diff(d, x.l.erwartet); return `<a class="row" href="#/tier/${x.t.id}"><div class="main"><span class="t">${esc(x.t.name || x.t.ohrmarke)}</span><span class="s">besamt ${fmt(x.l.bes.datum)}${x.l.bes.stier ? ' · ' + esc(x.l.bes.stier) : ''}</span></div><div class="r"><b>${fmt(x.l.erwartet)}</b><br><span class="pill ${inAlp(x.l.erwartet) ? 'red' : dd <= 30 ? 'warn' : ''}">${dd >= 0 ? 'in ' + dd + ' T.' : 'überfällig ' + (-dd) + ' T.'}${inAlp(x.l.erwartet) ? ' · Alp!' : ''}</span></div></a>`; }).join('') : '<div class="empty">Keine besamten Tiere.</div>'}</div>
-  </div><div>
-  <div class="sec-t">Standort heute</div>
-  <div class="list">${Object.entries(orte).map(([key, n]) => { const [typ, ort] = key.split('|'); return `<a class="row" href="#/journale" data-act="jtab" data-v="auslauf"><div class="main"><span class="t">${typ ? esc(ort || typ) : 'Kein Eintrag'}</span><span class="s">${esc(typ || 'Auslaufjournal erfassen')}</span></div><b>${n}</b></a>`; }).join('')}</div>
-  </div></div>`;
+  const ag = agenda();
+  return `${herdeBanner()}${kpiBlock(k, false, L)}
+  <div class="sec-t">Demnächst</div>
+  <div class="list">${ag.length ? agendaRows(ag.slice(0, 12)) : '<div class="empty">Nichts geplant. Brunst und Besamung erfassen, dann erscheinen hier die nächsten Termine.</div>'}</div>`;
 }
 function lagerKpi(L) {
-  return `<div class="grid2"><a class="kpi ${L.heu <= 5 ? 'warn' : ''}" href="#/feld" data-act="ftab" data-v="lager"><span class="v">${nf(L.heu)}</span><span class="l">Heuballen</span></a><a class="kpi ${L.silo <= 5 ? 'warn' : ''}" href="#/feld" data-act="ftab" data-v="lager"><span class="v">${nf(L.silo)}</span><span class="l">Siloballen</span></a></div>`;
+  return `<div class="stats"><div class="stats-row"><span class="stats-h">Lager</span><span class="stat ${L.heu <= 5 ? 'low' : ''}"><b>${nf(L.heu)}</b><span>Heuballen</span></span><span class="stat ${L.silo <= 5 ? 'low' : ''}"><b>${nf(L.silo)}</b><span>Siloballen</span></span><span class="stat ghost"></span></div></div>`;
 }
-
 function vTiere() {
   const F = UI.tierFilter, d = today();
   let list = F.abg ? S.tiere.filter(t => !aktiv(t)) : aktiveTiere();
@@ -249,7 +286,7 @@ function vTiere() {
   const tlTiere = list.filter(t => lakt(t));
   return `${kpiBlock(k, true)}
   <div class="toolbar">
-    <input class="search" type="search" placeholder="Name oder Ohrmarke" value="${esc(F.q)}" data-act="q" aria-label="Suche">
+    <input class="search" type="search" placeholder="Suchen" value="${esc(F.q)}" data-act="q" aria-label="Suche">
     <select class="sel" data-act="sort" aria-label="Sortierung">${[['name', 'Name'], ['ohrmarke', 'Ohrmarke'], ['alter', 'Alter'], ['abkalbung', 'Nächste Abkalbung']].map(([v, l]) => `<option value="${v}" ${F.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
     <button type="button" class="chip ${F.abg ? 'on' : ''}" data-act="abg">Abgänge</button>
     <label class="chip">TVD-Import<input type="file" accept=".xlsx,.xls,.csv" data-act="tvdimport" class="hidden"></label>
@@ -260,15 +297,16 @@ function vTiere() {
   <div class="list">${list.length ? list.map(t => tierRow(t, d)).join('') : '<div class="empty">Keine Tiere.</div>'}</div>`;
 }
 function tierRow(t, d = today()) {
-  const l = lakt(t), f = frist(t.id), m = alterMt(t);
-  const sub = [t.ohrmarke, kategorie(t), m !== null ? (m < 24 ? m + ' Mt.' : Math.floor(m / 12) + ' J.') : ''].filter(Boolean).join(' · ');
+  const l = lakt(t), f = frist(t.id), kat = kategorie(t);
+  const sub = [kat, alterTxt(alterMt(t)), t.rasse].filter(Boolean).join(' · ');
   let pill = '';
-  if (!aktiv(t)) pill = `<span class="pill grey">${esc(t.abgangGrund || 'Abgang')} ${fmt(t.abgang)}</span>`;
-  else if (f) pill = `<span class="pill warn">Frist bis ${fmtS(f.freiAb)}</span>`;
-  else if (l) pill = l.status === 'Besamt' ? `<span class="pill ${inAlp(l.erwartet) ? 'red' : 'blue'}">Abk. ${fmt(l.erwartet)}</span>` : l.status === 'Abgekalbt' ? `<span class="pill">Abgekalbt</span>` : `<span class="pill grey">Unbesamt</span>`;
-  return `<a class="row" href="#/tier/${t.id}"><div class="main"><span class="t">${esc(t.name || t.ohrmarke)} ${t.geschlecht === 'm' ? '<span class="small muted">♂</span>' : ''}</span><span class="s mono">${esc(sub)}</span></div>${pill}</a>`;
+  if (!aktiv(t)) pill = `<span class="pill grey">${esc(t.abgangGrund || 'Abgang')} ${fmtS(t.abgang)}</span>`;
+  else if (f) pill = `<span class="pill warn">Frist ${fmtS(f.freiAb)}</span>`;
+  else if (l) pill = l.status === 'Besamt' ? `<span class="pill ${inAlp(l.erwartet) ? 'red' : 'blue'}">Abk. ${fmtS(l.erwartet)}</span>` : l.status === 'Abgekalbt' ? `<span class="pill">Abgekalbt</span>` : `<span class="pill grey">Unbesamt</span>`;
+  const m = alterMt(t);
+  const hl = aktiv(t) && l && ((l.status === 'Unbesamt' && (m === null || m >= S.set.unbesamtAb)) || (l.status === 'Besamt' && diff(d, l.erwartet) <= S.set.baldTage));
+  return `<a class="row ${hl ? 'hl' : ''}" href="#/tier/${t.id}"><span class="av ${kat.toLowerCase()}">${esc((t.name || '?').slice(0, 1).toUpperCase())}</span><div class="main"><span class="t">${esc(t.name || t.ohrmarke)}${t.ohrmarke ? ` <span class="om">${kurzOM(t.ohrmarke)}</span>` : ''}${t.geschlecht === 'm' ? ' <span class="om">♂</span>' : ''}</span><span class="s">${esc(sub)}</span></div>${pill}</a>`;
 }
-
 function timeline(tiere) {
   const d = today(), start = addDays(d, -365), end = addDays(d, 365);
   const ppd = 1.3, W = Math.round(730 * ppd), rowH = 28, head = 30, H = head + tiere.length * rowH;
@@ -277,9 +315,8 @@ function timeline(tiere) {
   let g = '';
   const y0 = +start.slice(0, 4), y1 = +end.slice(0, 4) + 1;
   for (let y = y0; y <= y1; y++) {
-    let [a, b] = verbotFenster(y);
-    if (b >= start && a <= end) { [a, b] = clip(a, b); g += `<rect x="${x(a)}" y="${head}" width="${x(b) - x(a)}" height="${H - head}" fill="url(#hatch)"/>`; }
-    [a, b] = alpFenster(y);
+    for (let [a, b] of verbotSegmente(y)) if (b >= start && a <= end) { [a, b] = clip(a, b); g += `<rect x="${x(a)}" y="${head}" width="${x(b) - x(a)}" height="${H - head}" fill="url(#hatch)"/>`; }
+    let [a, b] = alpFenster(y);
     if (b >= start && a <= end) { [a, b] = clip(a, b); g += `<rect x="${x(a)}" y="${head}" width="${x(b) - x(a)}" height="${H - head}" fill="#CFE3D5" opacity=".7"/><text x="${x(a) + 4}" y="${head + 12}" font-size="10" fill="#1F4D36">Alp</text>`; }
   }
   // Monatsraster
@@ -317,20 +354,18 @@ function vTier(t) {
   const kinder = S.tiere.filter(x => x.mutterId === t.id);
   const ev = evOf(t.id).filter(e => ['abkalbung', 'besamung', 'brunst'].includes(e.typ));
   const beh = S.behandlungen.filter(b => (b.tierIds || []).includes(t.id));
-  const sl = sortedAuslauf(); const ort = ortAm(t.id, today(), sl);
   return `
   ${f ? `<div class="note" style="margin-top:8px"><b>Absetzfrist läuft</b> bis ${fmt(f.freiAb)} (${esc(f.medikament)})</div>` : ''}
   ${!aktiv(t) ? `<div class="note blue" style="margin-top:8px">Abgang ${fmt(t.abgang)} · ${esc(t.abgangGrund || '')}</div>` : ''}
   <div class="card" style="margin-top:8px"><dl class="info">
     <dt>Name</dt><dd>${esc(t.name || '-')}</dd>
-    <dt>Ohrmarke</dt><dd class="mono">${esc(t.ohrmarke || '-')}</dd>
+    <dt>Ohrmarke</dt><dd class="num">${esc(t.ohrmarke || '-')}</dd>
     <dt>Mutter</dt><dd>${mutter ? `<a href="#/tier/${mutter.id}">${esc(mutter.name || mutter.ohrmarke)}</a>` : esc(t.mutterName || '-')}</dd>
-    <dt>Geburtsdatum</dt><dd>${fmt(t.geburt) || '-'}${m !== null ? ` <span class="muted small">(${m} Mt.)</span>` : ''}</dd>
+    <dt>Geburtsdatum</dt><dd>${fmt(t.geburt) || '-'}${m !== null ? ` <span class="muted small">(${alterTxt(m)})</span>` : ''}</dd>
     <dt>Zugangsdatum</dt><dd>${fmt(t.zugang) || '-'}</dd>
     <dt>Geschlecht</dt><dd>${t.geschlecht === 'm' ? 'männlich' : 'weiblich'}${t.rasse ? ' · ' + esc(t.rasse) : ''}</dd>
     <dt>Kategorie</dt><dd>${kategorie(t)}</dd>
     ${l ? `<dt>Status</dt><dd>${l.status}${l.status === 'Besamt' ? `<br><span class="small ${inAlp(l.erwartet) ? '' : 'muted'}" style="${inAlp(l.erwartet) ? 'color:var(--red)' : ''}">Abkalbung ca. ${fmt(l.erwartet)}${inAlp(l.erwartet) ? ' (während Alp!)' : ''}</span>` : ''}</dd>` : ''}
-    <dt>Standort</dt><dd>${ort ? esc(ort.ort || ort.typ) : '-'}</dd>
   </dl>${t.notiz ? `<p class="small muted" style="margin:10px 0 0">${esc(t.notiz)}</p>` : ''}</div>
   <div class="btnlist" style="margin-top:12px">
     <a class="btnrow" href="#/tier/${t.id}/laktation"><span>Laktationsplanung</span><span class="muted">${ev.length} ›</span></a>
@@ -345,8 +380,8 @@ function vTier(t) {
 }
 function evLabel(e) {
   if (e.typ === 'abkalbung') { const k = e.kalbId ? tierById(e.kalbId) : null; return ['Abkalbung', [k ? (k.geschlecht === 'm' ? '♂ ' : '♀ ') + (k.name || k.ohrmarke) : '', e.verlauf].filter(Boolean).join(' · ')]; }
-  if (e.typ === 'besamung') return ['Besamung', [e.art, e.stier].filter(Boolean).join(' · ')];
-  if (e.typ === 'brunst') return ['Brunst', e.notiz || ''];
+  if (e.typ === 'besamung') return ['Besamung', [e.stier, e.notiz].filter(Boolean).join(' · ')];
+  if (e.typ === 'brunst') return ['Brunst', [e.sicherheit, e.notiz].filter(Boolean).join(' · ')];
   return [e.typ, ''];
 }
 function vLaktation(t) {
@@ -378,7 +413,7 @@ function jahre(listen) { const s = new Set([String(new Date().getFullYear())]); 
 function jahrSel() { return `<select class="sel" data-act="jahr" aria-label="Jahr">${jahre([S.behandlungen, S.auslauf, S.feld]).map(j => `<option ${j === UI.jahr ? 'selected' : ''}>${j}</option>`).join('')}</select>`; }
 
 function vJournale() {
-  const tabs = `<div class="seg" style="margin:8px 0 12px">${[['behandlung', 'Behandlungsjournal'], ['auslauf', 'Auslaufjournal']].map(([v, l]) => `<button type="button" class="${UI.jTab === v ? 'on' : ''}" data-act="jtab" data-v="${v}">${l}</button>`).join('')}</div>`;
+  const tabs = `<div class="seg" style="margin:8px 0 12px">${[['auslauf', 'Auslaufjournal'], ['behandlung', 'Behandlungsjournal']].map(([v, l]) => `<button type="button" class="${UI.jTab === v ? 'on' : ''}" data-act="jtab" data-v="${v}">${l}</button>`).join('')}</div>`;
   if (UI.jTab === 'auslauf') return tabs + vAuslauf();
   const list = S.behandlungen.filter(b => (b.datum || '').startsWith(UI.jahr)).sort((a, b) => a.datum < b.datum ? 1 : -1);
   const offen = S.behandlungen.filter(b => b.freiAb && b.freiAb > today());
@@ -389,21 +424,25 @@ function vJournale() {
 }
 function auslaufPerioden() {
   const sl = sortedAuslauf();
-  return sl.map((a, i) => {
-    const nx = sl.slice(i + 1).find(b => (a.tierIds || []).every(id => (b.tierIds || []).includes(id)));
-    return { a, bis: nx ? nx.datum : null };
-  }).reverse();
+  return sl.map((a, i) => ({ a, bis: sl[i + 1] ? sl[i + 1].datum : null })).reverse();
+}
+function auslaufTage(J) {
+  const sl = sortedAuslauf(), out = [];
+  const end = J === String(new Date().getFullYear()) ? today() : `${J}-12-31`;
+  for (let d = `${J}-01-01`; d <= end; d = addDays(d, 1)) { const a = herdeAm(d, sl); if (a) out.push([d, a]); }
+  return out;
 }
 function vAuslauf() {
-  const d = today(), sl = sortedAuslauf(), tiere = aktiveTiere(), orte = {};
-  tiere.forEach(t => { const a = ortAm(t.id, d, sl); if (a) { const k = a.ort || a.typ; (orte[k] = orte[k] || { typ: a.typ, n: 0, seit: a.datum }).n++; } });
-  const per = auslaufPerioden().filter(p => p.a.datum.startsWith(UI.jahr) || (p.bis || '9999') >= UI.jahr + '-01-01' && p.a.datum <= UI.jahr + '-12-31');
-  return `<div class="sec-t">Heute</div><div class="list">${Object.keys(orte).length ? Object.entries(orte).map(([o, v]) => `<div class="row"><div class="main"><span class="t">${esc(o)}</span><span class="s">${esc(v.typ)} · seit ${fmt(v.seit)}</span></div><b>${v.n}</b></div>`).join('') : '<div class="empty">Noch kein Eintrag.</div>'}</div>
-  <div class="toolbar" style="margin-top:14px">${jahrSel()}<button class="btn pri" data-act="form" data-f="auslauf">+ Eintrag</button><button class="btn" data-act="pdf" data-p="auslaufJahr">PDF ${UI.jahr}</button></div>
+  const d = today(), tage = auslaufTage(UI.jahr), sum = {};
+  tage.forEach(([, a]) => sum[a.typ] = (sum[a.typ] || 0) + 1);
+  const per = auslaufPerioden().filter(p => p.a.datum <= UI.jahr + '-12-31' && (p.bis || '9999') >= UI.jahr + '-01-01');
+  const cell = (k) => `<span class="stat"><b>${sum[k] || 0}</b><span>${k}</span></span>`;
+  return `${herdeBanner()}
+  <div class="stats"><div class="stats-row four"><span class="stats-h">Tage ${UI.jahr}</span>${cell('Weide')}${cell('Laufhof')}${cell('Stall')}${cell('Alp')}</div></div>
+  <div class="toolbar">${jahrSel()}<button class="btn pri" data-act="form" data-f="auslauf">+ Eintrag</button><button class="btn" data-act="pdf" data-p="auslaufJahr">PDF ${UI.jahr}</button></div>
   <div class="toolbar"><input class="search" type="date" value="${d}" id="auslaufTag" aria-label="Tag" style="flex:0 1 180px"><button class="btn" data-act="pdf" data-p="auslaufTag">PDF Tag</button></div>
-  <div class="list">${per.length ? per.map(p => { const dauer = diff(p.a.datum, p.bis || d) + (p.bis ? 0 : 1); return `<button type="button" class="row" data-act="edit" data-c="auslauf" data-id="${p.a.id}"><div class="main"><span class="t">${esc(p.a.ort || p.a.typ)} <span class="pill ${p.a.typ === 'Stall' ? 'blue' : p.a.typ === 'Alp' ? 'warn' : ''}">${esc(p.a.typ)}</span></span><span class="s">${esc(tierListe(p.a.tierIds))}</span></div><div class="r">${fmt(p.a.datum)}<br><span class="small muted">${p.bis ? 'bis ' + fmtS(p.bis) + ' · ' : 'aktuell · '}${dauer} T.</span></div></button>`; }).join('') : '<div class="empty">Keine Einträge in diesem Jahr.</div>'}</div>`;
+  <div class="list">${per.length ? per.map(p => { const dauer = diff(p.a.datum, p.bis || addDays(d, 1)); return `<button type="button" class="row" data-act="edit" data-c="auslauf" data-id="${p.a.id}"><span class="av ${p.a.typ.toLowerCase()}">${esc(p.a.typ.slice(0, 1))}</span><div class="main"><span class="t">${esc(ortTxt(p.a))}</span><span class="s">${fmt(p.a.datum)} – ${p.bis ? fmt(addDays(p.bis, -1)) : 'heute'}</span></div><span class="r"><b>${dauer}</b> T.</span></button>`; }).join('') : '<div class="empty">Keine Einträge in diesem Jahr.</div>'}</div>`;
 }
-
 const FELD = {
   guellen: { l: 'Güllen', e: 'm³', g: 'austrag' }, misten: { l: 'Misten', e: 't', g: 'austrag' },
   heuen: { l: 'Heuen', e: 'Ballen', g: 'ernte' }, silieren: { l: 'Silieren', e: 'Ballen', g: 'ernte' },
@@ -440,13 +479,15 @@ function vSettings() {
   <label class="fld"><span>Kalb bis (Monate)</span><input name="kalbMonate" type="number" inputmode="numeric" value="${s.kalbMonate}"></label>
   <label class="fld"><span>Laktations-KPI ab (Monate)</span><input name="laktAbMonate" type="number" inputmode="numeric" value="${s.laktAbMonate}"></label>
   <label class="fld"><span>Status "Abgekalbt" während (Tage)</span><input name="abgekalbtTage" type="number" inputmode="numeric" value="${s.abgekalbtTage}"></label>
-  <label class="fld"><span>Alp von (MM-TT)</span><input name="alpVon" value="${esc(s.alpVon)}" placeholder="06-15"></label>
-  <label class="fld"><span>Alp bis (MM-TT)</span><input name="alpBis" value="${esc(s.alpBis)}" placeholder="09-15"></label>
+  <label class="fld"><span>Alp von (MM-TT)</span><input name="alpVon" value="${esc(s.alpVon)}" placeholder="05-25"></label>
+  <label class="fld"><span>Alp bis (MM-TT)</span><input name="alpBis" value="${esc(s.alpBis)}" placeholder="10-05"></label>
+  <label class="fld"><span>Tierliste: unbesamt markieren ab (Monate)</span><input name="unbesamtAb" type="number" inputmode="numeric" value="${s.unbesamtAb}"></label>
+  <label class="fld"><span>Tierliste: Abkalbung markieren (Tage vorher)</span><input name="baldTage" type="number" inputmode="numeric" value="${s.baldTage}"></label>
   <label class="fld"><span>Puffer Besamungsverbot (Tage)</span><input name="puffer" type="number" inputmode="numeric" value="${s.puffer}"></label>
   </div>
   <div class="sec-t">Listen (eine Zeile pro Eintrag)</div><div class="card form">
   <label class="fld"><span>Parzellen</span><textarea name="parzellen" rows="4">${esc((s.parzellen || []).join('\n'))}</textarea></label>
-  <label class="fld"><span>Weiden / Ställe</span><textarea name="orte" rows="4">${esc((s.orte || []).join('\n'))}</textarea></label>
+  <label class="fld"><span>Gründe Stall / Laufhof</span><textarea name="gruende" rows="4">${esc((s.gruende || []).join('\n'))}</textarea></label>
   <label class="fld"><span>Medikamente (Name ; Absetzfrist Tage)</span><textarea name="medikamente" rows="4" placeholder="Beispielpräparat ; 21">${esc((s.medikamente || []).map(m => `${m.name} ; ${m.frist}`).join('\n'))}</textarea></label>
   </div>
   <div class="sec-t">Lager</div><div class="card form">
@@ -469,7 +510,9 @@ const FORMS = {
     { k: 'geburt', l: 'Geburtsdatum', t: 'date', def: '' }, { k: 'zugang', l: 'Zugangsdatum (leer = Geburtsdatum)', t: 'date' },
     { k: 'mutterId', l: 'Mutter (falls im Bestand)', t: 'tier', opt: true, filter: t => t.geschlecht === 'w' },
     { k: 'mutterName', l: 'Mutter (Name, falls nicht im Bestand)', t: 'text' },
-    { k: 'rasse', l: 'Rasse', t: 'tag', list: rassen }, { k: 'notiz', l: 'Notiz', t: 'textarea' }],
+    { k: 'rasse', l: 'Rasse', t: 'tag', list: rassen },
+    { k: 'gekalbert', l: 'Schon gekalbert (vor hofbuech)', t: 'seg', o: [['nein', 'nein'], ['ja', 'ja']], def: 'nein', show: v => v.geschlecht === 'w' },
+    { k: 'notiz', l: 'Notiz', t: 'textarea' }],
     more: true },
   tiere: null,
   abgang: { t: 'Abgang', fields: [
@@ -493,22 +536,25 @@ const FORMS = {
     { k: 'tierId', l: 'Mutter', t: 'tier', filter: t => t.geschlecht === 'w' }, { k: 'datum', l: 'Datum', t: 'date' },
     { k: 'verlauf', l: 'Verlauf', t: 'seg', o: [['leicht', 'leicht'], ['mittel', 'mittel'], ['schwer', 'schwer'], ['Kaiserschnitt', 'Kaiserschnitt']] },
     { k: 'notiz', l: 'Notiz', t: 'textarea' }] },
-  brunst: { t: 'Brunst', coll: 'ereignisse', multi: true, fields: [
-    { k: 'tierIds', l: 'Tiere', t: 'tiere', filter: t => lakt(t) || (t.geschlecht === 'w' && kategorie(t) !== 'Kalb') },
-    { k: 'datum', l: 'Datum', t: 'date' }, { k: 'notiz', l: 'Notiz', t: 'textarea' }] },
-  besamung: { t: 'Besamung', coll: 'ereignisse', multi: true, fields: [
-    { k: 'tierIds', l: 'Tiere', t: 'tiere', filter: t => lakt(t) || (t.geschlecht === 'w' && kategorie(t) !== 'Kalb') },
+  brunst: { t: 'Brunst', coll: 'ereignisse', fields: [
+    { k: 'tierId', l: 'Tier', t: 'tier', filter: t => t.geschlecht === 'w' && kategorie(t) !== 'Kalb' },
     { k: 'datum', l: 'Datum', t: 'date' },
-    { k: 'art', l: 'Art', t: 'seg', o: [['KB', 'KB'], ['Natursprung', 'Natursprung']], def: 'KB' },
-    { k: 'stier', l: 'Stier / Samen', t: 'text', list: () => [...new Set(S.ereignisse.filter(e => e.stier).map(e => e.stier))] },
+    { k: 'sicherheit', l: 'Sicherheit', t: 'seg', o: [['unsicher', 'unsicher'], ['normal', 'normal'], ['sehr sicher', 'sehr sicher']], def: 'normal' },
     { k: 'notiz', l: 'Notiz', t: 'textarea' }],
-    calc: v => v.datum ? `Erwartete Abkalbung: <b>${fmt(addDays(v.datum, S.set.tragzeit))}</b>${inAlp(addDays(v.datum, S.set.tragzeit)) ? ' <span class="pill red">während Alp!</span>' : ''}` : '' },
+    calc: v => v.datum ? `Nächste Brunst ca. <b>${fmt(addDays(v.datum, 21))}</b>${imVerbot(v.datum) ? ' <span class="pill red">Besamungsverbot</span>' : ''}` : '' },
+  besamung: { t: 'Besamung', coll: 'ereignisse', fields: [
+    { k: 'tierId', l: 'Tier', t: 'tier', filter: t => t.geschlecht === 'w' && kategorie(t) !== 'Kalb' },
+    { k: 'datum', l: 'Datum', t: 'date' },
+    { k: 'stier', l: 'Stier', t: 'tag', list: () => [...new Set(S.ereignisse.filter(e => e.stier).map(e => e.stier))] },
+    { k: 'notiz', l: 'Notiz', t: 'textarea' }],
+    calc: v => v.datum ? `Brunstkontrolle <b>${fmt(addDays(v.datum, 21))}</b> · Abkalbung ca. <b>${fmt(addDays(v.datum, S.set.tragzeit))}</b>${inAlp(addDays(v.datum, S.set.tragzeit)) ? ' <span class="pill red">während Alp!</span>' : ''}` : '' },
   auslauf: { t: 'Auslaufjournal', coll: 'auslauf', fields: [
-    { k: 'tierIds', l: 'Tiere', t: 'tiere', allDefault: true },
-    { k: 'datum', l: 'Ab Datum', t: 'date' }, { k: 'zeit', l: 'Zeit (optional)', t: 'time' },
-    { k: 'typ', l: 'Wo', t: 'seg', o: [['Weide', 'Weide'], ['Stall', 'Stall'], ['Alp', 'Alp']], def: 'Weide' },
-    { k: 'ort', l: 'Weide / Stall', t: 'text', list: () => S.set.orte || [] }, { k: 'notiz', l: 'Notiz', t: 'textarea' }],
-    hint: 'Gilt ab diesem Datum bis zum nächsten Eintrag für dieselben Tiere.' },
+    { k: 'datum', l: 'Ab Datum', t: 'date' },
+    { k: 'typ', l: 'Wo (alle Tiere)', t: 'seg', o: [['Weide', 'Weide'], ['Laufhof', 'Laufhof'], ['Stall', 'Stall'], ['Alp', 'Alp']], def: 'Weide' },
+    { k: 'parzelle', l: 'Parzelle', t: 'tag', list: parzellen, show: v => v.typ === 'Weide' },
+    { k: 'grund', l: 'Grund', t: 'tag', list: gruende, show: v => v.typ === 'Stall' || v.typ === 'Laufhof' },
+    { k: 'notiz', l: 'Notiz', t: 'textarea' }],
+    hint: 'Gilt für alle Tiere ab diesem Datum bis zum nächsten Eintrag.' },
   behandlung: { t: 'Behandlung', coll: 'behandlungen', fields: [
     { k: 'tierIds', l: 'Tiere', t: 'tiere' }, { k: 'datum', l: 'Datum', t: 'date' },
     { k: 'grund', l: 'Grund / Diagnose', t: 'text' },
@@ -523,7 +569,7 @@ const FORMS = {
 for (const [k, d] of Object.entries(FELD)) {
   FORMS[k] = { t: d.l, coll: 'feld', typ: k, fields: [
     { k: 'datum', l: 'Datum', t: 'date' },
-    ...(d.g === 'lager' ? [{ k: 'zweck', l: 'Zweck', t: 'text', def: 'Fütterung', list: () => ['Fütterung', 'Verkauf', 'Einstreu'] }] : [{ k: 'parzelle', l: 'Parzelle', t: 'text', list: () => S.set.parzellen || [] }]),
+    ...(d.g === 'lager' ? [{ k: 'zweck', l: 'Zweck', t: 'text', def: 'Fütterung', list: () => ['Fütterung', 'Verkauf', 'Einstreu'] }] : [{ k: 'parzelle', l: 'Parzelle', t: 'tag', list: parzellen }]),
     { k: 'menge', l: `Menge (${d.e})`, t: 'number' }, { k: 'notiz', l: 'Notiz', t: 'textarea' }],
     calc: v => { if (d.g === 'austrag') return ''; const L = lager(); const cur = k === 'heuen' || k === 'bezugHeu' ? L.heu : L.silo; const sign = d.g === 'lager' ? -1 : 1; return `Lager ${k.includes('eu') || k === 'heuen' ? 'Heu' : 'Silage'}: ${nf(cur)} → <b>${nf(cur + sign * num(v.menge))}</b> Ballen`; } };
 }
@@ -590,7 +636,7 @@ function openForm(key, rec = null, pre = {}) {
   if (rec) { Object.assign(v, rec); if (def.multi && rec.tierId) v.tierIds = [rec.tierId]; }
   if (pre.tier) { if ('tierIds' in v) v.tierIds = [pre.tier]; if ('tierId' in v) v.tierId = pre.tier; }
   if (key === 'tiere' || key === 'zugang') { if (!rec) { v.geburt = ''; v.zugang = ''; } }
-  const body = `${def.hint ? `<div class="note blue small" style="margin-bottom:14px">${def.hint}</div>` : ''}<form class="form" data-form>${def.fields.map(f => fieldHtml(f, v)).join('')}<div class="calc" data-calc></div>
+  const body = `${def.hint ? `<div class="note blue small" style="margin-bottom:14px">${def.hint}</div>` : ''}<form class="form" data-form>${def.fields.map(f => `<div data-fk="${f.k}">${fieldHtml(f, v)}</div>`).join('')}<div class="calc" data-calc></div>
   ${def.more && !isEdit ? '<button type="button" class="btn block" data-more>Sichern + nächstes Tier</button>' : ''}</form>`;
   const sh = openSheet(def.t, body, {
     onSave: () => doSave(false),
@@ -611,7 +657,7 @@ function openForm(key, rec = null, pre = {}) {
     });
     return o;
   };
-  const upd = () => { const c = $('[data-calc]', form); if (def.calc) c.innerHTML = def.calc(read()); $$('[data-cnt]', form).forEach(el => el.textContent = `(${$$(`[data-picker="${el.dataset.cnt}"] .chip.on`, form).length} gewählt)`); };
+  const upd = () => { const cur = read(); def.fields.forEach(f => { if (f.show) $(`[data-fk="${f.k}"]`, form).classList.toggle('hidden', !f.show(cur)); }); const c = $('[data-calc]', form); if (def.calc) c.innerHTML = def.calc(read()); $$('[data-cnt]', form).forEach(el => el.textContent = `(${$$(`[data-picker="${el.dataset.cnt}"] .chip.on`, form).length} gewählt)`); };
   form.addEventListener('input', e => {
     form.dataset.dirty = '1';
     if (e.target.name && e.target.name.endsWith('__neu')) $$('.chip', e.target.closest('[data-tag]')).forEach(c => c.classList.remove('on'));
@@ -622,7 +668,7 @@ function openForm(key, rec = null, pre = {}) {
   });
   form.addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
-    if (b.closest('[data-tag]')) { const on = b.classList.contains('on'); $$('.chip', b.closest('[data-tag]')).forEach(c => c.classList.remove('on')); if (!on) b.classList.add('on'); const n = b.closest('[data-tag]').querySelector('input'); if (n) n.value = ''; form.dataset.dirty = '1'; return; }
+    if (b.closest('[data-tag]')) { const on = b.classList.contains('on'); $$('.chip', b.closest('[data-tag]')).forEach(c => c.classList.remove('on')); if (!on) b.classList.add('on'); const n = b.closest('[data-tag]').querySelector('input'); if (n) n.value = ''; form.dataset.dirty = '1'; upd(); return; }
     if (b.closest('[data-picker]')) { b.classList.toggle('on'); form.dataset.dirty = '1'; upd(); }
     if (b.dataset.all) { $$(`[data-picker="${b.dataset.all}"] .chip`, form).forEach(c => c.classList.add('on')); upd(); }
     if (b.dataset.none) { $$(`[data-picker="${b.dataset.none}"] .chip`, form).forEach(c => c.classList.remove('on')); upd(); }
@@ -637,6 +683,7 @@ function openForm(key, rec = null, pre = {}) {
     if ('tierId' in o && !o.tierId && !def.fields.find(f => f.k === 'tierId').opt) return toast('Tier wählen');
     if ((key === 'zugang' || key === 'tiere') && !o.name && !o.ohrmarke) return toast('Name oder Ohrmarke fehlt');
     if (key === 'zugang' || key === 'tiere') { if (!o.zugang) o.zugang = o.geburt; if (!o.zugang) return toast('Geburts- oder Zugangsdatum fehlt'); }
+    def.fields.forEach(f => { if (f.show && !f.show(o)) o[f.k] = ''; });
     if (def.prep) def.prep(o);
     if (def.save && !isEdit) def.save(o);
     else if (def.multi) {
@@ -704,21 +751,18 @@ async function pdf(p, id) {
     ], p === 'behTier' ? `Behandlungen_${tName(id)}.pdf` : `Behandlungsjournal_${J}.pdf`, true);
   }
   if (p === 'auslaufTag') {
-    const d = ($('#auslaufTag') || {}).value || today(); const sl = sortedAuslauf();
-    const body = aktiveTiere(d).map(t => { const a = ortAm(t.id, d, sl); return [t.name || '', t.ohrmarke || '', a ? a.typ : '-', a ? (a.ort || '') : '', a ? fmt(a.datum) : '']; });
-    await makePdf(`Auslaufjournal ${fmt(d)}`, `Tag ${fmt(d)}`, [{ head: ['Tier', 'Ohrmarke', 'Wo', 'Weide / Stall', 'seit'], body }], `Auslauf_${d}.pdf`);
+    const d = ($('#auslaufTag') || {}).value || today(); const a = herdeAm(d);
+    await makePdf(`Auslaufjournal ${fmt(d)}`, `Tag ${fmt(d)} · ${ortTxt(a)}`, [
+      { h: 'Herde', head: ['Datum', 'Wo', 'Parzelle / Grund', 'seit'], body: [[fmt(d), a ? a.typ : '-', a ? (a.parzelle || a.grund || a.ort || '') : '', a ? fmt(a.datum) : '']] },
+      { h: 'Tiere (alle)', head: ['Tier', 'Ohrmarke', 'Kategorie'], body: aktiveTiere(d).map(t => [t.name || '', t.ohrmarke || '', kategorie(t, d)]) }
+    ], `Auslauf_${d}.pdf`);
   }
   if (p === 'auslaufJahr') {
-    const sl = sortedAuslauf(); const body = []; const tage = {};
-    const end = J === String(new Date().getFullYear()) ? today() : `${J}-12-31`;
-    for (let d = `${J}-01-01`; d <= end; d = addDays(d, 1)) {
-      const g = {};
-      aktiveTiere(d).forEach(t => { const a = ortAm(t.id, d, sl); if (!a) return; const k = a.typ + '|' + (a.ort || ''); (g[k] = g[k] || []).push(t.name || t.ohrmarke); });
-      Object.entries(g).forEach(([k, names]) => { const [typ, ort] = k.split('|'); body.push([fmt(d), typ, ort, names.length, names.length > 8 ? '' : names.join(', ')]); tage[k] = (tage[k] || 0) + 1; });
-    }
-    await makePdf(`Auslaufjournal ${J}`, `Jahr ${J}`, [
-      { h: 'Zusammenfassung', head: ['Wo', 'Weide / Stall', 'Tage'], body: Object.entries(tage).map(([k, n]) => { const [a, b] = k.split('|'); return [a, b, n]; }) },
-      { h: 'Pro Tag', head: ['Datum', 'Wo', 'Weide / Stall', 'Anzahl', 'Tiere'], body }
+    const tage = auslaufTage(J), sum = {};
+    const body = tage.map(([d, a]) => { const k = a.typ + '|' + (a.parzelle || a.grund || ''); sum[k] = (sum[k] || 0) + 1; return [fmt(d), a.typ, a.parzelle || a.grund || '', aktiveTiere(d).length]; });
+    await makePdf(`Auslaufjournal ${J}`, `Jahr ${J} · alle Tiere`, [
+      { h: 'Zusammenfassung', head: ['Wo', 'Parzelle / Grund', 'Tage'], body: Object.entries(sum).sort().map(([k, n]) => { const [a, b] = k.split('|'); return [a, b, n]; }) },
+      { h: 'Pro Tag', head: ['Datum', 'Wo', 'Parzelle / Grund', 'Anzahl Tiere'], body }
     ], `Auslaufjournal_${J}.pdf`);
   }
   if (p === 'feld') {
@@ -822,8 +866,8 @@ document.addEventListener('submit', e => {
   W.setSettings({
     ...S.set, hofname: f.hofname.value.trim(),
     tragzeit: num(f.tragzeit.value) || 285, kalbMonate: num(f.kalbMonate.value) || 12, laktAbMonate: num(f.laktAbMonate.value) || 16,
-    abgekalbtTage: num(f.abgekalbtTage.value) || 60, alpVon: f.alpVon.value.trim() || '06-15', alpBis: f.alpBis.value.trim() || '09-15', puffer: num(f.puffer.value),
-    parzellen: lines(f.parzellen.value), orte: lines(f.orte.value),
+    abgekalbtTage: num(f.abgekalbtTage.value) || 60, alpVon: f.alpVon.value.trim() || '06-15', alpBis: f.alpBis.value.trim() || '09-15', puffer: num(f.puffer.value), unbesamtAb: num(f.unbesamtAb.value) || 16, baldTage: num(f.baldTage.value) || 30,
+    parzellen: lines(f.parzellen.value), gruende: lines(f.gruende.value),
     medikamente: lines(f.medikamente.value).map(l => { const [n, d] = l.split(';'); return { name: n.trim(), frist: num(d) }; }),
     startHeu: num(f.startHeu.value), startSilo: num(f.startSilo.value)
   });
