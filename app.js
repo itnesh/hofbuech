@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.12.0';
+const VERSION = '1.12.1';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -643,14 +643,14 @@ function svgBars(series, labels, colors, h = 150) {
   return `<svg viewBox="0 0 ${W} ${h}" width="100%" role="img" aria-label="Diagramm">${g}</svg>`;
 }
 const CHARTS = {};
-function svgLines(series, labels, colors, h = 150, tips = null, dyn = false) {
+function svgLines(series, labels, colors, h = 150, tips = null, dyn = false, alle = false) {
   const W = 340, pad = 26, n = labels.length, all = series.flat().filter(v => v !== null && v !== undefined);
   let mx = Math.max(1, ...all), mn = Math.min(0, ...all);
   if (dyn && all.length) { const a = Math.min(...all), b = Math.max(...all), p = Math.max(1, (b - a) * 0.12); mn = Math.max(0, Math.floor(a - p)); mx = Math.min(100, Math.ceil(b + p)); if (mx - mn < 4) { mn = Math.max(0, mn - 2); mx = mn + 4; } }
   const x = i => pad + i * (W - pad - 6) / Math.max(1, n - 1), y = v => 8 + (mx - v) / (mx - mn || 1) * (h - 30);
   let g = `<line x1="${pad}" x2="${W}" y1="${y(mn > 0 ? mn : 0)}" y2="${y(mn > 0 ? mn : 0)}" stroke="#E2E4DF"/><text x="0" y="12" font-size="9" fill="#5F6862">${nf(mx)}</text>${mn !== 0 || dyn ? `<text x="0" y="${y(mn) - 2}" font-size="9" fill="#5F6862">${nf(mn)}</text>` : ''}`;
   series.forEach((s, k) => { g += `<polyline fill="none" stroke="${colors[k]}" stroke-width="2.2" stroke-linejoin="round" points="${s.map((v, i) => v === null || v === undefined ? '' : `${x(i)},${y(v)}`).filter(Boolean).join(' ')}"/>`; });
-  labels.forEach((l, i) => { if (i % Math.ceil(n / 8) === 0) g += `<text x="${x(i)}" y="${h - 4}" font-size="9" text-anchor="middle" fill="#5F6862">${l}</text>`; });
+  labels.forEach((l, i) => { if (alle || i % Math.ceil(n / 8) === 0) g += `<text x="${x(i)}" y="${h - 4}" font-size="9" text-anchor="middle" fill="#5F6862">${l}</text>`; });
   const id = 'c' + Math.random().toString(36).slice(2, 8);
   CHARTS[id] = { n, W, pad, h, tips: tips || labels.map((l, i) => `${l}: ${series.map(s => s[i] === null || s[i] === undefined ? '-' : nf(s[i])).join(' / ')}`), ys: series.map(s => s.map(v => v === null || v === undefined ? null : y(v))), colors };
   g += `<line class="cur" x1="-10" x2="-10" y1="4" y2="${h - 16}" stroke="#16201B" stroke-width="1" stroke-dasharray="3 3"/><g class="dots"></g>`;
@@ -691,7 +691,7 @@ function anaLager() {
   <div class="list" style="margin-top:8px">${[['Heu', L.heu], ['Silage', L.silo], ['Stroh', L.stroh]].map(([w, v]) => `<div class="row one"><i class="bar green"></i><div class="main"><span class="t1"><span class="hd">${w}</span> <span class="ex">${esc(reichweite(w, v))}</span></span></div><small class="rt">${nf(verbrauchProTag(w) * 7)}/Woche</small></div>`).join('')}</div>
   <div class="btns" style="margin:10px 0"><button class="btn" data-act="form" data-f="verbrauch">+ Verbrauch</button><button class="btn" data-act="form" data-f="kauf">+ Kauf</button><button class="btn" data-act="form" data-f="ernte">+ Ernte</button></div>
   <div class="sec-t">Verlauf 24 Monate</div>
-  <div class="card">${svgLines([H, Si, St], mons.map(m => MON[+m.slice(5, 7) - 1]), cols, 150, mons.map((m, i) => `Ende ${ML[+m.slice(5, 7) - 1]} ${m.slice(0, 4)}: Heu ${nf(H[i])} · Silage ${nf(Si[i])} · Stroh ${nf(St[i])}`))}<div class="legend"><span><i class="sw" style="background:${cols[0]}"></i>Heu</span><span><i class="sw" style="background:${cols[1]}"></i>Silage</span><span><i class="sw" style="background:${cols[2]}"></i>Stroh</span></div></div>
+  <div class="card">${svgLines([H, Si, St], mons.map(m => MON[+m.slice(5, 7) - 1].slice(0, 1)), cols, 150, mons.map((m, i) => `Ende ${ML[+m.slice(5, 7) - 1]} ${m.slice(0, 4)}: Heu ${nf(H[i])} · Silage ${nf(Si[i])} · Stroh ${nf(St[i])}`), false, true)}<div class="legend"><span><i class="sw" style="background:${cols[0]}"></i>Heu</span><span><i class="sw" style="background:${cols[1]}"></i>Silage</span><span><i class="sw" style="background:${cols[2]}"></i>Stroh</span></div></div>
   <p class="small muted" style="margin:6px 4px">Reichweite = aktueller Bestand geteilt durch den Ø Verbrauch der letzten 90 Tage.</p>`;
 }
 function anaAuslaufChart() {
@@ -816,7 +816,7 @@ function agroKarte(a) {
   const leg = `<div class="legend"><span><i class="sw" style="background:${cols[0]}"></i>${a.jahr || 'Aktuell'}</span><span><i class="sw" style="background:${cols[1]}"></i>Vorjahr</span><span><i class="sw" style="background:${cols[2]}"></i>Ø seit ${a.seit || '2004'}</span></div>`;
   const cum = arr => { let t = 0; return arr.map(v => v === null || v === undefined ? null : Math.round((t += v) * 10) / 10); };
   const FM = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
-  const L = (ser, u) => svgLines(ser, ML, cols, 130, FM.map((m, i) => `${m}: ${ser.map((x, k) => (['Aktuell', 'Vorjahr', 'Ø'][k]) + ' ' + (x[i] === null || x[i] === undefined ? '-' : nf(x[i]))).join(' · ')} ${u}`));
+  const L = (ser, u) => svgLines(ser, ML, cols, 130, FM.map((m, i) => `${m}: ${ser.map((x, k) => (['Aktuell', 'Vorjahr', 'Ø'][k]) + ' ' + (x[i] === null || x[i] === undefined ? '-' : nf(x[i]))).join(' · ')} ${u}`), false, true);
   return `<div class="sec-t">Agrometeo (Station ${esc(a.station || '')})</div>
   ${a.regen ? `<div class="card"><div class="small muted">Niederschlag pro Monat (mm)</div>${L([a.regen.akt, a.regen.vor, a.regen.avg], 'mm')}${leg}</div>
   <div class="card"><div class="small muted">Niederschlag kumuliert (mm)</div>${L([cum(a.regen.akt), cum(a.regen.vor), cum(a.regen.avg)], 'mm')}${leg}</div>` : ''}
@@ -1311,11 +1311,12 @@ document.addEventListener('change', e => {
     const f = e.target.files[0]; if (!f) return;
     f.text().then(t => {
       const d = JSON.parse(t);
-      if (!confirm(`Backup vom ${d.exportiert || '?'} einlesen? Bestehende Einträge mit gleicher ID werden überschrieben.`)) return;
+      if (!confirm(`${d.exportiert || 'Backup'} einlesen? Bestehende Einträge mit gleicher ID werden überschrieben.${(d.ersetzen || []).map(r => `\n${r.coll}: alle Einträge ${fmt(r.von)} - ${fmt(r.bis)} werden ersetzt.`).join('')}`)) return;
       const byOM = om => S.tiere.find(t => normOM(t.ohrmarke) === normOM(om));
       (d.tierUpdates || []).forEach(u => { const t = byOM(u.ohrmarke); if (!t) return; const x = { ...t, ...u.set }; if (u.mutterOM) { const m = byOM(u.mutterOM); if (m) x.mutterId = m.id; } put('tiere', x); });
       (d.ereignisse || []).forEach(e => { if (e.tierOM) { const t = byOM(e.tierOM); if (!t) return; e.tierId = t.id; delete e.tierOM; } if (e.kalbOM) { const k = byOM(e.kalbOM); if (k) e.kalbId = k.id; } });
       d.ereignisse = (d.ereignisse || []).filter(e => e.tierId);
+      (d.ersetzen || []).forEach(r => { if (!COLLS.includes(r.coll)) return; S[r.coll].filter(x => x.datum >= r.von && x.datum <= r.bis).forEach(x => W.del(r.coll, x.id)); });
       COLLS.forEach(c => (d[c] || []).forEach(o => W.put(c, o)));
       if (d.set) W.setSettings(d.set);
       toast('Backup eingelesen');
