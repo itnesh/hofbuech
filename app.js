@@ -127,7 +127,7 @@ function put(c, o) { o.id = o.id || uid(); o.geaendert = Date.now(); W.put(c, o)
 function del(c, id) { W.del(c, id); }
 
 /* ---------- Fachlogik ---------- */
-const parzellen = () => [...new Set([...S.parzellen.map(x => x.name), ...(S.set.parzellen || []), ...S.feld.map(f => f.parzelle), ...S.auslauf.map(a => a.parzelle)].filter(Boolean))];
+const parzellen = () => S.parzellen.map(x => x.name).filter(Boolean).sort((a, b) => a.localeCompare(b, 'de', { numeric: true }));
 const gruende = () => [...new Set([...(S.set.gruende || []), ...S.auslauf.map(a => a.grund)].filter(Boolean))];
 const rassen = () => [...new Set(S.tiere.map(t => (t.rasse || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'de'));
 const tierById = id => S.tiere.find(t => t.id === id);
@@ -774,7 +774,7 @@ function vSettings() {
   ${grp('hof', 'Hof', s.hofname || '', fld('hofname', 'Hofname', s.hofname) + numf('lat', 'Wetter: Breitengrad', s.lat) + numf('lon', 'Wetter: Längengrad', s.lon))}
   ${grp('zucht', 'Zucht & Alp', `Tragzeit ${s.tragzeit} T. · Alp ${s.alpVon} bis ${s.alpBis}`, numf('tragzeit', 'Tragzeit (Tage)', s.tragzeit) + numf('kalbMonate', 'Kalb bis (Monate)', s.kalbMonate) + numf('laktAbMonate', 'Laktations-KPI ab (Monate)', s.laktAbMonate) + numf('abgekalbtTage', 'Status "Abgekalbt" während (Tage)', s.abgekalbtTage) + fld('alpVon', 'Alp von, Schätzung (MM-TT)', s.alpVon, 'placeholder="05-25"') + fld('alpBis', 'Alp bis, Schätzung (MM-TT)', s.alpBis, 'placeholder="10-05"') + numf('puffer', 'Puffer Besamungsverbot (Tage)', s.puffer))}
   ${grp('liste', 'Tierliste', `unbesamt ab ${s.unbesamtAb} Mt. · Abkalbung ${s.baldTage} T.`, numf('unbesamtAb', 'Unbesamt markieren ab (Monate)', s.unbesamtAb) + numf('baldTage', 'Abkalbung markieren (Tage vorher)', s.baldTage))}
-  ${grp('listen', 'Auswahllisten', 'Gründe, Medikamente, Parzellen', ta('gruende', 'Gründe Stall / Laufhof', (s.gruende || []).join('\n')) + ta('medikamente', 'Medikamente (Name ; Absetzfrist Tage)', (s.medikamente || []).map(m => `${m.name} ; ${m.frist}`).join('\n'), 'Beispielpräparat ; 21') + ta('parzellen', 'Weitere Parzellen-Namen (ohne Details)', (s.parzellen || []).join('\n')))}
+  ${grp('listen', 'Auswahllisten', 'Gründe, Medikamente', ta('gruende', 'Gründe Stall / Laufhof', (s.gruende || []).join('\n')) + ta('medikamente', 'Medikamente (Name ; Absetzfrist Tage)', (s.medikamente || []).map(m => `${m.name} ; ${m.frist}`).join('\n'), 'Beispielpräparat ; 21'))}
   ${grp('lager', 'Lager', `Heu ${nf(num(s.startHeu))} · Silage ${nf(num(s.startSilo))} · Stroh ${nf(num(s.startStroh))}`, numf('startHeu', 'Startbestand Heuballen', s.startHeu) + numf('startSilo', 'Startbestand Silageballen', s.startSilo) + numf('startStroh', 'Startbestand Strohballen', s.startStroh))}
   ${grp('sensoren', 'Sensoren & Wetterdaten', s.akenzaKey ? 'akenza verbunden' : 'nicht verbunden', `<p class="small muted" style="margin:0">Die Daten lädt ein Hintergrund-Job stündlich (Agrometeo täglich) in hofbuech. Schlüssel und Passwort liegen nur in deiner Datenbank, nicht im Code.</p>` + fld('akenzaKey', 'akenza API-Key (x-api-key)', s.akenzaKey, 'type="password" autocomplete="off"') + fld('sensWasser', 'Gerät Wasserstand (akenza Device-ID)', s.sensWasser ?? '02bdf0b1b64b4c40') + fld('sensFass', 'Gerät Tränkefass (akenza Device-ID)', s.sensFass ?? '029412d5966ce1d4') + fld('fassLeer', 'Tränkefass: Abstand bei leer (cm)', s.fassLeer, 'inputmode="decimal"') + fld('fassVoll', 'Tränkefass: Abstand bei voll (cm)', s.fassVoll, 'inputmode="decimal"') + fld('wasserLeer', 'Wasserstand: Abstand bei leer (cm)', s.wasserLeer, 'inputmode="decimal"') + fld('wasserVoll', 'Wasserstand: Abstand bei voll (cm)', s.wasserVoll, 'inputmode="decimal"') + fld('agroUser', 'Agrometeo / vitimeteo Benutzer', s.agroUser ?? 'erdinmatthias') + fld('agroPass', 'Agrometeo / vitimeteo Passwort', s.agroPass, 'type="password" autocomplete="off"') + fld('agroStation', 'Agrometeo Station', s.agroStation ?? '177') + fld('grafanaUrl', 'Grafana-Link zum Einbetten (optional)', s.grafanaUrl, 'placeholder="https://..."'))}
   <button class="btn pri block" type="submit" style="margin-top:6px">Einstellungen speichern</button>
@@ -836,7 +836,7 @@ const FORMS = {
     { k: 'datum', l: 'Ab Datum', t: 'date' },
     { k: 'bis', l: 'Bis Datum', t: 'date', def: '' },
     { k: 'typ', l: 'Wo (alle Tiere)', t: 'seg', o: [['Weide', 'Weide'], ['Laufhof', 'Laufhof'], ['Alp', 'Alp']], def: 'Weide' },
-    { k: 'parzelle', l: 'Parzelle', t: 'tag', list: parzellen, show: v => v.typ === 'Weide' },
+    { k: 'parzelle', l: 'Parzelle', t: 'tag', fixed: true, list: parzellen, show: v => v.typ === 'Weide' },
     { k: 'grund', l: 'Grund', t: 'tag', list: gruende, show: v => v.typ === 'Laufhof' },
     { k: 'notiz', l: 'Notiz', t: 'textarea' }],
     hint: 'Gilt für alle Tiere ab diesem Datum und läuft automatisch jeden Tag weiter, bis zum nächsten Eintrag. Mit "Bis" wird nur dieser Zeitraum gesetzt, danach gilt wieder der vorherige Zustand.',
@@ -865,7 +865,7 @@ const FORMS = {
 for (const [k, d] of Object.entries(FELD)) {
   FORMS[k] = { t: d.l, coll: 'feld', typ: k, fields: [
     { k: 'datum', l: 'Datum', t: 'date' },
-    ...(d.g === 'lager' ? [{ k: 'zweck', l: 'Zweck', t: 'text', def: 'Fütterung', list: () => ['Fütterung', 'Verkauf', 'Einstreu'] }] : [{ k: 'parzelle', l: 'Parzelle', t: 'tag', list: parzellen }]),
+    ...(d.g === 'lager' ? [{ k: 'zweck', l: 'Zweck', t: 'text', def: 'Fütterung', list: () => ['Fütterung', 'Verkauf', 'Einstreu'] }] : [{ k: 'parzelle', l: 'Parzelle', t: 'tag', fixed: true, list: parzellen }]),
     { k: 'menge', l: `Menge (${d.e})`, t: 'number' }, { k: 'notiz', l: 'Notiz', t: 'textarea' }],
     calc: v => { const w = feldWarnung(k, v.parzelle, v.datum); if (d.g === 'austrag') return w; const L = lager(); const cur = k === 'heuen' || k === 'bezugHeu' ? L.heu : k === 'stroh' || k === 'bezugStroh' ? L.stroh : L.silo; const sign = d.g === 'lager' ? -1 : 1; return `Lager ${k === 'heuen' || k === 'bezugHeu' ? 'Heu' : k === 'stroh' || k === 'bezugStroh' ? 'Stroh' : 'Silage'}: ${nf(cur)} → <b>${nf(cur + sign * num(v.menge))}</b> Ballen` + w; } };
 }
@@ -875,7 +875,7 @@ FORMS.lobjekt = { t: 'Labiola-Objekt', coll: 'labiola', prep: v => { v.szp = mmt
   { k: 'typ', l: 'Typ', t: 'tag', list: () => [...new Set(S.labiola.map(o => o.typ).filter(Boolean))] },
   { k: 'aren', l: 'Aren / Einheiten', t: 'number' }, { k: 'szp', l: 'Schnittzeitpunkt SZP (TT.MM.)', t: 'text', ph: '15.06.' },
   { k: 'duengen', l: 'Düngung erlaubt', t: 'seg', o: [['nein', 'nein'], ['ja', 'ja']], def: 'nein' },
-  { k: 'parzelle', l: 'Liegt auf Parzelle', t: 'tag', list: parzellen },
+  { k: 'parzelle', l: 'Liegt auf Parzelle', t: 'tag', fixed: true, list: parzellen },
   { k: 'massnahmen', l: 'Massnahmen / Bemerkung', t: 'textarea' }, { k: 'beitrag', l: 'Beitrag CHF/Jahr', t: 'number' }] };
 FORMS.aufgabe = { t: 'Labiola-Pendenz', coll: 'aufgaben', prep: v => { v.faelligMT = mmtt(v.faelligMT); v.abMT = mmtt(v.abMT); }, fields: [
   { k: 'titel', l: 'Aufgabe', t: 'text' }, { k: 'objekt', l: 'Objekt', t: 'tag', list: () => S.labiola.map(o => `Obj. ${o.nr}`) },
@@ -941,8 +941,8 @@ function fieldHtml(f, v) {
   const dl = f.list ? `<datalist id="dl_${f.k}">${f.list().map(o => `<option value="${esc(o)}">`).join('')}</datalist>` : '';
   if (f.t === 'seg') return `<div class="fld"><span>${f.l}</span><div class="seg" role="radiogroup">${f.o.map(([ov, ol]) => `<label><input type="radio" name="${f.k}" value="${esc(ov)}" ${String(val) === ov ? 'checked' : ''}>${esc(ol)}</label>`).join('')}</div></div>`;
   if (f.t === 'tag') {
-    const opts = f.list(); if (val && !opts.includes(val)) opts.push(val);
-    return `<div class="fld"><span>${f.l}</span><div class="chips" data-tag="${f.k}">${opts.map(o => `<button type="button" class="chip ${o === val ? 'on' : ''}" data-v="${esc(o)}">${esc(o)}</button>`).join('')}<input name="${f.k}__neu" placeholder="${opts.length ? '+ neu' : 'eingeben'}" autocomplete="off" style="flex:1 1 120px;min-height:36px;border:1px dashed #8A918C;border-radius:99px;padding:0 12px;background:transparent;font-size:14px"></div></div>`;
+    const opts = f.list(); if (val && !opts.includes(val) && !f.fixed) opts.push(val);
+    return `<div class="fld"><span>${f.l}</span><div class="chips" data-tag="${f.k}">${opts.map(o => `<button type="button" class="chip ${o === val ? 'on' : ''}" data-v="${esc(o)}">${esc(o)}</button>`).join('')}${f.fixed ? (opts.length ? '' : '<span class="small muted">Zuerst unter Labiola > Parzellen erfassen.</span>') : `<input name="${f.k}__neu" placeholder="${opts.length ? '+ neu' : 'eingeben'}" autocomplete="off" style="flex:1 1 120px;min-height:36px;border:1px dashed #8A918C;border-radius:99px;padding:0 12px;background:transparent;font-size:14px">`}</div></div>`;
   }
   if (f.t === 'bilder') {
     const arr = Array.isArray(val) ? val : [];
@@ -990,7 +990,7 @@ function openForm(key, rec = null, pre = {}) {
     def.fields.forEach(f => {
       if (f.t === 'tiere') o[f.k] = $$(`[data-picker="${f.k}"] .chip.on`, form).map(b => b.dataset.id);
       else if (f.t === 'bilder') o[f.k] = $$(`[data-bilder="${f.k}"] img`, form).map(i => i.getAttribute('src'));
-      else if (f.t === 'tag') { const c = $(`[data-tag="${f.k}"] .chip.on`, form); const n = (form.elements[f.k + '__neu'].value || '').trim(); o[f.k] = n || (c ? c.dataset.v : ''); }
+      else if (f.t === 'tag') { const c = $(`[data-tag="${f.k}"] .chip.on`, form); const n = form.elements[f.k + '__neu'] ? (form.elements[f.k + '__neu'].value || '').trim() : ''; o[f.k] = n || (c ? c.dataset.v : ''); }
       else if (f.t === 'seg') { const c = $(`input[name="${f.k}"]:checked`, form); o[f.k] = c ? c.value : ''; }
       else o[f.k] = (form.elements[f.k] && form.elements[f.k].value || '').trim();
     });
@@ -1255,7 +1255,7 @@ document.addEventListener('submit', e => {
     ...S.set, hofname: f.hofname.value.trim(), lat: num(f.lat.value) || 47.526, lon: num(f.lon.value) || 8.141,
     tragzeit: num(f.tragzeit.value) || 285, kalbMonate: num(f.kalbMonate.value) || 12, laktAbMonate: num(f.laktAbMonate.value) || 16,
     abgekalbtTage: num(f.abgekalbtTage.value) || 60, alpVon: f.alpVon.value.trim() || '06-15', alpBis: f.alpBis.value.trim() || '09-15', puffer: num(f.puffer.value), unbesamtAb: num(f.unbesamtAb.value) || 16, baldTage: num(f.baldTage.value) || 30,
-    parzellen: lines(f.parzellen.value), gruende: lines(f.gruende.value),
+    gruende: lines(f.gruende.value),
     medikamente: lines(f.medikamente.value).map(l => { const [n, d] = l.split(';'); return { name: n.trim(), frist: num(d) }; }),
     grafanaUrl: f.grafanaUrl.value.trim(), akenzaKey: f.akenzaKey.value.trim(), sensWasser: f.sensWasser.value.trim(), sensFass: f.sensFass.value.trim(), agroUser: f.agroUser.value.trim(), agroPass: f.agroPass.value, agroStation: f.agroStation.value.trim(), fassLeer: f.fassLeer.value.trim(), fassVoll: f.fassVoll.value.trim(), wasserLeer: f.wasserLeer.value.trim(), wasserVoll: f.wasserVoll.value.trim(), startHeu: num(f.startHeu.value), startSilo: num(f.startSilo.value), startStroh: num(f.startStroh.value)
   });
