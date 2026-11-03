@@ -275,10 +275,20 @@ function render() {
   afterRender();
 }
 let leafletP = null, karteMap = null;
+function leafletLaden() { if (!leafletP) leafletP = (async () => { const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'vendor/leaflet/leaflet.css'; document.head.appendChild(l); await loadScript('vendor/leaflet/leaflet.js'); })(); return leafletP; }
+const geoLL = z => { try { return JSON.parse(z.geo).map(r => r.map(([x, y]) => [y, x])); } catch (e) { return null; } };
+async function miniKarte(el, z) {
+  await leafletLaden();
+  const map = L.map(el, { zoomControl: false, attributionControl: false, dragging: true });
+  L.tileLayer('https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissimage/default/current/3857/{z}/{x}/{y}.jpeg', { maxZoom: 20, maxNativeZoom: 19 }).addTo(map);
+  for (const o of S.parzellen) { const ll = o.geo && geoLL(o); if (ll && o.id !== z.id) L.polygon(ll, { color: '#fff', weight: 1, fillOpacity: 0.05 }).addTo(map); }
+  const ll = geoLL(z); if (!ll) return;
+  const pg = L.polygon(ll, { color: '#F2C14E', weight: 3, fillColor: '#F2C14E', fillOpacity: 0.4 }).addTo(map);
+  setTimeout(() => { map.invalidateSize(); map.fitBounds(pg.getBounds(), { padding: [30, 30], maxZoom: 18 }); }, 250);
+}
 async function karteZeichnen() {
   const el = $('#karte'); if (!el) return;
-  if (!leafletP) leafletP = (async () => { const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'vendor/leaflet/leaflet.css'; document.head.appendChild(l); await loadScript('vendor/leaflet/leaflet.js'); })();
-  await leafletP;
+  await leafletLaden();
   if (!document.body.contains(el)) return;
   if (karteMap) { try { karteMap.remove(); } catch (e) { } }
   const map = karteMap = L.map(el, { zoomControl: false, attributionControl: true });
@@ -311,7 +321,7 @@ function kpiBlock(k, link = false, L = null) {
     : `<a class="stat" href="#/tiere" data-act="filtlink" data-v="${key}"><b>${k[key]}</b><span>${label}</span></a>`;
   const ls = (v, l) => `<a class="stat ${v <= 5 ? 'low' : ''}" href="#/feld"><b>${nf(v)}</b><span>${l}</span></a>`;
   const lg = L ? `<div class="stats-row"><span class="stats-h">Lager</span>${ls(L.heu, 'Heu')}${ls(L.silo, 'Silage')}${ls(L.stroh, 'Stroh')}</div>` : '';
-  const lk = link ? `<div class="stats-row"><span class="stats-h">Laktation</span>${c('Unbesamt', 'Unbesamt')}${c('Besamt', 'Besamt')}${c('Abgekalbt', 'Abgekalbt')}</div>` : '';
+  const lk = '';
   return `<div class="stats"><div class="stats-row"><span class="stats-h">Bestand</span>${c('Kalb', 'Kälber')}${c('Rind', 'Rinder')}${c('Kuh', 'Kühe')}</div>${lk}${lg}</div>`;
 }
 function herdeBanner() {
@@ -974,6 +984,7 @@ function openForm(key, rec = null, pre = {}) {
     } : null
   });
   const form = $('[data-form]', sh);
+  if (key === 'parzelle' && rec && rec.geo) { const d = document.createElement('div'); d.className = 'karte klein'; form.prepend(d); miniKarte(d, rec); }
   const read = () => {
     const o = {};
     def.fields.forEach(f => {
