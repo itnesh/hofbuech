@@ -12,4 +12,4 @@ window.HB_FIREBASE = {
 window.HB_HOF = 'bannhalde';
 
 // Web-Push-Zertifikat (Firebase > Projekteinstellungen > Cloud Messaging > Web-Push-Zertifikate > Schlüsselpaar)
-window.HB_VAPID = '';
+window.HB_VAPID = 'BL7WGUPjE_DH8mcrjZH31v7-2BbGKmZ4UvXeXEGontTyEDHUpFnFQFwu-S3yjiDu3Jkso_gZOflCI3EaS_eDErE';

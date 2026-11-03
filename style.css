@@ -255,3 +255,8 @@ details.acc[open] summary i{transform:rotate(90deg)}
 .tl-names div{height:26px;font-size:12px;padding:0 8px}
 .tl-names div:first-child{height:22px}
 .row.one .bar.green{background:var(--green)}.row.one .bar.blue{background:var(--blue)}.row.one .bar.warn{background:#D58A3A}.row.one .bar.red{background:var(--red)}
+
+.karte{height:340px;border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow);margin:6px 0 4px;background:#DDE3D8}
+.pzlabel{background:rgba(22,32,27,.72);color:#fff;border:0;box-shadow:none;font:600 11px Inter,system-ui,sans-serif;padding:2px 6px;border-radius:6px}
+.pzlabel:before{display:none}
+.leaflet-popup-content{font:13px/1.4 Inter,system-ui,sans-serif}

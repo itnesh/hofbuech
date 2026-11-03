@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.8.0';
+const VERSION = '1.9.0';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -274,7 +274,32 @@ function render() {
   if (same) window.scrollTo(0, sx);
   afterRender();
 }
+let leafletP = null, karteMap = null;
+async function karteZeichnen() {
+  const el = $('#karte'); if (!el) return;
+  if (!leafletP) leafletP = (async () => { const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'vendor/leaflet/leaflet.css'; document.head.appendChild(l); await loadScript('vendor/leaflet/leaflet.js'); })();
+  await leafletP;
+  if (!document.body.contains(el)) return;
+  if (karteMap) { try { karteMap.remove(); } catch (e) { } }
+  const map = karteMap = L.map(el, { zoomControl: false, attributionControl: true });
+  L.tileLayer('https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissimage/default/current/3857/{z}/{x}/{y}.jpeg', { maxZoom: 20, maxNativeZoom: 19, attribution: '© swisstopo' }).addTo(map);
+  const grp = L.featureGroup().addTo(map);
+  const y = String(new Date().getFullYear());
+  for (const z of S.parzellen) {
+    if (!z.geo) continue;
+    let rings; try { rings = JSON.parse(z.geo); } catch (e) { continue; }
+    const lab = z.programm === 'Labiola', hecke = z.nutzung === 'Hecke';
+    const col = hecke ? '#7A5A2E' : lab ? '#F2C14E' : '#FFFFFF';
+    const poly = L.polygon(rings.map(r => r.map(([x, yy]) => [yy, x])), { color: col, weight: 2, fillColor: col, fillOpacity: lab ? 0.28 : 0.12 }).addTo(grp);
+    const f = S.feld.filter(x => x.parzelle === z.name && (x.datum || '').startsWith(y)).sort((a, b) => a.datum < b.datum ? 1 : -1).slice(0, 3);
+    const md = v => v ? `${v.slice(3)}.${v.slice(0, 2)}.` : '';
+    poly.bindPopup(`<b>${esc(z.name)}</b><br>${nf(num(z.ha))} ha${z.programm ? ' · ' + esc(z.programm) : ''}${z.schnittAb ? '<br>Schnitt ab ' + md(z.schnittAb) : ''}${z.fruehBis ? '<br>Frühschnitt bis ' + md(z.fruehBis) : ''}${z.duengen === 'nein' ? '<br>keine Düngung' : ''}${f.length ? '<br><small>' + f.map(x => fmtS(x.datum) + ' ' + FELD[x.typ].l).join('<br>') + '</small>' : ''}`);
+    poly.bindTooltip(esc(z.name.replace(/\s*\(.*\)/, '')), { permanent: !hecke && num(z.ha) > 0.1, direction: 'center', className: 'pzlabel' });
+  }
+  if (grp.getLayers().length) map.fitBounds(grp.getBounds(), { padding: [8, 8] });
+}
 function afterRender() {
+  karteZeichnen();
   const sc = $('.tl-scroll');
   if (sc && sc.dataset.today && !sc.dataset.done) { sc.scrollLeft = Math.max(0, +sc.dataset.today - sc.clientWidth * 0.45); sc.dataset.done = 1; }
 }
@@ -519,7 +544,7 @@ function vParzellen() {
   const y = UI.jahr, list = [...S.parzellen].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'de'));
   const tot = list.reduce((a, z) => a + num(z.ha), 0);
   const md = x => x ? `${x.slice(3)}.${x.slice(0, 2)}.` : '';
-  return `${tabs}<div class="toolbar"><button class="btn pri" data-act="form" data-f="parzelle">+ Parzelle</button><span class="muted small">${list.length} Parzellen · ${nf(tot)} ha</span></div>
+  return `${tabs}${list.some(z => z.geo) ? '<div id="karte" class="karte"></div>' : ''}<div class="toolbar"><button class="btn pri" data-act="form" data-f="parzelle">+ Parzelle</button><span class="muted small">${list.length} Parzellen · ${nf(tot)} ha</span></div>
   <div class="list">${list.length ? list.map(z => {
     const f = S.feld.filter(x => x.parzelle === z.name && (x.datum || '').startsWith(y));
     const sum = t => f.filter(x => x.typ === t).reduce((a, x) => a + num(x.menge), 0);
@@ -701,11 +726,11 @@ function meldungSheet(m) {
 function sensorKarte(sx) {
   if (!sx) return '';
   const pts30 = sx.serie30 || [], pts48 = sx.serie48 || [];
-  const v = sx.last ? sx.last.wert : null, bat = sx.last ? sx.last.batterie : null;
-  const low = v !== null && v < 30;
+  const v = sx.last ? (sx.last.prozent ?? sx.last.wert) : null, bat = sx.last ? sx.last.batterie : null, pc = sx.last && sx.last.prozent !== undefined && sx.last.prozent !== null;
+  const low = pc && v !== null && v < 30;
   const line = (pts, fmtL) => pts.length > 1 ? svgLines([pts.map(p => p[1])], pts.map(p => fmtL(p[0])), ['#2E8B62'], 120) : '<div class="empty">Keine Daten.</div>';
   return `<div class="sec-t">${esc(sx.name || sx.id)}</div>
-  <div class="stats"><div class="stats-row"><span class="stats-h">Aktuell</span><span class="stat ${low ? 'low' : ''}"><b>${v === null ? '-' : nf(v)}${sx.einheit ? '<small style="font-size:12px"> ' + esc(sx.einheit) + '</small>' : ''}</b><span>Füllstand</span></span><span class="stat"><b>${bat === null || bat === undefined ? '-' : nf(bat)}</b><span>Batterie %</span></span><span class="stat"><b style="font-size:15px">${sx.last && sx.last.zeit ? esc(new Date(sx.last.zeit).toLocaleString('de-CH', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })) : '-'}</b><span>Messung</span></span></div></div>
+  <div class="stats"><div class="stats-row"><span class="stats-h">Aktuell</span><span class="stat ${low ? 'low' : ''}"><b>${v === null ? '-' : nf(Math.round(v))}<small style="font-size:12px"> ${pc ? '%' : 'cm'}</small></b><span>${pc ? 'Füllstand' : 'Abstand (ullage)'}</span></span><span class="stat"><b>${bat === null || bat === undefined ? '-' : nf(bat)}</b><span>Batterie %</span></span><span class="stat"><b style="font-size:15px">${sx.last && sx.last.zeit ? esc(new Date(sx.last.zeit).toLocaleString('de-CH', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })) : '-'}</b><span>Messung</span></span></div></div>
   <div class="card" style="margin-top:8px"><div class="small muted">Letzte 48 Stunden</div>${line(pts48, t => new Date(t).getHours() + 'h')}<div class="small muted" style="margin-top:8px">Letzte 30 Tage</div>${line(pts30, t => { const d = new Date(t); return d.getDate() + '.' + (d.getMonth() + 1); })}</div>`;
 }
 function agroKarte(a) {
@@ -733,7 +758,7 @@ function vSettings() {
   ${grp('liste', 'Tierliste', `unbesamt ab ${s.unbesamtAb} Mt. · Abkalbung ${s.baldTage} T.`, numf('unbesamtAb', 'Unbesamt markieren ab (Monate)', s.unbesamtAb) + numf('baldTage', 'Abkalbung markieren (Tage vorher)', s.baldTage))}
   ${grp('listen', 'Auswahllisten', 'Gründe, Medikamente, Parzellen', ta('gruende', 'Gründe Stall / Laufhof', (s.gruende || []).join('\n')) + ta('medikamente', 'Medikamente (Name ; Absetzfrist Tage)', (s.medikamente || []).map(m => `${m.name} ; ${m.frist}`).join('\n'), 'Beispielpräparat ; 21') + ta('parzellen', 'Weitere Parzellen-Namen (ohne Details)', (s.parzellen || []).join('\n')))}
   ${grp('lager', 'Lager', `Heu ${nf(num(s.startHeu))} · Silage ${nf(num(s.startSilo))} · Stroh ${nf(num(s.startStroh))}`, numf('startHeu', 'Startbestand Heuballen', s.startHeu) + numf('startSilo', 'Startbestand Silageballen', s.startSilo) + numf('startStroh', 'Startbestand Strohballen', s.startStroh))}
-  ${grp('sensoren', 'Sensoren & Wetterdaten', s.akenzaKey ? 'akenza verbunden' : 'nicht verbunden', `<p class="small muted" style="margin:0">Die Daten lädt ein Hintergrund-Job stündlich (Agrometeo täglich) in hofbuech. Schlüssel und Passwort liegen nur in deiner Datenbank, nicht im Code.</p>` + fld('akenzaKey', 'akenza API-Key (x-api-key)', s.akenzaKey, 'type="password" autocomplete="off"') + fld('sensWasser', 'Gerät Wasserstand (akenza Device-ID)', s.sensWasser ?? '02bdf0b1b64b4c40') + fld('sensFass', 'Gerät Tränkefass (akenza Device-ID)', s.sensFass ?? '029412d5966ce1d4') + fld('agroUser', 'Agrometeo / vitimeteo Benutzer', s.agroUser ?? 'erdinmatthias') + fld('agroPass', 'Agrometeo / vitimeteo Passwort', s.agroPass, 'type="password" autocomplete="off"') + fld('agroStation', 'Agrometeo Station', s.agroStation ?? '177') + fld('grafanaUrl', 'Grafana-Link zum Einbetten (optional)', s.grafanaUrl, 'placeholder="https://..."'))}
+  ${grp('sensoren', 'Sensoren & Wetterdaten', s.akenzaKey ? 'akenza verbunden' : 'nicht verbunden', `<p class="small muted" style="margin:0">Die Daten lädt ein Hintergrund-Job stündlich (Agrometeo täglich) in hofbuech. Schlüssel und Passwort liegen nur in deiner Datenbank, nicht im Code.</p>` + fld('akenzaKey', 'akenza API-Key (x-api-key)', s.akenzaKey, 'type="password" autocomplete="off"') + fld('sensWasser', 'Gerät Wasserstand (akenza Device-ID)', s.sensWasser ?? '02bdf0b1b64b4c40') + fld('sensFass', 'Gerät Tränkefass (akenza Device-ID)', s.sensFass ?? '029412d5966ce1d4') + fld('fassLeer', 'Tränkefass: Abstand bei leer (cm)', s.fassLeer, 'inputmode="decimal"') + fld('fassVoll', 'Tränkefass: Abstand bei voll (cm)', s.fassVoll, 'inputmode="decimal"') + fld('wasserLeer', 'Wasserstand: Abstand bei leer (cm)', s.wasserLeer, 'inputmode="decimal"') + fld('wasserVoll', 'Wasserstand: Abstand bei voll (cm)', s.wasserVoll, 'inputmode="decimal"') + fld('agroUser', 'Agrometeo / vitimeteo Benutzer', s.agroUser ?? 'erdinmatthias') + fld('agroPass', 'Agrometeo / vitimeteo Passwort', s.agroPass, 'type="password" autocomplete="off"') + fld('agroStation', 'Agrometeo Station', s.agroStation ?? '177') + fld('grafanaUrl', 'Grafana-Link zum Einbetten (optional)', s.grafanaUrl, 'placeholder="https://..."'))}
   <button class="btn pri block" type="submit" style="margin-top:6px">Einstellungen speichern</button>
   </form>
   <div class="form" style="gap:8px;margin-top:8px">
@@ -1213,7 +1238,7 @@ document.addEventListener('submit', e => {
     abgekalbtTage: num(f.abgekalbtTage.value) || 60, alpVon: f.alpVon.value.trim() || '06-15', alpBis: f.alpBis.value.trim() || '09-15', puffer: num(f.puffer.value), unbesamtAb: num(f.unbesamtAb.value) || 16, baldTage: num(f.baldTage.value) || 30,
     parzellen: lines(f.parzellen.value), gruende: lines(f.gruende.value),
     medikamente: lines(f.medikamente.value).map(l => { const [n, d] = l.split(';'); return { name: n.trim(), frist: num(d) }; }),
-    grafanaUrl: f.grafanaUrl.value.trim(), akenzaKey: f.akenzaKey.value.trim(), sensWasser: f.sensWasser.value.trim(), sensFass: f.sensFass.value.trim(), agroUser: f.agroUser.value.trim(), agroPass: f.agroPass.value, agroStation: f.agroStation.value.trim(), startHeu: num(f.startHeu.value), startSilo: num(f.startSilo.value), startStroh: num(f.startStroh.value)
+    grafanaUrl: f.grafanaUrl.value.trim(), akenzaKey: f.akenzaKey.value.trim(), sensWasser: f.sensWasser.value.trim(), sensFass: f.sensFass.value.trim(), agroUser: f.agroUser.value.trim(), agroPass: f.agroPass.value, agroStation: f.agroStation.value.trim(), fassLeer: f.fassLeer.value.trim(), fassVoll: f.fassVoll.value.trim(), wasserLeer: f.wasserLeer.value.trim(), wasserVoll: f.wasserVoll.value.trim(), startHeu: num(f.startHeu.value), startSilo: num(f.startSilo.value), startStroh: num(f.startStroh.value)
   });
   toast('Einstellungen gespeichert');
 });
