@@ -55,14 +55,14 @@ async function akenza(id, deviceId, name, leer, voll) {
   const prev = (await ref.get()).data() || {};
   const wert = typeof last.d[kW] === 'number' ? last.d[kW] : null;
   const L = parseFloat(leer), V = parseFloat(voll);
-  const pct = x => (isFinite(L) && isFinite(V) && L !== V) ? Math.max(0, Math.min(100, Math.round((L - x) / (L - V) * 100))) : null;
+  const pct = x => (isFinite(L) && isFinite(V) && L !== V) ? Math.max(0, Math.round((L - x) / (L - V) * 1000) / 10) : null;
   const prozent = wert === null ? null : pct(wert);
   const bat = kB ? last.d[kB] : await batterie(deviceId);
   const conv = p => { const q = pct(p[1]); return { 0: p[0], 1: q === null ? p[1] : q }; };
   let alarm = prev.alarm ?? 100;
   if (prozent !== null) {
     const stufe = Math.ceil(prozent / 10) * 10; // 28 -> 30
-    if (stufe < alarm && stufe <= 50) { await push(`${name}: unter ${stufe}%`, `Aktuell ${prozent}% (${new Date(last.t).toLocaleString('de-CH', { timeZone: 'Europe/Zurich' })})`); alarm = stufe; }
+    if (stufe < alarm && stufe <= 50) { await push(`${name}: unter ${stufe}%`, `Aktuell ${Math.round(prozent)}% (${new Date(last.t).toLocaleString('de-CH', { timeZone: 'Europe/Zurich' })})`); alarm = stufe; }
     if (stufe > alarm) alarm = stufe; // wieder gefüllt -> Alarmstufe zurücksetzen
   }
   await ref.set({ id, name, typ: 'fuellstand', einheit: prozent === null ? 'cm' : '%', keyWert: kW, keyBatterie: kB || null, last: { zeit: last.t, wert, prozent, batterie: bat ?? null }, serie48: serie48.map(conv), serie30: serie30.map(conv), alarm, aktualisiert: now });
@@ -119,8 +119,8 @@ async function agrometeo() {
 }
 
 if (set.akenzaKey) {
-  if (set.sensWasser !== '') await akenza('wasserstand', set.sensWasser || '02bdf0b1b64b4c40', 'Wasserstand', set.wasserLeer, set.wasserVoll).catch(e => console.log('Wasserstand', e.message));
-  if (set.sensFass !== '') await akenza('traenkefass', set.sensFass || '029412d5966ce1d4', 'Tränkefass', set.fassLeer, set.fassVoll).catch(e => console.log('Tränkefass', e.message));
+  if (set.sensWasser !== '') await akenza('wasserstand', set.sensWasser || '02bdf0b1b64b4c40', 'Wasserstand', set.wasserLeer || 214, set.wasserVoll || 56).catch(e => console.log('Wasserstand', e.message));
+  if (set.sensFass !== '') await akenza('traenkefass', set.sensFass || '029412d5966ce1d4', 'Tränkefass', set.fassLeer || 83, set.fassVoll || 9.3).catch(e => console.log('Tränkefass', e.message));
 } else console.log('akenza: kein API-Key in den Einstellungen');
 if (set.agroUser && set.agroPass) await agrometeo().catch(e => console.log('agrometeo', e.message));
 else console.log('agrometeo: keine Zugangsdaten');

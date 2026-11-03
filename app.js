@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.10.0';
+const VERSION = '1.11.0';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -241,7 +241,7 @@ function ortAm(tid, d, list = sortedAuslauf()) { let best = null; for (const a o
 /* ---------- Router ---------- */
 let rq = false;
 function schedule() { if (rq) return; rq = true; requestAnimationFrame(() => { rq = false; render(); }); }
-const UI = { tierFilter: { kat: '', lakt: '', q: '', sort: 'name', abg: false }, jTab: 'lager', lTab: 'pendenzen', kalMonat: today().slice(0, 7), kalTag: '', fTab: 'austrag', jahr: String(new Date().getFullYear()) };
+const UI = { tierFilter: { kat: '', lakt: '', q: '', sort: 'name', abg: false }, jTab: '', lTab: 'pendenzen', kalMonat: today().slice(0, 7), kalTag: '', fTab: 'austrag', jahr: String(new Date().getFullYear()) };
 
 function render() {
   if (mode === 'firebase' && !USER) return;
@@ -501,7 +501,9 @@ function jahre(listen) { const s = new Set([String(new Date().getFullYear())]); 
 function jahrSel() { return `<select class="sel" data-act="jahr" aria-label="Jahr">${jahre([S.behandlungen, S.auslauf, S.feld]).map(j => `<option ${j === UI.jahr ? 'selected' : ''}>${j}</option>`).join('')}</select>`; }
 
 function vJournale() {
-  const tabs = `<div class="chips kf sect">${[['lager', 'Lager'], ['auslauf', 'Auslauf'], ['behandlung', 'Behandlung'], ['feld', 'Feld'], ['zucht', 'Zucht'], ['traenkefass', 'Tränkefass'], ['wasserstand', 'Wasserstand'], ['wetter', 'Wetter']].map(([v, l]) => `<button type="button" class="chip ${UI.jTab === v ? 'on' : ''}" data-act="jtab" data-v="${v}">${l}</button>`).join('')}</div>`;
+  const SECT = { lager: 'Lager', auslauf: 'Auslauf', behandlung: 'Behandlung', feld: 'Feld', zucht: 'Zucht', traenkefass: 'Tränkefass', wasserstand: 'Wasserstand', wetter: 'Wetter' };
+  if (!SECT[UI.jTab]) return anaKacheln();
+  const tabs = `<div class="anah"><button type="button" class="back" data-act="jtab" data-v="">‹ Übersicht</button><b>${SECT[UI.jTab]}</b></div>`;
   if (UI.jTab === 'auslauf') return tabs + vAuslauf() + anaAuslaufChart();
   if (UI.jTab === 'feld') return tabs + vFeld();
   if (UI.jTab === 'lager') return tabs + anaLager();
@@ -620,22 +622,56 @@ function svgBars(series, labels, colors, h = 150) {
   g += `<text x="0" y="12" font-size="9" fill="#5F6862">${mx}</text><line x1="${pad}" x2="${W}" y1="${h - 18}" y2="${h - 18}" stroke="#E2E4DF"/>`;
   return `<svg viewBox="0 0 ${W} ${h}" width="100%" role="img" aria-label="Diagramm">${g}</svg>`;
 }
-function svgLines(series, labels, colors, h = 150) {
-  const W = 340, pad = 26, n = labels.length, all = series.flat(), mx = Math.max(1, ...all), mn = Math.min(0, ...all);
+const CHARTS = {};
+function svgLines(series, labels, colors, h = 150, tips = null) {
+  const W = 340, pad = 26, n = labels.length, all = series.flat().filter(v => v !== null && v !== undefined), mx = Math.max(1, ...all), mn = Math.min(0, ...all);
   const x = i => pad + i * (W - pad - 6) / Math.max(1, n - 1), y = v => 8 + (mx - v) / (mx - mn || 1) * (h - 30);
   let g = `<line x1="${pad}" x2="${W}" y1="${y(0)}" y2="${y(0)}" stroke="#E2E4DF"/><text x="0" y="12" font-size="9" fill="#5F6862">${nf(mx)}</text>`;
-  series.forEach((s, k) => { g += `<polyline fill="none" stroke="${colors[k]}" stroke-width="2.2" stroke-linejoin="round" points="${s.map((v, i) => `${x(i)},${y(v)}`).join(' ')}"/>`; });
+  series.forEach((s, k) => { g += `<polyline fill="none" stroke="${colors[k]}" stroke-width="2.2" stroke-linejoin="round" points="${s.map((v, i) => v === null || v === undefined ? '' : `${x(i)},${y(v)}`).filter(Boolean).join(' ')}"/>`; });
   labels.forEach((l, i) => { if (i % Math.ceil(n / 8) === 0) g += `<text x="${x(i)}" y="${h - 4}" font-size="9" text-anchor="middle" fill="#5F6862">${l}</text>`; });
-  return `<svg viewBox="0 0 ${W} ${h}" width="100%" role="img" aria-label="Diagramm">${g}</svg>`;
+  const id = 'c' + Math.random().toString(36).slice(2, 8);
+  CHARTS[id] = { n, W, pad, h, tips: tips || labels.map((l, i) => `${l}: ${series.map(s => s[i] === null || s[i] === undefined ? '-' : nf(s[i])).join(' / ')}`), ys: series.map(s => s.map(v => v === null || v === undefined ? null : y(v))), colors };
+  g += `<line class="cur" x1="-10" x2="-10" y1="4" y2="${h - 16}" stroke="#16201B" stroke-width="1" stroke-dasharray="3 3"/><g class="dots"></g>`;
+  return `<div class="chart"><div class="tip"></div><svg data-chart="${id}" viewBox="0 0 ${W} ${h}" width="100%" role="img" aria-label="Diagramm, antippen für Werte">${g}</svg></div>`;
+}
+function chartTap(svg, clientX) {
+  const c = CHARTS[svg.dataset.chart]; if (!c) return;
+  const r = svg.getBoundingClientRect(), vx = (clientX - r.left) / r.width * c.W;
+  const i = Math.max(0, Math.min(c.n - 1, Math.round((vx - c.pad) / (c.W - c.pad - 6) * (c.n - 1))));
+  const xx = c.pad + i * (c.W - c.pad - 6) / Math.max(1, c.n - 1);
+  const ln = svg.querySelector('.cur'); ln.setAttribute('x1', xx); ln.setAttribute('x2', xx);
+  svg.querySelector('.dots').innerHTML = c.ys.map((ys, k) => ys[i] === null ? '' : `<circle cx="${xx}" cy="${ys[i]}" r="4" fill="${c.colors[k]}" stroke="#fff" stroke-width="1.5"/>`).join('');
+  const tip = svg.parentElement.querySelector('.tip'); tip.textContent = c.tips[i]; tip.style.display = 'block';
+}
+function anaKacheln() {
+  const L = lager(), J = String(new Date().getFullYear()), a = herdeAm();
+  const sx = id => { const x = S.sensoren.find(s => s.id === id); if (!x || !x.last) return ['-', 'noch keine Daten', '']; const v = x.last.prozent ?? x.last.wert; const p = x.last.prozent !== null && x.last.prozent !== undefined; return [nf(Math.round(v)) + (p ? ' %' : ' cm'), 'Batterie ' + (x.last.batterie ?? '-') + ' %', p && v < 30 ? 'low' : '']; };
+  const ag = S.sensoren.find(s => s.id === 'agrometeo'), regen = ag && ag.regen ? ag.regen.akt.reduce((s, v) => s + (v || 0), 0) : null;
+  const offen = S.behandlungen.filter(b => b.freiAb && b.freiAb > today()).length;
+  const feldJ = S.feld.filter(f => (f.datum || '').startsWith(J) && FELD[f.typ] && FELD[f.typ].g !== 'lager').length;
+  const abk = S.ereignisse.filter(e => e.typ === 'abkalbung' && e.datum.startsWith(J)).length;
+  const at = auslaufTage(J), weide = at.filter(([, x]) => x.typ === 'Weide').length;
+  const [tf, tfs, tfc] = sx('traenkefass'), [ws, wss, wsc] = sx('wasserstand');
+  const k = (v, t, big, sub, cls = '') => `<button type="button" class="kachel ${cls}" data-act="jtab" data-v="${v}"><span>${t}</span><b>${big}</b><small>${sub}</small></button>`;
+  return `<div class="kacheln">
+    ${k('traenkefass', 'Tränkefass', tf, tfs, tfc)}${k('wasserstand', 'Wasserstand', ws, wss, wsc)}
+    ${k('lager', 'Lager', nf(L.heu) + ' Heu', nf(L.silo) + ' Silage · ' + nf(L.stroh) + ' Stroh', L.heu <= 5 || L.silo <= 5 ? 'low' : '')}
+    ${k('auslauf', 'Auslauf', a ? esc(a.typ) : '-', weide + ' Weidetage ' + J)}
+    ${k('behandlung', 'Behandlung', offen ? offen + ' Frist' + (offen > 1 ? 'en' : '') : 'keine Frist', S.behandlungen.filter(b => (b.datum || '').startsWith(J)).length + ' Behandlungen ' + J, offen ? 'low' : '')}
+    ${k('feld', 'Feld', feldJ + ' Einträge', 'Feldkalender ' + J)}
+    ${k('zucht', 'Zucht', abk + ' Abkalb.', 'im Jahr ' + J)}
+    ${k('wetter', 'Wetter', regen === null ? '-' : Math.round(regen) + ' mm', 'Niederschlag ' + J)}
+  </div>`;
 }
 function anaLager() {
   const now = new Date(), mons = []; for (let i = 23; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i + 1, 0); mons.push(iso(d)); }
+  const ML = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
   const bal = (plus, minus, start) => mons.map(e => num(start) + S.feld.filter(f => f.datum <= e).reduce((a, f) => a + (f.typ === plus ? num(f.menge) : f.typ === minus ? -num(f.menge) : 0), 0));
   const cols = ['#2E8B62', '#E0A35C', '#B8A04A'];
   return `${lagerKpi(lager())}
   <div class="btns" style="margin:10px 0"><button class="btn" data-act="form" data-f="bezugHeu">− Heu</button><button class="btn" data-act="form" data-f="bezugSilage">− Silage</button><button class="btn" data-act="form" data-f="bezugStroh">− Stroh</button></div>
   <div class="sec-t">Verlauf 24 Monate</div>
-  <div class="card">${svgLines([bal('heuen', 'bezugHeu', S.set.startHeu), bal('silieren', 'bezugSilage', S.set.startSilo), bal('stroh', 'bezugStroh', S.set.startStroh)], mons.map(m => MON[+m.slice(5, 7) - 1]), cols)}<div class="legend"><span><i class="sw" style="background:${cols[0]}"></i>Heu</span><span><i class="sw" style="background:${cols[1]}"></i>Silage</span><span><i class="sw" style="background:${cols[2]}"></i>Stroh</span></div></div>`;
+  <div class="card">${svgLines([bal('heuen', 'bezugHeu', S.set.startHeu), bal('silieren', 'bezugSilage', S.set.startSilo), bal('stroh', 'bezugStroh', S.set.startStroh)], mons.map(m => MON[+m.slice(5, 7) - 1]), cols, 150, mons.map((m, i) => { const H = bal('heuen', 'bezugHeu', S.set.startHeu)[i], Si = bal('silieren', 'bezugSilage', S.set.startSilo)[i], St = bal('stroh', 'bezugStroh', S.set.startStroh)[i]; return `Ende ${ML[+m.slice(5, 7) - 1]} ${m.slice(0, 4)}: Heu ${nf(H)} · Silage ${nf(Si)} · Stroh ${nf(St)}`; }))}<div class="legend"><span><i class="sw" style="background:${cols[0]}"></i>Heu</span><span><i class="sw" style="background:${cols[1]}"></i>Silage</span><span><i class="sw" style="background:${cols[2]}"></i>Stroh</span></div></div>`;
 }
 function anaAuslaufChart() {
   const J = UI.jahr, typs = ['Weide', 'Laufhof', 'Alp'], cols = ['#2E8B62', '#5B8FD6', '#E0A35C'];
@@ -746,7 +782,8 @@ function sensorKarte(sx) {
   const pts30 = sx.serie30 || [], pts48 = sx.serie48 || [];
   const v = sx.last ? (sx.last.prozent ?? sx.last.wert) : null, bat = sx.last ? sx.last.batterie : null, pc = sx.last && sx.last.prozent !== undefined && sx.last.prozent !== null;
   const low = pc && v !== null && v < 30;
-  const line = (pts, fmtL) => pts.length > 1 ? svgLines([pts.map(p => p[1])], pts.map(p => fmtL(p[0])), ['#2E8B62'], 120) : '<div class="empty">Keine Daten.</div>';
+  const zt = t => new Date(t).toLocaleString('de-CH', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  const line = (pts, fmtL) => pts.length > 1 ? svgLines([pts.map(p => p[1])], pts.map(p => fmtL(p[0])), ['#2E8B62'], 130, pts.map(p => `${zt(p[0])} · ${nf(Math.round(p[1] * 10) / 10)} ${pc ? '%' : 'cm'}`)) : '<div class="empty">Keine Daten.</div>';
   return `<div class="sec-t">${esc(sx.name || sx.id)}</div>
   <div class="stats"><div class="stats-row"><span class="stats-h">Aktuell</span><span class="stat ${low ? 'low' : ''}"><b>${v === null ? '-' : nf(Math.round(v))}<small style="font-size:12px"> ${pc ? '%' : 'cm'}</small></b><span>${pc ? 'Füllstand' : 'Abstand (ullage)'}</span></span><span class="stat"><b>${bat === null || bat === undefined ? '-' : nf(bat)}</b><span>Batterie %</span></span><span class="stat"><b style="font-size:15px">${sx.last && sx.last.zeit ? esc(new Date(sx.last.zeit).toLocaleString('de-CH', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })) : '-'}</b><span>Messung</span></span></div></div>
   <div class="card" style="margin-top:8px"><div class="small muted">Letzte 48 Stunden</div>${line(pts48, t => new Date(t).getHours() + 'h')}<div class="small muted" style="margin-top:8px">Letzte 30 Tage</div>${line(pts30, t => { const d = new Date(t); return d.getDate() + '.' + (d.getMonth() + 1); })}</div>`;
@@ -756,11 +793,12 @@ function agroKarte(a) {
   const ML = MON.map(m => m.slice(0, 1)), cols = ['#2E8B62', '#E0A35C', '#5B8FD6'];
   const leg = `<div class="legend"><span><i class="sw" style="background:${cols[0]}"></i>${a.jahr || 'Aktuell'}</span><span><i class="sw" style="background:${cols[1]}"></i>Vorjahr</span><span><i class="sw" style="background:${cols[2]}"></i>Ø seit ${a.seit || '2004'}</span></div>`;
   const cum = arr => { let t = 0; return arr.map(v => v === null ? null : (t += v)); };
-  const L = (ser) => svgLines(ser.map(x => x.map(v => v ?? 0)), ML, cols, 130);
+  const FM = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
+  const L = (ser, u) => svgLines(ser, ML, cols, 130, FM.map((m, i) => `${m}: ${ser.map((x, k) => (['Aktuell', 'Vorjahr', 'Ø'][k]) + ' ' + (x[i] === null || x[i] === undefined ? '-' : nf(x[i]))).join(' · ')} ${u}`));
   return `<div class="sec-t">Agrometeo (Station ${esc(a.station || '')})</div>
-  ${a.regen ? `<div class="card"><div class="small muted">Niederschlag pro Monat (mm)</div>${L([a.regen.akt, a.regen.vor, a.regen.avg])}${leg}</div>
-  <div class="card"><div class="small muted">Niederschlag kumuliert (mm)</div>${L([cum(a.regen.akt), cum(a.regen.vor), cum(a.regen.avg)])}${leg}</div>` : ''}
-  ${a.temp ? `<div class="card"><div class="small muted">Durchschnittstemperatur pro Monat (°C)</div>${L([a.temp.akt, a.temp.vor, a.temp.avg])}${leg}</div>` : ''}
+  ${a.regen ? `<div class="card"><div class="small muted">Niederschlag pro Monat (mm)</div>${L([a.regen.akt, a.regen.vor, a.regen.avg], 'mm')}${leg}</div>
+  <div class="card"><div class="small muted">Niederschlag kumuliert (mm)</div>${L([cum(a.regen.akt), cum(a.regen.vor), cum(a.regen.avg)], 'mm')}${leg}</div>` : ''}
+  ${a.temp ? `<div class="card"><div class="small muted">Durchschnittstemperatur pro Monat (°C)</div>${L([a.temp.akt, a.temp.vor, a.temp.avg], '°C')}${leg}</div>` : ''}
   <div class="small muted" style="margin:6px 4px">Aktualisiert ${a.aktualisiert ? esc(new Date(a.aktualisiert).toLocaleString('de-CH')) : '-'}</div>`;
 }
 
@@ -776,7 +814,7 @@ function vSettings() {
   ${grp('liste', 'Tierliste', `unbesamt ab ${s.unbesamtAb} Mt. · Abkalbung ${s.baldTage} T.`, numf('unbesamtAb', 'Unbesamt markieren ab (Monate)', s.unbesamtAb) + numf('baldTage', 'Abkalbung markieren (Tage vorher)', s.baldTage))}
   ${grp('listen', 'Auswahllisten', 'Gründe, Medikamente', ta('gruende', 'Gründe Stall / Laufhof', (s.gruende || []).join('\n')) + ta('medikamente', 'Medikamente (Name ; Absetzfrist Tage)', (s.medikamente || []).map(m => `${m.name} ; ${m.frist}`).join('\n'), 'Beispielpräparat ; 21'))}
   ${grp('lager', 'Lager', `Heu ${nf(num(s.startHeu))} · Silage ${nf(num(s.startSilo))} · Stroh ${nf(num(s.startStroh))}`, numf('startHeu', 'Startbestand Heuballen', s.startHeu) + numf('startSilo', 'Startbestand Silageballen', s.startSilo) + numf('startStroh', 'Startbestand Strohballen', s.startStroh))}
-  ${grp('sensoren', 'Sensoren & Wetterdaten', s.akenzaKey ? 'akenza verbunden' : 'nicht verbunden', `<p class="small muted" style="margin:0">Die Daten lädt ein Hintergrund-Job stündlich (Agrometeo täglich) in hofbuech. Schlüssel und Passwort liegen nur in deiner Datenbank, nicht im Code.</p>` + fld('akenzaKey', 'akenza API-Key (x-api-key)', s.akenzaKey, 'type="password" autocomplete="off"') + fld('sensWasser', 'Gerät Wasserstand (akenza Device-ID)', s.sensWasser ?? '02bdf0b1b64b4c40') + fld('sensFass', 'Gerät Tränkefass (akenza Device-ID)', s.sensFass ?? '029412d5966ce1d4') + fld('fassLeer', 'Tränkefass: Abstand bei leer (cm)', s.fassLeer, 'inputmode="decimal"') + fld('fassVoll', 'Tränkefass: Abstand bei voll (cm)', s.fassVoll, 'inputmode="decimal"') + fld('wasserLeer', 'Wasserstand: Abstand bei leer (cm)', s.wasserLeer, 'inputmode="decimal"') + fld('wasserVoll', 'Wasserstand: Abstand bei voll (cm)', s.wasserVoll, 'inputmode="decimal"') + fld('agroUser', 'Agrometeo / vitimeteo Benutzer', s.agroUser ?? 'erdinmatthias') + fld('agroPass', 'Agrometeo / vitimeteo Passwort', s.agroPass, 'type="password" autocomplete="off"') + fld('agroStation', 'Agrometeo Station', s.agroStation ?? '177') + fld('grafanaUrl', 'Grafana-Link zum Einbetten (optional)', s.grafanaUrl, 'placeholder="https://..."'))}
+  ${grp('sensoren', 'Sensoren & Wetterdaten', s.akenzaKey ? 'akenza verbunden' : 'nicht verbunden', `<p class="small muted" style="margin:0">Die Daten lädt ein Hintergrund-Job stündlich (Agrometeo täglich) in hofbuech. Schlüssel und Passwort liegen nur in deiner Datenbank, nicht im Code.</p>` + fld('akenzaKey', 'akenza API-Key (x-api-key)', s.akenzaKey, 'type="password" autocomplete="off"') + fld('sensWasser', 'Gerät Wasserstand (akenza Device-ID)', s.sensWasser ?? '02bdf0b1b64b4c40') + fld('sensFass', 'Gerät Tränkefass (akenza Device-ID)', s.sensFass ?? '029412d5966ce1d4') + fld('fassLeer', 'Tränkefass: Abstand bei leer (cm)', s.fassLeer, 'inputmode="decimal" placeholder="83"') + fld('fassVoll', 'Tränkefass: Abstand bei voll (cm)', s.fassVoll, 'inputmode="decimal" placeholder="9.3"') + fld('wasserLeer', 'Wasserstand: Abstand bei leer (cm)', s.wasserLeer, 'inputmode="decimal" placeholder="214"') + fld('wasserVoll', 'Wasserstand: Abstand bei voll (cm)', s.wasserVoll, 'inputmode="decimal" placeholder="56"') + fld('agroUser', 'Agrometeo / vitimeteo Benutzer', s.agroUser ?? 'erdinmatthias') + fld('agroPass', 'Agrometeo / vitimeteo Passwort', s.agroPass, 'type="password" autocomplete="off"') + fld('agroStation', 'Agrometeo Station', s.agroStation ?? '177') + fld('grafanaUrl', 'Grafana-Link zum Einbetten (optional)', s.grafanaUrl, 'placeholder="https://..."'))}
   <button class="btn pri block" type="submit" style="margin-top:6px">Einstellungen speichern</button>
   </form>
   <div class="form" style="gap:8px;margin-top:8px">
@@ -1194,6 +1232,8 @@ async function tvdImport(file) {
 }
 
 /* ---------- Events ---------- */
+document.addEventListener('pointerdown', e => { const svg = e.target.closest && e.target.closest('svg[data-chart]'); if (svg) chartTap(svg, e.clientX); });
+document.addEventListener('pointermove', e => { if (!e.buttons && e.pointerType !== 'mouse') return; const svg = e.target.closest && e.target.closest('svg[data-chart]'); if (svg) chartTap(svg, e.clientX); });
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]'); if (!el) return;
   const a = el.dataset.act;
