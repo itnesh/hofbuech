@@ -33,11 +33,21 @@ async function batterie(deviceId) {
   return null;
 }
 async function akenza(id, deviceId, name, leer, voll) {
-  const qs = `topic=measurement&limit=2000&startDate=${encodeURIComponent(new Date(now - 31 * 864e5).toISOString())}&endDate=${encodeURIComponent(new Date(now + 3600e3).toISOString())}`;
-  const r = await fetch(`https://api.akenza.io/v3/devices/${deviceId}/query?${qs}`, { headers: { 'x-api-key': set.akenzaKey, accept: 'application/json' } });
-  if (!r.ok) { console.log(name, 'HTTP', r.status, (await r.text()).slice(0, 300)); return; }
-  const j = await r.json();
-  const arr = Array.isArray(j) ? j : (j.data || j.items || j.results || []);
+  // Seitenweise rückwärts laden bis 365 Tage
+  const von = now - 366 * 864e5; let ende = now + 3600e3, arr = [], j = null;
+  for (let seite = 0; seite < 12; seite++) {
+    const qs = `topic=measurement&limit=2000&startDate=${encodeURIComponent(new Date(von).toISOString())}&endDate=${encodeURIComponent(new Date(ende).toISOString())}`;
+    const r = await fetch(`https://api.akenza.io/v3/devices/${deviceId}/query?${qs}`, { headers: { 'x-api-key': set.akenzaKey, accept: 'application/json' } });
+    if (!r.ok) { console.log(name, 'HTTP', r.status, (await r.text()).slice(0, 300)); if (!arr.length) return; break; }
+    j = await r.json();
+    const a = Array.isArray(j) ? j : (j.data || j.items || j.results || []);
+    if (!a.length) break;
+    arr = arr.concat(a);
+    const ts = a.map(x => Date.parse(x.timestamp || x.time || x.createdAt)).filter(Boolean), min = Math.min(...ts);
+    if (!isFinite(min) || min >= ende || min <= von || a.length < 2000) break;
+    ende = min - 1;
+  }
+  const seen = new Set(); arr = arr.filter(x => { const k = x.timestamp || x.time || x.createdAt; if (seen.has(k)) return false; seen.add(k); return true; });
   const rows = arr.map(x => ({ t: Date.parse(x.timestamp || x.time || x.createdAt), d: x.data || x }))
     .filter(x => x.t && x.d && typeof x.d === 'object').sort((a, b) => a.t - b.t);
   if (!rows.length) { console.log(name, 'keine Daten', JSON.stringify(j).slice(0, 300)); return; }
@@ -63,6 +73,8 @@ async function akenza(id, deviceId, name, leer, voll) {
   const bat = kB ? last.d[kB] : await batterie(deviceId);
   const conv = p => { const q = pct(p[1]); return { 0: p[0], 1: q === null ? p[1] : q }; };
   const filt = a => ok ? a.filter(p => gut(pct(p[1]))) : a;
+  const tag = {}; for (const p of filt(pts.filter(p => p[0] >= now - 365 * 864e5))) { const d = new Date(p[0] + 3600e3).toISOString().slice(0, 10); (tag[d] = tag[d] || []).push(p[1]); }
+  const serie365 = Object.keys(tag).sort().map(d => { const v = tag[d]; const m = v.reduce((a, b) => a + b, 0) / v.length; const q = ok ? pct(m) : m; return { 0: Date.parse(d + 'T12:00:00Z'), 1: Math.round(q * 10) / 10 }; });
   const fehler = ok ? pts.filter(p => !gut(pct(p[1]))).length : 0; if (fehler) console.log(name, 'Messfehler ignoriert', fehler);
   let alarm = prev.alarm ?? 100;
   if (prozent !== null) {
@@ -70,8 +82,8 @@ async function akenza(id, deviceId, name, leer, voll) {
     if (stufe < alarm && stufe <= 50) { await push(`${name}: unter ${stufe}%`, `Aktuell ${Math.round(prozent)}% (${new Date(lastOk[0]).toLocaleString('de-CH', { timeZone: 'Europe/Zurich' })})`, './#/journale/' + id); alarm = stufe; }
     if (stufe > alarm) alarm = stufe; // wieder gefüllt -> Alarmstufe zurücksetzen
   }
-  await ref.set({ id, name, typ: 'fuellstand', einheit: prozent === null ? 'cm' : '%', keyWert: kW, keyBatterie: kB || null, last: { zeit: lastOk ? lastOk[0] : last.t, wert: lastOk ? lastOk[1] : wert, prozent, batterie: bat ?? null }, serie48: filt(serie48).map(conv), serie30: filt(serie30).map(conv), alarm, aktualisiert: now });
-  console.log(name, 'ok', wert, 'Punkte', pts.length);
+  await ref.set({ id, name, typ: 'fuellstand', einheit: prozent === null ? 'cm' : '%', keyWert: kW, keyBatterie: kB || null, last: { zeit: lastOk ? lastOk[0] : last.t, wert: lastOk ? lastOk[1] : wert, prozent, batterie: bat ?? null }, serie48: filt(serie48).map(conv), serie30: filt(serie30).map(conv), serie365, alarm, aktualisiert: now });
+  console.log(name, 'ok', wert, 'Punkte', pts.length, 'Tage', serie365.length);
 }
 
 // ---------- Agrometeo / vitimeteo ----------
@@ -102,6 +114,19 @@ async function vitimeteo(sensor, fn) {
   if (!rows.length) console.log('Antwort', JSON.stringify(j).slice(0, 500));
   return rows;
 }
+// Ausreisser: unplausible Werte und starke Abweichungen vom Monats-Median (über alle Jahre) entfernen
+function bereinigen(rows, art) {
+  const [lo, hi, floor] = art === 'regen' ? [0, 450, 80] : [-20, 32, 4];
+  const med = a => { const b = [...a].sort((x, y) => x - y), n = b.length; return n ? (n % 2 ? b[(n - 1) / 2] : (b[n / 2 - 1] + b[n / 2]) / 2) : 0; };
+  const byM = {}; rows.forEach(([ym, v]) => { if (v >= lo && v <= hi) (byM[ym.slice(5, 7)] = byM[ym.slice(5, 7)] || []).push(v); });
+  const out = [];
+  for (const [ym, v] of rows) {
+    const m = ym.slice(5, 7), a = byM[m] || [], md = med(a), mad = med(a.map(x => Math.abs(x - md)));
+    const ok = v >= lo && v <= hi && Math.abs(v - md) <= Math.max(floor, 5 * mad);
+    if (!ok) console.log('Ausreisser entfernt', art, ym, v, 'Median', md); else out.push([ym, v]);
+  }
+  return out;
+}
 function jahresreihen(rows) {
   const y = new Date().getFullYear(), akt = Array(12).fill(null), vor = Array(12).fill(null), sum = Array(12).fill(0), n = Array(12).fill(0);
   let seit = 9999;
@@ -119,7 +144,8 @@ async function agrometeo() {
   if (prev.aktualisiert && now - prev.aktualisiert < 20 * 3600e3 && !process.env.FORCE) return console.log('agrometeo: aktuell');
   const regen = await vitimeteo(6, 'sum');
   const temp = await vitimeteo(set.agroTempSensor || 1, 'avg');
-  const R = regen && regen.length ? jahresreihen(regen) : null, T = temp && temp.length ? jahresreihen(temp) : null;
+  for (const [n, r] of [['regen', regen], ['temp', temp]]) if (r) console.log(n, 'Mai:', r.filter(x => x[0].endsWith('-05')).map(x => x[0].slice(0, 4) + '=' + Math.round(x[1] * 10) / 10).join(' '));
+  const R = regen && regen.length ? jahresreihen(bereinigen(regen, 'regen')) : null, T = temp && temp.length ? jahresreihen(bereinigen(temp, 'temp')) : null;
   await ref.set({ id: 'agrometeo', typ: 'agrometeo', station: set.agroStation || '177', jahr: new Date().getFullYear(), seit: (R || T || {}).seit || 2004, regen: R, temp: T, aktualisiert: now });
 }
 
