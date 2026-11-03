@@ -33,7 +33,8 @@ async function batterie(deviceId) {
   return null;
 }
 async function akenza(id, deviceId, name, leer, voll) {
-  const r = await fetch(`https://api.akenza.io/v3/devices/${deviceId}/query?topic=measurement&limit=1000`, { headers: { 'x-api-key': set.akenzaKey, accept: 'application/json' } });
+  const qs = `topic=measurement&limit=2000&startDate=${encodeURIComponent(new Date(now - 31 * 864e5).toISOString())}&endDate=${encodeURIComponent(new Date(now + 3600e3).toISOString())}`;
+  const r = await fetch(`https://api.akenza.io/v3/devices/${deviceId}/query?${qs}`, { headers: { 'x-api-key': set.akenzaKey, accept: 'application/json' } });
   if (!r.ok) { console.log(name, 'HTTP', r.status, (await r.text()).slice(0, 300)); return; }
   const j = await r.json();
   const arr = Array.isArray(j) ? j : (j.data || j.items || j.results || []);
@@ -44,6 +45,7 @@ async function akenza(id, deviceId, name, leer, voll) {
   const kW = set['sensKey_' + id] || pickKey(keys, /fill|level|percent|prozent|füll/i, /batt/i) || pickKey(keys, /.*/, /batt|temp|rssi|snr|signal/i);
   const kB = pickKey(keys, /batt/i);
   console.log(name, 'Felder', keys.join(','), '-> Wert', kW, 'Batterie', kB);
+  console.log(name, 'Zeitraum', new Date(rows[0].t).toISOString(), 'bis', new Date(rows[rows.length - 1].t).toISOString(), 'letzte Werte', rows.slice(-3).map(x => x.d[kW]).join(', '));
   const pts = rows.filter(x => typeof x.d[kW] === 'number').map(x => [x.t, Math.round(x.d[kW] * 10) / 10]);
   const last = rows[rows.length - 1];
   const serie48 = pts.filter(p => p[0] >= now - 48 * 3600e3);

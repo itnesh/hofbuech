@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.9.0';
+const VERSION = '1.10.0';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -241,7 +241,7 @@ function ortAm(tid, d, list = sortedAuslauf()) { let best = null; for (const a o
 /* ---------- Router ---------- */
 let rq = false;
 function schedule() { if (rq) return; rq = true; requestAnimationFrame(() => { rq = false; render(); }); }
-const UI = { tierFilter: { kat: '', lakt: '', q: '', sort: 'name', abg: false }, jTab: 'auslauf', lTab: 'pendenzen', kalMonat: today().slice(0, 7), kalTag: '', fTab: 'austrag', jahr: String(new Date().getFullYear()) };
+const UI = { tierFilter: { kat: '', lakt: '', q: '', sort: 'name', abg: false }, jTab: 'lager', lTab: 'pendenzen', kalMonat: today().slice(0, 7), kalTag: '', fTab: 'austrag', jahr: String(new Date().getFullYear()) };
 
 function render() {
   if (mode === 'firebase' && !USER) return;
@@ -255,13 +255,13 @@ function render() {
     if (p[0] === 'start') { title = S.set.hofname || 'hofbuech'; html = vStart(); }
     else if (p[0] === 'tiere') { title = 'Tiere'; html = vTiere(); }
     else if (p[0] === 'tier') { const t = tierById(p[1]); showBack = true; tab = 'tiere'; if (!t) { html = '<div class="empty">Tier nicht gefunden.</div>'; } else if (p[2] === 'laktation') { title = 'Laktationsplanung'; html = vLaktation(t); } else if (p[2] === 'nachkommen') { title = 'Nachkommen'; html = vNachkommen(t); } else if (p[2] === 'behandlungen') { title = 'Behandlungen'; html = vTierBeh(t); } else { title = t.name || t.ohrmarke; html = vTier(t); } }
-    else if (p[0] === 'journale') { title = 'Journale'; html = vJournale(); }
-    else if (p[0] === 'feld') { title = 'Journale'; UI.jTab = 'feld'; tab = 'journale'; html = vJournale(); }
+    else if (p[0] === 'journale') { title = 'Analyse'; html = vJournale(); }
+    else if (p[0] === 'feld') { title = 'Analyse'; UI.jTab = 'lager'; tab = 'journale'; html = vJournale(); }
     else if (p[0] === 'labiola') { title = 'Labiola'; html = vLabiola(); }
     else if (p[0] === 'notizen') { title = 'Notizen'; html = vNotizen(); }
     else if (p[0] === 'notiz') { const n = S.notizen.find(x => x.id === p[1]); title = n ? n.titel : 'Notiz'; tab = 'notizen'; showBack = true; html = n ? vNotiz(n) : '<div class="empty">Notiz nicht gefunden.</div>'; }
     else if (p[0] === 'kalender') { title = 'Kalender'; html = vKalender(); }
-    else if (p[0] === 'analyse') { title = 'Journale'; UI.jTab = 'analyse'; tab = 'journale'; html = vJournale(); }
+    else if (p[0] === 'analyse') { title = 'Analyse'; tab = 'journale'; html = vJournale(); }
     else if (p[0] === 'einstellungen') { title = 'Einstellungen'; html = vSettings(); showBack = true; tab = ''; }
     else { html = vStart(); tab = 'start'; }
   } catch (e) { console.error(e); html = `<div class="note">Anzeigefehler: ${esc(e.message)}</div>`; }
@@ -491,10 +491,13 @@ function jahre(listen) { const s = new Set([String(new Date().getFullYear())]); 
 function jahrSel() { return `<select class="sel" data-act="jahr" aria-label="Jahr">${jahre([S.behandlungen, S.auslauf, S.feld]).map(j => `<option ${j === UI.jahr ? 'selected' : ''}>${j}</option>`).join('')}</select>`; }
 
 function vJournale() {
-  const tabs = `<div class="seg" style="margin:8px 0 12px">${[['auslauf', 'Auslauf'], ['behandlung', 'Behandlung'], ['feld', 'Feld'], ['analyse', 'Analyse']].map(([v, l]) => `<button type="button" class="${UI.jTab === v ? 'on' : ''}" data-act="jtab" data-v="${v}">${l}</button>`).join('')}</div>`;
-  if (UI.jTab === 'auslauf') return tabs + vAuslauf();
+  const tabs = `<div class="chips kf sect">${[['lager', 'Lager'], ['auslauf', 'Auslauf'], ['behandlung', 'Behandlung'], ['feld', 'Feld'], ['zucht', 'Zucht'], ['traenkefass', 'Tränkefass'], ['wasserstand', 'Wasserstand'], ['wetter', 'Wetter']].map(([v, l]) => `<button type="button" class="chip ${UI.jTab === v ? 'on' : ''}" data-act="jtab" data-v="${v}">${l}</button>`).join('')}</div>`;
+  if (UI.jTab === 'auslauf') return tabs + vAuslauf() + anaAuslaufChart();
   if (UI.jTab === 'feld') return tabs + vFeld();
-  if (UI.jTab === 'analyse') return tabs + vAnalyse();
+  if (UI.jTab === 'lager') return tabs + anaLager();
+  if (UI.jTab === 'zucht') return tabs + anaZucht();
+  if (UI.jTab === 'traenkefass' || UI.jTab === 'wasserstand') return tabs + anaSensor(UI.jTab);
+  if (UI.jTab === 'wetter') return tabs + anaWetter();
   const list = S.behandlungen.filter(b => (b.datum || '').startsWith(UI.jahr)).sort((a, b) => a.datum < b.datum ? 1 : -1);
   const offen = S.behandlungen.filter(b => b.freiAb && b.freiAb > today());
   return `${tabs}
@@ -615,34 +618,39 @@ function svgLines(series, labels, colors, h = 150) {
   labels.forEach((l, i) => { if (i % Math.ceil(n / 8) === 0) g += `<text x="${x(i)}" y="${h - 4}" font-size="9" text-anchor="middle" fill="#5F6862">${l}</text>`; });
   return `<svg viewBox="0 0 ${W} ${h}" width="100%" role="img" aria-label="Diagramm">${g}</svg>`;
 }
-function vAnalyse() {
-  const J = UI.jahr, now = new Date();
-  // Lagerverlauf 24 Monate
-  const mons = []; for (let i = 23; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i + 1, 0); mons.push(iso(d)); }
-  const bal = (typ, plus, minus, start) => mons.map(e => num(start) + S.feld.filter(f => f.datum <= e).reduce((a, f) => a + (f.typ === plus ? num(f.menge) : f.typ === minus ? -num(f.menge) : 0), 0));
-  const heu = bal('h', 'heuen', 'bezugHeu', S.set.startHeu), silo = bal('s', 'silieren', 'bezugSilage', S.set.startSilo);
-  const ml = mons.map(m => MON[+m.slice(5, 7) - 1]);
-  // Auslauf pro Monat
-  const typs = ['Weide', 'Laufhof', 'Alp'], cols = ['#2E8B62', '#5B8FD6', '#E0A35C'];
+function anaLager() {
+  const now = new Date(), mons = []; for (let i = 23; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i + 1, 0); mons.push(iso(d)); }
+  const bal = (plus, minus, start) => mons.map(e => num(start) + S.feld.filter(f => f.datum <= e).reduce((a, f) => a + (f.typ === plus ? num(f.menge) : f.typ === minus ? -num(f.menge) : 0), 0));
+  const cols = ['#2E8B62', '#E0A35C', '#B8A04A'];
+  return `${lagerKpi(lager())}
+  <div class="btns" style="margin:10px 0"><button class="btn" data-act="form" data-f="bezugHeu">− Heu</button><button class="btn" data-act="form" data-f="bezugSilage">− Silage</button><button class="btn" data-act="form" data-f="bezugStroh">− Stroh</button></div>
+  <div class="sec-t">Verlauf 24 Monate</div>
+  <div class="card">${svgLines([bal('heuen', 'bezugHeu', S.set.startHeu), bal('silieren', 'bezugSilage', S.set.startSilo), bal('stroh', 'bezugStroh', S.set.startStroh)], mons.map(m => MON[+m.slice(5, 7) - 1]), cols)}<div class="legend"><span><i class="sw" style="background:${cols[0]}"></i>Heu</span><span><i class="sw" style="background:${cols[1]}"></i>Silage</span><span><i class="sw" style="background:${cols[2]}"></i>Stroh</span></div></div>`;
+}
+function anaAuslaufChart() {
+  const J = UI.jahr, typs = ['Weide', 'Laufhof', 'Alp'], cols = ['#2E8B62', '#5B8FD6', '#E0A35C'];
   const per = typs.map(() => Array(12).fill(0));
   auslaufTage(J).forEach(([d, a]) => { const k = typs.indexOf(a.typ); if (k >= 0) per[k][+d.slice(5, 7) - 1]++; });
-  // Zucht
-  const yrs = jahre([S.ereignisse]).sort();
+  return `<div class="sec-t">Tage pro Monat ${J}</div><div class="card">${svgBars(per, MON.map(m => m.slice(0, 1)), cols)}<div class="legend">${typs.map((t, i) => `<span><i class="sw" style="background:${cols[i]}"></i>${t}</span>`).join('')}</div></div>`;
+}
+function anaZucht() {
+  const J = UI.jahr, yrs = jahre([S.ereignisse]).sort();
   const cnt = (typ, y) => S.ereignisse.filter(e => e.typ === typ && e.datum.startsWith(y)).length;
   const zk = []; S.tiere.forEach(t => { const c = evOf(t.id, 'abkalbung'); for (let i = 1; i < c.length; i++) zk.push(diff(c[i - 1].datum, c[i].datum)); });
   const bes = cnt('besamung', J), abk = cnt('abkalbung', J);
-  const graf = S.set.grafanaUrl ? `<div class="sec-t">Sensoren (Grafana)</div><div class="card" style="padding:0;overflow:hidden"><iframe src="${esc(S.set.grafanaUrl)}" style="width:100%;height:320px;border:0" loading="lazy" title="Grafana"></iframe></div>` : '';
   return `<div class="toolbar">${jahrSel()}</div>
-  <div class="sec-t">Lagerverlauf (24 Monate)</div>
-  <div class="card">${svgLines([heu, silo], ml, ['#2E8B62', '#E0A35C'])}<div class="legend"><span><i class="sw" style="background:#2E8B62"></i>Heuballen</span><span><i class="sw" style="background:#E0A35C"></i>Siloballen</span></div></div>
-  <div class="sec-t">Auslauf ${J} (Tage pro Monat)</div>
-  <div class="card">${svgBars(per, MON.map(m => m.slice(0, 1)), cols)}<div class="legend">${typs.map((t, i) => `<span><i class="sw" style="background:${cols[i]}"></i>${t}</span>`).join('')}</div></div>
-  <div class="sec-t">Zucht ${J} (Index = Besamungen pro Abkalbung, ZKZ = Zwischenkalbezeit in Tagen)</div>
-  <div class="stats"><div class="stats-row four"><span class="stats-h">Zucht</span><span class="stat"><b>${abk}</b><span>Abkalb.</span></span><span class="stat"><b>${bes}</b><span>Besam.</span></span><span class="stat"><b>${abk ? nf(bes / abk) : '-'}</b><span>Index</span></span><span class="stat"><b>${zk.length ? Math.round(zk.reduce((a, b) => a + b, 0) / zk.length) : '-'}</b><span>Ø ZKZ</span></span></div></div>
-  ${yrs.length > 1 ? `<div class="card" style="margin-top:8px">${svgBars([yrs.map(y => cnt('abkalbung', y)), yrs.map(y => cnt('besamung', y))], yrs.map(y => y.slice(2)), ['#2E8B62', '#5B8FD6'], 120)}<div class="legend"><span><i class="sw" style="background:#2E8B62"></i>Abkalbungen</span><span><i class="sw" style="background:#5B8FD6"></i>Besamungen</span></div></div>` : ''}
-  ${S.sensoren.filter(x => x.typ === 'fuellstand').map(sensorKarte).join('')}
-  ${agroKarte(S.sensoren.find(x => x.id === 'agrometeo'))}
-  ${graf}`;
+  <div class="stats"><div class="stats-row four"><span class="stats-h">${J}</span><span class="stat"><b>${abk}</b><span>Abkalb.</span></span><span class="stat"><b>${bes}</b><span>Besam.</span></span><span class="stat"><b>${abk ? nf(bes / abk) : '-'}</b><span>Index</span></span><span class="stat"><b>${zk.length ? Math.round(zk.reduce((a, b) => a + b, 0) / zk.length) : '-'}</b><span>Ø ZKZ</span></span></div></div>
+  <p class="small muted" style="margin:4px">Index = Besamungen pro Abkalbung, ZKZ = Zwischenkalbezeit in Tagen (alle Jahre)</p>
+  ${yrs.length > 1 ? `<div class="card" style="margin-top:8px">${svgBars([yrs.map(y => cnt('abkalbung', y)), yrs.map(y => cnt('besamung', y))], yrs.map(y => y.slice(2)), ['#2E8B62', '#5B8FD6'], 120)}<div class="legend"><span><i class="sw" style="background:#2E8B62"></i>Abkalbungen</span><span><i class="sw" style="background:#5B8FD6"></i>Besamungen</span></div></div>` : ''}`;
+}
+function anaSensor(id) {
+  const sx = S.sensoren.find(x => x.id === id);
+  return sx ? sensorKarte(sx) : '<div class="empty">Noch keine Daten. Der Hintergrund-Job lädt sie stündlich.</div>';
+}
+function anaWetter() {
+  const a = S.sensoren.find(x => x.id === 'agrometeo');
+  const graf = S.set.grafanaUrl ? `<div class="card" style="padding:0;overflow:hidden;margin-top:8px"><iframe src="${esc(S.set.grafanaUrl)}" style="width:100%;height:320px;border:0" loading="lazy" title="Grafana"></iframe></div>` : '';
+  return (a ? agroKarte(a) : '<div class="empty">Noch keine Wetterdaten.</div>') + graf;
 }
 
 function vLabiola() {
@@ -706,7 +714,7 @@ function vNotizen() {
   const list = S.notizen.filter(n => (!kat || n.kategorie === kat) && (!q || (n.titel + ' ' + (n.text || '')).toLowerCase().includes(q))).sort((a, b) => (a.titel || '').localeCompare(b.titel || '', 'de'));
   return `<div class="toolbar"><button class="btn pri" data-act="form" data-f="notiz">+ Notiz</button></div>
   ${kats.length ? `<div class="chips kf"><button type="button" class="chip ${!kat ? 'on' : ''}" data-act="notizkat" data-v="">Alle</button>${kats.map(k => `<button type="button" class="chip ${kat === k ? 'on' : ''}" data-act="notizkat" data-v="${esc(k)}">${esc(k)}</button>`).join('')}</div>` : ''}
-  <div class="ngrid">${list.length ? list.map(n => `<a class="ncard" href="#/notiz/${n.id}">${n.bilder && n.bilder[0] ? `<img src="${n.bilder[0]}" alt="" loading="lazy">` : '<span class="noimg"></span>'}<span class="nt"><b>${esc(n.titel)}</b><small>${esc(n.kategorie || '')}</small></span></a>`).join('') : '<div class="empty">Noch keine Notizen.</div>'}</div>`;
+  <div class="list">${list.length ? list.map(n => `<a class="row one" href="#/notiz/${n.id}"><i class="bar green"></i><div class="main"><span class="t1"><b>${esc(n.titel)}</b> <span class="ex">${esc(n.kategorie || '')}${(n.bilder || []).length ? ' · ' + n.bilder.length + ' Bild' + (n.bilder.length > 1 ? 'er' : '') : ''}</span></span></div><small class="rt">›</small></a>`).join('') : '<div class="empty">Noch keine Notizen.</div>'}</div>`;
 }
 function vNotiz(n) {
   return `<div class="card" style="margin-top:8px"><div class="small muted">${esc(n.kategorie || '')}${n.datum ? ' · ' + fmt(n.datum) : ''}</div><div class="ntext">${esc(n.text || '').replace(/\n/g, '<br>')}</div></div>
