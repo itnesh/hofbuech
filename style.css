@@ -1,7 +1,7 @@
 :root{
   --bg:#F4F4F0; --card:#FFFFFF; --line:rgba(20,30,25,.08); --line2:rgba(20,30,25,.06);
   --ink:#16201B; --muted:#5F6862;
-  --green:#1E5A43; --green2:#2B7358; --greenT:#E3F0E8;
+  --green:#0F6B2A; --green2:#008F02; --greenT:#E6F2E2; --lime:#7FCC00;
   --warn:#8A4B12; --warnT:#FCEEDD;
   --blue:#1F4E8C; --blueT:#E5EEFA;
   --red:#A3312A; --redT:#FBE5E2;
@@ -29,10 +29,10 @@ a{color:var(--green)}
 main{max-width:1040px;margin:0 auto;padding:4px 16px calc(116px + var(--safe-b))}
 
 /* Tabbar */
-.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:30;background:rgba(255,255,255,.82);backdrop-filter:saturate(1.6) blur(18px);-webkit-backdrop-filter:saturate(1.6) blur(18px);border-top:1px solid var(--line);padding:6px 8px calc(4px + var(--safe-b));display:grid;grid-template-columns:repeat(7,1fr);align-items:end}
+.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:30;background:rgba(255,255,255,.82);backdrop-filter:saturate(1.6) blur(18px);-webkit-backdrop-filter:saturate(1.6) blur(18px);border-top:1px solid var(--line);padding:6px 8px calc(4px + var(--safe-b));display:grid;grid-template-columns:1fr 1fr 1fr 64px 1.5fr 1.5fr;align-items:end}
 .tabbar a{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10px;font-weight:500;color:#8A918D;text-decoration:none;min-height:48px;justify-content:center}
 .tabbar a.on{color:var(--green);font-weight:650}
-.plus{justify-self:center;width:54px;height:54px;border-radius:20px;border:0;background:var(--green);color:#fff;box-shadow:0 8px 20px rgba(30,90,67,.35),inset 0 1px 0 rgba(255,255,255,.15);margin-top:-24px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:transform .15s}
+.plus{justify-self:center;width:54px;height:54px;border-radius:20px;border:0;background:linear-gradient(160deg,#169A2C,#0F6B2A);color:#fff;box-shadow:0 8px 20px rgba(15,107,42,.32),inset 0 1px 0 rgba(255,255,255,.15);margin-top:-24px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:transform .15s}
 .plus:active{transform:scale(.94)}
 .plus svg{transition:transform .2s}
 .plus.open svg{transform:rotate(45deg)}
@@ -189,3 +189,32 @@ body.lock{position:fixed;left:0;right:0;overflow:hidden}.sheet-b{overscroll-beha
 .kd i b.plan{background:transparent!important;box-shadow:inset 0 0 0 1.5px currentColor}
 .kd i b.plan.green{color:var(--green)}.kd i b.plan.blue{color:var(--blue)}.kd i b.plan.warn{color:#D58A3A}.kd i b.plan.red{color:var(--red)}.kd i b.plan.grey{color:#A9ADA7}
 .stats-row.four .stat b{font-size:19px}
+
+#hlogo{height:30px;width:auto;margin-right:4px}
+.av{position:relative}
+.av svg{width:24px;height:24px}
+.av .trg{position:absolute;right:-3px;top:-3px;width:13px;height:13px;border-radius:99px;background:#E25C8A;box-shadow:0 0 0 2px #fff}
+.row .s.wrap,.row .t.wrap{white-space:normal}
+.chk{width:30px;height:30px;border-radius:9px;border:2px solid #C3C8C2;background:#fff;display:flex;align-items:center;justify-content:center;flex:0 0 auto;cursor:pointer;color:#fff;padding:0}
+.chk.on{background:var(--green);border-color:var(--green)}
+.wetter{display:grid;grid-template-columns:repeat(14,minmax(0,1fr));gap:0;margin:2px 0 6px;padding:4px 2px;background:var(--card);border-radius:14px;box-shadow:var(--shadow)}
+.wetter span{display:flex;flex-direction:column;align-items:center;gap:0}
+.wetter small{font-size:9px;color:var(--muted);line-height:1}
+/* Kalender kompakter */
+.kal{padding:6px 6px 8px}
+.kal-h b{font-size:15px}
+.kd{aspect-ratio:auto;min-height:34px;height:36px;font-size:13px;gap:2px;border-radius:9px}
+.kd.today span{width:22px;height:22px}
+.kd i b{width:5px;height:5px}
+.kd i{height:5px}
+
+html{touch-action:manipulation}
+details.acc{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+details.acc summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px;cursor:pointer;min-height:56px}
+details.acc summary::-webkit-details-marker{display:none}
+details.acc summary span{display:flex;flex-direction:column;gap:2px;min-width:0}
+details.acc summary b{font-size:16px;font-weight:650}
+details.acc summary small{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+details.acc summary i{font-style:normal;font-size:22px;color:var(--muted);transition:transform .2s}
+details.acc[open] summary i{transform:rotate(90deg)}
+.acc-b{padding:0 16px 16px;display:flex;flex-direction:column;gap:14px}

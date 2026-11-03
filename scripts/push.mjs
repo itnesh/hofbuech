@@ -29,11 +29,11 @@ for (const t of tiere.filter(aktiv)) {
   const cal = evOf(t.id, 'abkalbung').filter(e => e.datum <= today).pop();
   const bes = evOf(t.id, 'besamung').filter(e => e.datum <= today && (!cal || e.datum > cal.datum)).pop();
   if (bes) {
-    hit(addDays(bes.datum, set.tragzeit), [7, 1, 0], `Abkalbung erwartet: ${name(t)}`);
+    hit(addDays(bes.datum, set.tragzeit), [7, 1, 0], `Gepl. Abkalbung: ${name(t)}`);
     hit(addDays(bes.datum, 21), [0], `Brunstkontrolle: ${name(t)} (21 T. nach Besamung)`);
   } else {
     const br = evOf(t.id, 'brunst').filter(e => !cal || e.datum > cal.datum).pop();
-    if (br) { let nx = addDays(br.datum, 21); while (nx < today) nx = addDays(nx, 21); hit(nx, [1, 0], `Brunst erwartet: ${name(t)}`); }
+    if (br) { let nx = addDays(br.datum, 21); while (nx < today) nx = addDays(nx, 21); hit(nx, [1, 0], `Gepl. Brunst: ${name(t)}`); }
   }
 }
 for (const b of beh) if (b.freiAb) hit(b.freiAb, [0], `Absetzfrist endet: ${(b.tierIds || []).map(id => name(tiere.find(t => t.id === id) || {})).join(', ')} (${b.medikament || ''})`);
@@ -42,6 +42,14 @@ for (const z of pz) {
   if (z.schnittAb) hit(`${y}-${z.schnittAb}`, [3, 0], `Schnitt erlaubt ab heute: ${z.name}`);
   if (z.fruehBis) hit(`${y}-${z.fruehBis}`, [7, 2, 0], `Frühschnitt spätestens: ${z.name}`);
   if (z.schnitt2Ab) hit(`${y}-${z.schnitt2Ab}`, [0], `2. Schnitt erlaubt: ${z.name}`);
+}
+const [lab, auf] = await Promise.all(['labiola', 'aufgaben'].map(load));
+for (const o of lab) if (o.szp) hit(`${y}-${o.szp}`, [3, 0], `Labiola Obj. ${o.nr} ${o.flurname || ''}: Schnitt erlaubt`);
+for (const a of auf) {
+  const due = a.art === 'einmalig' ? a.faellig : (a.faelligMT ? `${y}-${a.faelligMT}` : null);
+  if (!due || !due.startsWith(y) || (a.erledigt || {})[y]) continue;
+  hit(due, [14, 3, 0], `Labiola-Pendenz: ${a.titel}`);
+  if (diff(due, today) > 0 && diff(due, today) % 7 === 0) msgs.push(`Überfällig: ${a.titel}`);
 }
 const alpIst = aus.some(a => a.typ === 'Alp' && a.datum.startsWith(y));
 if (!alpIst) hit(`${y}-${set.alpVon}`, [7, 0], 'Alpauffahrt (geplant)');
