@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.4.1';
+const VERSION = '1.6.0';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -49,8 +49,8 @@ const DEF = {
 };
 
 /* ---------- Datenhaltung ---------- */
-const COLLS = ['tiere', 'ereignisse', 'behandlungen', 'auslauf', 'feld'];
-const S = { tiere: [], ereignisse: [], behandlungen: [], auslauf: [], feld: [], set: { ...DEF } };
+const COLLS = ['tiere', 'ereignisse', 'behandlungen', 'auslauf', 'feld', 'parzellen'];
+const S = { tiere: [], ereignisse: [], behandlungen: [], auslauf: [], feld: [], parzellen: [], set: { ...DEF } };
 let W = null; // writer
 let mode = 'local';
 const HOF = window.HB_HOF || 'bannhalde';
@@ -95,7 +95,7 @@ async function initFirebase(cfg) {
   const A = await import(`https://www.gstatic.com/firebasejs/${V}/firebase-auth.js`);
   const F = await import(`https://www.gstatic.com/firebasejs/${V}/firebase-firestore.js`);
   const app = initializeApp(cfg);
-  const auth = A.getAuth(app); AUTH = { auth, A };
+  const auth = A.getAuth(app); AUTH = { auth, A, app, F, V };
   try { await A.getRedirectResult(auth); } catch (e) { loginScreen(e.message); }
   USER = await new Promise(res => A.onAuthStateChanged(auth, u => u ? res(u) : loginScreen()));
   $('#tabbar').classList.remove('hidden');
@@ -120,7 +120,7 @@ function put(c, o) { o.id = o.id || uid(); o.geaendert = Date.now(); W.put(c, o)
 function del(c, id) { W.del(c, id); }
 
 /* ---------- Fachlogik ---------- */
-const parzellen = () => [...new Set([...(S.set.parzellen || []), ...S.feld.map(f => f.parzelle), ...S.auslauf.map(a => a.parzelle)].filter(Boolean))];
+const parzellen = () => [...new Set([...S.parzellen.map(x => x.name), ...(S.set.parzellen || []), ...S.feld.map(f => f.parzelle), ...S.auslauf.map(a => a.parzelle)].filter(Boolean))];
 const gruende = () => [...new Set([...(S.set.gruende || []), ...S.auslauf.map(a => a.grund)].filter(Boolean))];
 const rassen = () => [...new Set(S.tiere.map(t => (t.rasse || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'de'));
 const tierById = id => S.tiere.find(t => t.id === id);
@@ -185,7 +185,27 @@ function agenda(tage = 150) {
     }
   }
   for (const y of [+d.slice(0, 4), +d.slice(0, 4) + 1]) { const [a, b] = alpFenster(y); const ist = alpIst()[String(y)]; if (!ist) it.push({ d: a, t: 'Alpauffahrt (geplant)', s: '', c: 'grey' }); if (!ist || !ist[1]) it.push({ d: b, t: 'Alpabfahrt (geplant)', s: '', c: 'grey' }); }
+  for (const y of [+d.slice(0, 4), +d.slice(0, 4) + 1]) it.push(...pzRegeln(y));
   return it.filter(x => x.d >= addDays(d, -2) && x.d <= end).sort((a, b) => a.d < b.d ? -1 : a.d > b.d ? 1 : 0);
+}
+// '15.6.' oder '15.06' = Tag.Monat, '06-15' = Monat-Tag -> 'MM-TT'
+function mmtt(x) { const t = String(x || '').trim(); let m = t.match(/^(\d{1,2})\.(\d{1,2})\.?$/); if (m) return `${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`; m = t.match(/^(\d{1,2})-(\d{1,2})$/); return m ? `${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}` : ''; }
+const pzInfo = n => S.parzellen.find(x => x.name === n);
+function pzRegeln(y) {
+  const out = [];
+  for (const z of S.parzellen) {
+    if (z.schnittAb) out.push({ d: `${y}-${z.schnittAb}`, t: `Schnitt erlaubt ab heute`, s: `${z.name}${z.programm ? ' · ' + z.programm : ''}`, c: 'green', pz: z.name });
+    if (z.fruehBis) out.push({ d: `${y}-${z.fruehBis}`, t: `Frühschnitt spätestens`, s: `${z.name}${z.programm ? ' · ' + z.programm : ''}`, c: 'warn', pz: z.name });
+    if (z.schnitt2Ab) out.push({ d: `${y}-${z.schnitt2Ab}`, t: `2. Schnitt ab`, s: z.name, c: 'green', pz: z.name });
+  }
+  return out;
+}
+function feldWarnung(typ, pz, datum) {
+  const z = pzInfo(pz); if (!z || !datum) return '';
+  const w = [];
+  if ((typ === 'guellen' || typ === 'misten') && z.duengen === 'nein') w.push(`Düngung auf ${z.name} nicht erlaubt (${z.programm || 'Vertrag'})`);
+  if ((typ === 'heuen' || typ === 'silieren') && z.schnittAb && datum.slice(5) < z.schnittAb) w.push(`Frühester Schnitt auf ${z.name}: ${z.schnittAb.slice(3)}.${z.schnittAb.slice(0, 2)}.`);
+  return w.map(x => `<div class="note" style="margin-top:6px"><b>Achtung:</b> ${esc(x)}</div>`).join('');
 }
 function frist(tid, d = today()) {
   return S.behandlungen.filter(b => (b.tierIds || []).includes(tid) && b.freiAb && b.freiAb > d).sort((a, b) => a.freiAb < b.freiAb ? 1 : -1)[0];
@@ -208,7 +228,7 @@ function ortAm(tid, d, list = sortedAuslauf()) { let best = null; for (const a o
 /* ---------- Router ---------- */
 let rq = false;
 function schedule() { if (rq) return; rq = true; requestAnimationFrame(() => { rq = false; render(); }); }
-const UI = { tierFilter: { kat: '', lakt: '', q: '', sort: 'name', abg: false }, jTab: 'auslauf', fTab: 'austrag', jahr: String(new Date().getFullYear()) };
+const UI = { tierFilter: { kat: '', lakt: '', q: '', sort: 'name', abg: false }, jTab: 'auslauf', kalMonat: today().slice(0, 7), kalTag: '', fTab: 'austrag', jahr: String(new Date().getFullYear()) };
 
 function render() {
   if (mode === 'firebase' && !USER) return;
@@ -224,6 +244,8 @@ function render() {
     else if (p[0] === 'tier') { const t = tierById(p[1]); showBack = true; tab = 'tiere'; if (!t) { html = '<div class="empty">Tier nicht gefunden.</div>'; } else if (p[2] === 'laktation') { title = 'Laktationsplanung'; html = vLaktation(t); } else if (p[2] === 'nachkommen') { title = 'Nachkommen'; html = vNachkommen(t); } else if (p[2] === 'behandlungen') { title = 'Behandlungen'; html = vTierBeh(t); } else { title = t.name || t.ohrmarke; html = vTier(t); } }
     else if (p[0] === 'journale') { title = 'Journale'; html = vJournale(); }
     else if (p[0] === 'feld') { title = 'Bewirtschaftung'; html = vFeld(); }
+    else if (p[0] === 'kalender') { title = 'Kalender'; html = vKalender(); }
+    else if (p[0] === 'analyse') { title = 'Analyse'; html = vAnalyse(); }
     else if (p[0] === 'einstellungen') { title = 'Einstellungen'; html = vSettings(); showBack = true; tab = ''; }
     else { html = vStart(); tab = 'start'; }
   } catch (e) { console.error(e); html = `<div class="note">Anzeigefehler: ${esc(e.message)}</div>`; }
@@ -449,7 +471,8 @@ const FELD = {
   bezugHeu: { l: 'Lagerbezug Heu', e: 'Ballen', g: 'lager' }, bezugSilage: { l: 'Lagerbezug Silage', e: 'Ballen', g: 'lager' }
 };
 function vFeld() {
-  const tabs = `<div class="seg" style="margin:8px 0 12px">${[['austrag', 'Austragung'], ['ernte', 'Ernte'], ['lager', 'Lager']].map(([v, l]) => `<button type="button" class="${UI.fTab === v ? 'on' : ''}" data-act="ftab" data-v="${v}">${l}</button>`).join('')}</div>`;
+  if (UI.fTab === 'parzellen') return vParzellen();
+  const tabs = `<div class="seg" style="margin:8px 0 12px">${[['austrag', 'Austragung'], ['ernte', 'Ernte'], ['lager', 'Lager'], ['parzellen', 'Parzellen']].map(([v, l]) => `<button type="button" class="${UI.fTab === v ? 'on' : ''}" data-act="ftab" data-v="${v}">${l}</button>`).join('')}</div>`;
   const L = lager();
   const inJahr = S.feld.filter(f => (f.datum || '').startsWith(UI.jahr));
   const list = inJahr.filter(f => FELD[f.typ] && FELD[f.typ].g === UI.fTab).sort((a, b) => a.datum < b.datum ? 1 : -1);
@@ -466,6 +489,107 @@ function vFeld() {
     ${Object.keys(sum).length ? `<div class="sec-t">Total ${UI.jahr} pro Parzelle</div><div class="list">${Object.entries(sum).map(([p, v]) => `<div class="row"><div class="main"><span class="t">${esc(p)}</span></div><span class="r">${typs.filter(k => v[k]).map(k => `${FELD[k].l.replace('Lagerbezug ', '')}: <b>${nf(v[k])} ${FELD[k].e}</b>`).join('<br>')}</span></div>`).join('')}</div>` : ''}`;
   }
   return `${tabs}${top}<div class="toolbar">${jahrSel()}<button class="btn" data-act="pdf" data-p="feld">Feldkalender PDF ${UI.jahr}</button></div><div class="list">${rows}</div>`;
+}
+
+function vParzellen() {
+  const tabs = `<div class="seg" style="margin:8px 0 12px">${[['austrag', 'Austragung'], ['ernte', 'Ernte'], ['lager', 'Lager'], ['parzellen', 'Parzellen']].map(([v, l]) => `<button type="button" class="${UI.fTab === v ? 'on' : ''}" data-act="ftab" data-v="${v}">${l}</button>`).join('')}</div>`;
+  const y = UI.jahr, list = [...S.parzellen].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'de'));
+  const tot = list.reduce((a, z) => a + num(z.ha), 0);
+  const md = x => x ? `${x.slice(3)}.${x.slice(0, 2)}.` : '';
+  return `${tabs}<div class="toolbar"><button class="btn pri" data-act="form" data-f="parzelle">+ Parzelle</button><span class="muted small">${list.length} Parzellen · ${nf(tot)} ha</span></div>
+  <div class="list">${list.length ? list.map(z => {
+    const f = S.feld.filter(x => x.parzelle === z.name && (x.datum || '').startsWith(y));
+    const sum = t => f.filter(x => x.typ === t).reduce((a, x) => a + num(x.menge), 0);
+    const info = [z.nutzung, z.ha ? nf(num(z.ha)) + ' ha' : '', z.schnittAb ? 'Schnitt ab ' + md(z.schnittAb) : '', z.fruehBis ? 'Frühschnitt bis ' + md(z.fruehBis) : '', z.duengen === 'nein' ? 'keine Düngung' : ''].filter(Boolean).join(' · ');
+    const bil = [sum('guellen') ? nf(sum('guellen')) + ' m³ Gülle' : '', sum('misten') ? nf(sum('misten')) + ' t Mist' : '', sum('heuen') ? nf(sum('heuen')) + ' Heu' : '', sum('silieren') ? nf(sum('silieren')) + ' Silo' : ''].filter(Boolean).join(' · ');
+    return `<button type="button" class="row" data-act="edit" data-c="parzellen" data-id="${z.id}"><span class="av weide">${esc((z.name || '?').slice(0, 1).toUpperCase())}</span><div class="main"><span class="t">${esc(z.name)}${z.programm ? ` <span class="pill ${z.programm === 'Labiola' ? '' : 'blue'}">${esc(z.programm)}</span>` : ''}</span><span class="s">${esc(info || 'keine Auflagen')}</span>${bil ? `<span class="s">${y}: ${esc(bil)}</span>` : ''}</div></button>`;
+  }).join('') : '<div class="empty">Noch keine Parzellen. Mit Programm (z.B. Labiola), Schnittzeitpunkt und Düngeverbot erfassen, dann warnt die App beim Güllen und Mähen.</div>'}</div>`;
+}
+
+function kalItems(from, to) {
+  const it = [];
+  for (const e of S.ereignisse) { const [a] = evLabel(e); it.push({ d: e.datum, t: a, s: tName(e.tierId), id: e.tierId, c: e.typ === 'abkalbung' ? 'green' : e.typ === 'besamung' ? 'blue' : 'warn' }); }
+  for (const b of S.behandlungen) it.push({ d: b.datum, t: 'Behandlung', s: `${tierListe(b.tierIds)} · ${b.medikament || ''}`, c: 'red' });
+  for (const f of S.feld) if (FELD[f.typ]) it.push({ d: f.datum, t: FELD[f.typ].l, s: [f.parzelle || f.zweck, nf(num(f.menge)) + ' ' + FELD[f.typ].e].filter(Boolean).join(' · '), c: 'grey' });
+  for (const a of S.auslauf) it.push({ d: a.datum, t: ortTxt(a), s: 'Auslaufjournal', c: 'grey' });
+  for (const t of S.tiere) { if (t.geburt && t.zugang === t.geburt) continue; if (t.zugang) it.push({ d: t.zugang, t: 'Zugang', s: t.name || t.ohrmarke, id: t.id, c: 'grey' }); }
+  for (const t of S.tiere) if (t.abgang) it.push({ d: t.abgang, t: 'Abgang ' + (t.abgangGrund || ''), s: t.name || t.ohrmarke, id: t.id, c: 'grey' });
+  it.push(...agenda(800).map(x => ({ ...x, plan: true })));
+  const cy = +today().slice(0, 4);
+  for (let y = +from.slice(0, 4); y <= +to.slice(0, 4); y++) if (y < cy) it.push(...pzRegeln(y).map(x => ({ ...x, plan: true })));
+  return it.filter(x => x.d && x.d >= from && x.d <= to).sort((a, b) => a.d < b.d ? -1 : a.d > b.d ? 1 : 0);
+}
+function vKalender() {
+  const [Y, M] = UI.kalMonat.split('-').map(Number);
+  const first = `${UI.kalMonat}-01`, nDays = new Date(Y, M, 0).getDate(), last = `${UI.kalMonat}-${String(nDays).padStart(2, '0')}`;
+  const items = kalItems(first, last), byDay = {};
+  items.forEach(x => (byDay[x.d] = byDay[x.d] || []).push(x));
+  const off = (new Date(Y, M - 1, 1).getDay() + 6) % 7, t = today();
+  let cells = '';
+  for (let i = 0; i < off; i++) cells += '<span class="kd empty"></span>';
+  for (let d = 1; d <= nDays; d++) {
+    const ds = `${UI.kalMonat}-${String(d).padStart(2, '0')}`, ev = byDay[ds] || [];
+    const alp = inAlp(ds);
+    cells += `<button type="button" class="kd ${ds === t ? 'today' : ''} ${ds === UI.kalTag ? 'sel' : ''} ${alp ? 'alp' : ''}" data-act="kaltag" data-v="${ds}"><span>${d}</span><i>${ev.slice(0, 4).map(x => `<b class="${x.c}${x.plan ? ' plan' : ''}"></b>`).join('')}</i></button>`;
+  }
+  const show = UI.kalTag && UI.kalTag.startsWith(UI.kalMonat) ? (byDay[UI.kalTag] || []) : items;
+  const rows = show.map(x => `<${x.id ? `a href="#/tier/${x.id}"` : 'div'} class="row ag"><span class="dt ${x.c}"><b>${x.d.slice(8, 10)}</b><small>${MON[+x.d.slice(5, 7) - 1]}</small></span><div class="main"><span class="t">${esc(x.t)}${x.plan ? ' <span class="pill grey">geplant</span>' : ''}</span><span class="s">${esc(x.s || '')}</span></div></${x.id ? 'a' : 'div'}>`).join('');
+  return `<div class="kal">
+    <div class="kal-h"><button type="button" class="iconbtn" data-act="kalmon" data-v="-1" aria-label="Vormonat">‹</button><b>${['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'][M - 1]} ${Y}</b><button type="button" class="iconbtn" data-act="kalmon" data-v="1" aria-label="Folgemonat">›</button></div>
+    <div class="kal-w"><span>Mo</span><span>Di</span><span>Mi</span><span>Do</span><span>Fr</span><span>Sa</span><span>So</span></div>
+    <div class="kal-g">${cells}</div>
+  </div>
+  <div class="legend"><span><i class="sw" style="background:var(--green)"></i>Abkalbung / Schnitt</span><span><i class="sw" style="background:var(--blue)"></i>Besamung / Brunst</span><span><i class="sw" style="background:var(--red)"></i>Behandlung</span><span><i class="sw" style="background:#C9CCC6"></i>Feld / Auslauf</span><span><i class="sw" style="background:#FCEEDD"></i>Alp</span></div>
+  <div class="sec-t">${UI.kalTag && UI.kalTag.startsWith(UI.kalMonat) ? fmt(UI.kalTag) + ' <a href="#/kalender" data-act="kaltag" data-v="" style="font-weight:500;text-transform:none;letter-spacing:0">ganzer Monat</a>' : 'Ganzer Monat'}</div>
+  <div class="list">${rows || '<div class="empty">Keine Einträge.</div>'}</div>`;
+}
+
+function svgBars(series, labels, colors, h = 150) {
+  const n = labels.length, W = 340, pad = 22, bw = (W - pad) / n;
+  const tot = labels.map((_, i) => series.reduce((a, s) => a + (s[i] || 0), 0)), mx = Math.max(1, ...tot);
+  let g = '';
+  labels.forEach((l, i) => {
+    let y = h - 18;
+    series.forEach((s, k) => { const v = s[i] || 0, hh = v / mx * (h - 30); if (hh > 0) { y -= hh; g += `<rect x="${pad + i * bw + 2}" y="${y}" width="${bw - 4}" height="${hh}" rx="2" fill="${colors[k]}"><title>${v}</title></rect>`; } });
+    g += `<text x="${pad + i * bw + bw / 2}" y="${h - 4}" font-size="9" text-anchor="middle" fill="#5F6862">${l}</text>`;
+  });
+  g += `<text x="0" y="12" font-size="9" fill="#5F6862">${mx}</text><line x1="${pad}" x2="${W}" y1="${h - 18}" y2="${h - 18}" stroke="#E2E4DF"/>`;
+  return `<svg viewBox="0 0 ${W} ${h}" width="100%" role="img" aria-label="Diagramm">${g}</svg>`;
+}
+function svgLines(series, labels, colors, h = 150) {
+  const W = 340, pad = 26, n = labels.length, all = series.flat(), mx = Math.max(1, ...all), mn = Math.min(0, ...all);
+  const x = i => pad + i * (W - pad - 6) / Math.max(1, n - 1), y = v => 8 + (mx - v) / (mx - mn || 1) * (h - 30);
+  let g = `<line x1="${pad}" x2="${W}" y1="${y(0)}" y2="${y(0)}" stroke="#E2E4DF"/><text x="0" y="12" font-size="9" fill="#5F6862">${nf(mx)}</text>`;
+  series.forEach((s, k) => { g += `<polyline fill="none" stroke="${colors[k]}" stroke-width="2.2" stroke-linejoin="round" points="${s.map((v, i) => `${x(i)},${y(v)}`).join(' ')}"/>`; });
+  labels.forEach((l, i) => { if (i % Math.ceil(n / 8) === 0) g += `<text x="${x(i)}" y="${h - 4}" font-size="9" text-anchor="middle" fill="#5F6862">${l}</text>`; });
+  return `<svg viewBox="0 0 ${W} ${h}" width="100%" role="img" aria-label="Diagramm">${g}</svg>`;
+}
+function vAnalyse() {
+  const J = UI.jahr, now = new Date();
+  // Lagerverlauf 24 Monate
+  const mons = []; for (let i = 23; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i + 1, 0); mons.push(iso(d)); }
+  const bal = (typ, plus, minus, start) => mons.map(e => num(start) + S.feld.filter(f => f.datum <= e).reduce((a, f) => a + (f.typ === plus ? num(f.menge) : f.typ === minus ? -num(f.menge) : 0), 0));
+  const heu = bal('h', 'heuen', 'bezugHeu', S.set.startHeu), silo = bal('s', 'silieren', 'bezugSilage', S.set.startSilo);
+  const ml = mons.map(m => MON[+m.slice(5, 7) - 1]);
+  // Auslauf pro Monat
+  const typs = ['Weide', 'Laufhof', 'Stall', 'Alp'], cols = ['#2E8B62', '#5B8FD6', '#1F4E8C', '#E0A35C'];
+  const per = typs.map(() => Array(12).fill(0));
+  auslaufTage(J).forEach(([d, a]) => { const k = typs.indexOf(a.typ); if (k >= 0) per[k][+d.slice(5, 7) - 1]++; });
+  // Zucht
+  const yrs = jahre([S.ereignisse]).sort();
+  const cnt = (typ, y) => S.ereignisse.filter(e => e.typ === typ && e.datum.startsWith(y)).length;
+  const zk = []; S.tiere.forEach(t => { const c = evOf(t.id, 'abkalbung'); for (let i = 1; i < c.length; i++) zk.push(diff(c[i - 1].datum, c[i].datum)); });
+  const bes = cnt('besamung', J), abk = cnt('abkalbung', J);
+  const graf = S.set.grafanaUrl ? `<div class="sec-t">Sensoren (Grafana)</div><div class="card" style="padding:0;overflow:hidden"><iframe src="${esc(S.set.grafanaUrl)}" style="width:100%;height:320px;border:0" loading="lazy" title="Grafana"></iframe></div>` : '';
+  return `<div class="toolbar">${jahrSel()}</div>
+  <div class="sec-t">Lagerverlauf (24 Monate)</div>
+  <div class="card">${svgLines([heu, silo], ml, ['#2E8B62', '#E0A35C'])}<div class="legend"><span><i class="sw" style="background:#2E8B62"></i>Heuballen</span><span><i class="sw" style="background:#E0A35C"></i>Siloballen</span></div></div>
+  <div class="sec-t">Auslauf ${J} (Tage pro Monat)</div>
+  <div class="card">${svgBars(per, MON.map(m => m.slice(0, 1)), cols)}<div class="legend">${typs.map((t, i) => `<span><i class="sw" style="background:${cols[i]}"></i>${t}</span>`).join('')}</div></div>
+  <div class="sec-t">Zucht ${J} (Index = Besamungen pro Abkalbung, ZKZ = Zwischenkalbezeit in Tagen)</div>
+  <div class="stats"><div class="stats-row four"><span class="stats-h">Zucht</span><span class="stat"><b>${abk}</b><span>Abkalb.</span></span><span class="stat"><b>${bes}</b><span>Besam.</span></span><span class="stat"><b>${abk ? nf(bes / abk) : '-'}</b><span>Index</span></span><span class="stat"><b>${zk.length ? Math.round(zk.reduce((a, b) => a + b, 0) / zk.length) : '-'}</b><span>Ø ZKZ</span></span></div></div>
+  ${yrs.length > 1 ? `<div class="card" style="margin-top:8px">${svgBars([yrs.map(y => cnt('abkalbung', y)), yrs.map(y => cnt('besamung', y))], yrs.map(y => y.slice(2)), ['#2E8B62', '#5B8FD6'], 120)}<div class="legend"><span><i class="sw" style="background:#2E8B62"></i>Abkalbungen</span><span><i class="sw" style="background:#5B8FD6"></i>Besamungen</span></div></div>` : ''}
+  ${graf}`;
 }
 
 function vSettings() {
@@ -490,6 +614,9 @@ function vSettings() {
   <label class="fld"><span>Gründe Stall / Laufhof</span><textarea name="gruende" rows="4">${esc((s.gruende || []).join('\n'))}</textarea></label>
   <label class="fld"><span>Medikamente (Name ; Absetzfrist Tage)</span><textarea name="medikamente" rows="4" placeholder="Beispielpräparat ; 21">${esc((s.medikamente || []).map(m => `${m.name} ; ${m.frist}`).join('\n'))}</textarea></label>
   </div>
+  <div class="sec-t">Analyse</div><div class="card form">
+  <label class="fld"><span>Grafana-Link zum Einbetten (optional)</span><input name="grafanaUrl" value="${esc(s.grafanaUrl || '')}" placeholder="https://...grafana.net/public-dashboards/..."></label>
+  </div>
   <div class="sec-t">Lager</div><div class="card form">
   <label class="fld"><span>Startbestand Heuballen</span><input name="startHeu" type="number" inputmode="decimal" value="${s.startHeu}"></label>
   <label class="fld"><span>Startbestand Siloballen</span><input name="startSilo" type="number" inputmode="decimal" value="${s.startSilo}"></label>
@@ -498,7 +625,10 @@ function vSettings() {
   </form>
   <div class="sec-t">Daten</div>
   <div class="card"><p class="small muted" style="margin:0 0 10px">Speicherort: <b>${mode === 'firebase' ? 'Firebase (synchronisiert)' : 'nur dieses Gerät'}</b>${mode === 'firebase' && USER ? ` · angemeldet als <b>${esc(USER.email)}</b>` : ''} · Version ${VERSION}</p>
-  <div class="btns"><button class="btn" data-act="backup">Backup herunterladen (JSON)</button><label class="btn">TVD-Import (Excel)<input type="file" accept=".xlsx,.xls,.csv" data-act="tvdimport" class="hidden"></label><label class="btn">Backup einlesen<input type="file" accept="application/json" data-act="restore" class="hidden"></label>${mode === 'firebase' ? '<button class="btn" data-act="logout">Abmelden</button>' : ''}</div></div>`;
+  <div class="btns"><button class="btn" data-act="backup">Backup herunterladen (JSON)</button><label class="btn">TVD-Import (Excel)<input type="file" accept=".xlsx,.xls,.csv" data-act="tvdimport" class="hidden"></label><label class="btn">Backup einlesen<input type="file" accept="application/json" data-act="restore" class="hidden"></label>${mode === 'firebase' ? '<button class="btn" data-act="logout">Abmelden</button>' : ''}</div></div>
+  <div class="sec-t">Benachrichtigungen</div>
+  <div class="card"><p class="small muted" style="margin:0 0 10px">Täglich am Morgen eine Push-Nachricht mit den Terminen: Abkalbung (7 Tage, 1 Tag vorher und am Tag), Brunst, Brunstkontrolle, Ende Absetzfrist, Schnitttermine der Parzellen, Alp. Auf dem iPhone nur über das Homescreen-Icon möglich.</p>
+  <button class="btn ${localStorage.getItem('hb-push') ? '' : 'pri'}" data-act="push">${localStorage.getItem('hb-push') ? 'Push auf diesem Gerät erneuern' : 'Push auf diesem Gerät aktivieren'}</button></div>`;
 }
 
 /* ---------- Formulare ---------- */
@@ -571,9 +701,19 @@ for (const [k, d] of Object.entries(FELD)) {
     { k: 'datum', l: 'Datum', t: 'date' },
     ...(d.g === 'lager' ? [{ k: 'zweck', l: 'Zweck', t: 'text', def: 'Fütterung', list: () => ['Fütterung', 'Verkauf', 'Einstreu'] }] : [{ k: 'parzelle', l: 'Parzelle', t: 'tag', list: parzellen }]),
     { k: 'menge', l: `Menge (${d.e})`, t: 'number' }, { k: 'notiz', l: 'Notiz', t: 'textarea' }],
-    calc: v => { if (d.g === 'austrag') return ''; const L = lager(); const cur = k === 'heuen' || k === 'bezugHeu' ? L.heu : L.silo; const sign = d.g === 'lager' ? -1 : 1; return `Lager ${k.includes('eu') || k === 'heuen' ? 'Heu' : 'Silage'}: ${nf(cur)} → <b>${nf(cur + sign * num(v.menge))}</b> Ballen`; } };
+    calc: v => { const w = feldWarnung(k, v.parzelle, v.datum); if (d.g === 'austrag') return w; const L = lager(); const cur = k === 'heuen' || k === 'bezugHeu' ? L.heu : L.silo; const sign = d.g === 'lager' ? -1 : 1; return `Lager ${k.includes('eu') || k === 'heuen' ? 'Heu' : 'Silage'}: ${nf(cur)} → <b>${nf(cur + sign * num(v.menge))}</b> Ballen` + w; } };
 }
 FORMS.tiere = { ...FORMS.zugang, t: 'Tier bearbeiten', more: false };
+FORMS.parzelle = { t: 'Parzelle', coll: 'parzellen', prep: v => { ['schnittAb', 'fruehBis', 'schnitt2Ab'].forEach(k => v[k] = mmtt(v[k])); v.ha = num(v.ha); }, fields: [
+  { k: 'name', l: 'Name', t: 'text', ph: 'z.B. Bannhalde Ost' }, { k: 'ha', l: 'Fläche (ha)', t: 'number' },
+  { k: 'nutzung', l: 'Nutzung', t: 'seg', o: [['Wiese', 'Wiese'], ['Weide', 'Weide'], ['Mähweide', 'Mähweide'], ['Acker', 'Acker']], def: 'Wiese' },
+  { k: 'programm', l: 'Programm / Vertrag', t: 'tag', list: () => [...new Set(['Labiola', 'BFF Q1', 'BFF Q2', 'Vernetzung', ...S.parzellen.map(x => x.programm)].filter(Boolean))] },
+  { k: 'schnittAb', l: 'Frühester 1. Schnitt (TT.MM.)', t: 'text', ph: '15.06.' },
+  { k: 'fruehBis', l: 'Frühschnitt spätestens (TT.MM., Schnittstaffelung)', t: 'text', ph: '31.05.' },
+  { k: 'schnitt2Ab', l: 'Frühester 2. Schnitt (TT.MM.)', t: 'text', ph: '' },
+  { k: 'duengen', l: 'Düngung erlaubt', t: 'seg', o: [['ja', 'ja'], ['nein', 'nein']], def: 'ja' },
+  { k: 'notiz', l: 'Auflagen / Notiz', t: 'textarea' }],
+  hint: 'Daten aus deiner Labiola-Bewirtschaftungsvereinbarung übernehmen. Termine erscheinen im Kalender, Verstösse werden beim Erfassen gewarnt.' };
 
 let sheetOpen = null, lockY = 0;
 function lockScroll(on) {
@@ -639,7 +779,7 @@ function openForm(key, rec = null, pre = {}) {
   const isEdit = !!rec;
   const v = {};
   def.fields.forEach(f => { v[f.k] = f.t === 'date' ? today() : f.t === 'tiere' ? (f.allDefault ? aktiveTiere().filter(t => !f.filter || f.filter(t)).map(t => t.id) : []) : (typeof f.def === 'function' ? f.def() : (f.def ?? '')); });
-  if (rec) { Object.assign(v, rec); if (def.multi && rec.tierId) v.tierIds = [rec.tierId]; }
+  if (rec) { Object.assign(v, rec); if (key === 'parzelle') ['schnittAb', 'fruehBis', 'schnitt2Ab'].forEach(k => { if (v[k]) v[k] = `${v[k].slice(3)}.${v[k].slice(0, 2)}.`; }); if (def.multi && rec.tierId) v.tierIds = [rec.tierId]; }
   if (pre.tier) { if ('tierIds' in v) v.tierIds = [pre.tier]; if ('tierId' in v) v.tierId = pre.tier; }
   if (key === 'tiere' || key === 'zugang') { if (!rec) { v.geburt = ''; v.zugang = ''; } }
   const body = `${def.hint ? `<div class="note blue small" style="margin-bottom:14px">${def.hint}</div>` : ''}<form class="form" data-form>${def.fields.map(f => `<div data-fk="${f.k}">${fieldHtml(f, v)}</div>`).join('')}<div class="calc" data-calc></div>
@@ -713,6 +853,7 @@ function formKey(coll, r) {
   if (coll === 'behandlungen') return 'behandlung';
   if (coll === 'auslauf') return 'auslauf';
   if (coll === 'feld') return r.typ;
+  if (coll === 'parzellen') return 'parzelle';
 }
 
 /* ---------- PDF ---------- */
@@ -781,6 +922,24 @@ async function pdf(p, id) {
   }
 }
 
+/* ---------- Push ---------- */
+async function pushAktivieren() {
+  if (!AUTH || !window.HB_VAPID) return toast('Push ist noch nicht eingerichtet (VAPID-Schlüssel fehlt in config.js)');
+  if (!('Notification' in window) || !('serviceWorker' in navigator)) return toast('Dieser Browser kann keine Push-Nachrichten. iPhone: App zuerst zum Home-Bildschirm hinzufügen.');
+  const M = await import(`https://www.gstatic.com/firebasejs/${AUTH.V}/firebase-messaging.js`);
+  if (!(await M.isSupported())) return toast('Push hier nicht unterstützt. iPhone: hofbuech über das Homescreen-Icon öffnen.');
+  const perm = await Notification.requestPermission();
+  if (perm !== 'granted') return toast('Benachrichtigungen nicht erlaubt');
+  const reg = await navigator.serviceWorker.ready;
+  const token = await M.getToken(M.getMessaging(AUTH.app), { vapidKey: window.HB_VAPID, serviceWorkerRegistration: reg });
+  const id = token.replace(/[^A-Za-z0-9]/g, '').slice(-40);
+  const db = AUTH.F.getFirestore(AUTH.app);
+  await AUTH.F.setDoc(AUTH.F.doc(db, 'hoefe', HOF, 'geraete', id), { token, geraet: navigator.userAgent.slice(0, 120), email: USER.email, aktualisiert: Date.now() });
+  localStorage.setItem('hb-push', '1');
+  toast('Push aktiviert');
+  schedule();
+}
+
 /* ---------- TVD-Import (Excel/CSV aus agate.ch) ---------- */
 const normOM = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 function parseDatum(v) {
@@ -841,8 +1000,11 @@ document.addEventListener('click', e => {
   else if (a === 'abg') { UI.tierFilter.abg = !UI.tierFilter.abg; render(); }
   else if (a === 'jtab') { UI.jTab = el.dataset.v; if (el.tagName === 'BUTTON') render(); }
   else if (a === 'ftab') { UI.fTab = el.dataset.v; if (el.tagName === 'BUTTON') render(); }
+  else if (a === 'kaltag') { e.preventDefault(); UI.kalTag = UI.kalTag === el.dataset.v ? '' : el.dataset.v; render(); }
+  else if (a === 'kalmon') { const [y, m] = UI.kalMonat.split('-').map(Number); const d = new Date(y, m - 1 + Number(el.dataset.v), 1); UI.kalMonat = iso(d).slice(0, 7); UI.kalTag = ''; render(); }
   else if (a === 'pdf') { el.disabled = true; pdf(el.dataset.p, el.dataset.id).catch(showErr).finally(() => el.disabled = false); }
   else if (a === 'backup') { const d = { version: VERSION, exportiert: new Date().toISOString(), set: S.set }; COLLS.forEach(c => d[c] = S[c]); const b = new Blob([JSON.stringify(d, null, 1)], { type: 'application/json' }); const u = URL.createObjectURL(b); const l = document.createElement('a'); l.href = u; l.download = `hofbuech_backup_${today()}.json`; l.click(); setTimeout(() => URL.revokeObjectURL(u), 2000); }
+  else if (a === 'push') { pushAktivieren().catch(showErr); }
   else if (a === 'logout') { if (AUTH) AUTH.A.signOut(AUTH.auth).then(() => location.reload()); }
 });
 document.addEventListener('input', e => {
@@ -875,7 +1037,7 @@ document.addEventListener('submit', e => {
     abgekalbtTage: num(f.abgekalbtTage.value) || 60, alpVon: f.alpVon.value.trim() || '06-15', alpBis: f.alpBis.value.trim() || '09-15', puffer: num(f.puffer.value), unbesamtAb: num(f.unbesamtAb.value) || 16, baldTage: num(f.baldTage.value) || 30,
     parzellen: lines(f.parzellen.value), gruende: lines(f.gruende.value),
     medikamente: lines(f.medikamente.value).map(l => { const [n, d] = l.split(';'); return { name: n.trim(), frist: num(d) }; }),
-    startHeu: num(f.startHeu.value), startSilo: num(f.startSilo.value)
+    grafanaUrl: f.grafanaUrl.value.trim(), startHeu: num(f.startHeu.value), startSilo: num(f.startSilo.value)
   });
   toast('Einstellungen gespeichert');
 });

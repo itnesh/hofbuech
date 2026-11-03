@@ -10,3 +10,6 @@ window.HB_FIREBASE = {
 
 // Hof-ID: Pfad der Daten in Firestore (hoefe/{HB_HOF}/...)
 window.HB_HOF = 'bannhalde';
+
+// Web-Push-Zertifikat (Firebase > Projekteinstellungen > Cloud Messaging > Web-Push-Zertifikate > Schlüsselpaar)
+window.HB_VAPID = '';

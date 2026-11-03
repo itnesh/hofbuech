@@ -1,0 +1,24 @@
+name: Tägliche Push-Termine
+on:
+  schedule:
+    - cron: '30 4 * * *'   # 05:30 Winterzeit / 06:30 Sommerzeit (Schweiz)
+  workflow_dispatch:
+    inputs:
+      test:
+        description: 'Test-Nachricht senden, auch ohne Termine'
+        type: boolean
+        default: true
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm install --omit=dev
+        working-directory: scripts
+      - run: node push.mjs
+        working-directory: scripts
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          TEST: ${{ github.event.inputs.test || 'false' }}
