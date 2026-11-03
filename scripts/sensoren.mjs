@@ -9,10 +9,10 @@ const base = db.collection('hoefe').doc(HOF);
 const set = (await base.collection('einstellungen').doc('main').get()).data() || {};
 const now = Date.now();
 
-async function push(title, body) {
+async function push(title, body, url = './#/kalender') {
   const g = (await base.collection('geraete').get()).docs.map(d => ({ id: d.id, ...d.data() }));
   for (const x of g) {
-    try { await admin.messaging().send({ token: x.token, data: { title, body, url: './#/journale', tag: 'sensor-' + title }, webpush: { headers: { Urgency: 'high', TTL: '21600' } } }); }
+    try { await admin.messaging().send({ token: x.token, data: { title, body, url, tag: 'sensor-' + title }, webpush: { headers: { Urgency: 'high', TTL: '21600' } } }); }
     catch (e) { console.log('Push-Fehler', x.id, e.code); }
   }
 }
@@ -55,17 +55,22 @@ async function akenza(id, deviceId, name, leer, voll) {
   const prev = (await ref.get()).data() || {};
   const wert = typeof last.d[kW] === 'number' ? last.d[kW] : null;
   const L = parseFloat(leer), V = parseFloat(voll);
-  const pct = x => (isFinite(L) && isFinite(V) && L !== V) ? Math.max(0, Math.round((L - x) / (L - V) * 1000) / 10) : null;
-  const prozent = wert === null ? null : pct(wert);
+  const ok = isFinite(L) && isFinite(V) && L !== V;
+  const pct = x => ok ? Math.round((L - x) / (L - V) * 1000) / 10 : null;
+  const gut = q => q !== null && q >= 0 && q <= 100; // ausserhalb 0-100% = Messfehler, wird ignoriert
+  const lastOk = ok ? [...pts].reverse().find(p => gut(pct(p[1]))) : null;
+  const prozent = ok ? (lastOk ? pct(lastOk[1]) : null) : null;
   const bat = kB ? last.d[kB] : await batterie(deviceId);
   const conv = p => { const q = pct(p[1]); return { 0: p[0], 1: q === null ? p[1] : q }; };
+  const filt = a => ok ? a.filter(p => gut(pct(p[1]))) : a;
+  const fehler = ok ? pts.filter(p => !gut(pct(p[1]))).length : 0; if (fehler) console.log(name, 'Messfehler ignoriert', fehler);
   let alarm = prev.alarm ?? 100;
   if (prozent !== null) {
     const stufe = Math.ceil(prozent / 10) * 10; // 28 -> 30
-    if (stufe < alarm && stufe <= 50) { await push(`${name}: unter ${stufe}%`, `Aktuell ${Math.round(prozent)}% (${new Date(last.t).toLocaleString('de-CH', { timeZone: 'Europe/Zurich' })})`); alarm = stufe; }
+    if (stufe < alarm && stufe <= 50) { await push(`${name}: unter ${stufe}%`, `Aktuell ${Math.round(prozent)}% (${new Date(lastOk[0]).toLocaleString('de-CH', { timeZone: 'Europe/Zurich' })})`, './#/journale/' + id); alarm = stufe; }
     if (stufe > alarm) alarm = stufe; // wieder gefüllt -> Alarmstufe zurücksetzen
   }
-  await ref.set({ id, name, typ: 'fuellstand', einheit: prozent === null ? 'cm' : '%', keyWert: kW, keyBatterie: kB || null, last: { zeit: last.t, wert, prozent, batterie: bat ?? null }, serie48: serie48.map(conv), serie30: serie30.map(conv), alarm, aktualisiert: now });
+  await ref.set({ id, name, typ: 'fuellstand', einheit: prozent === null ? 'cm' : '%', keyWert: kW, keyBatterie: kB || null, last: { zeit: lastOk ? lastOk[0] : last.t, wert: lastOk ? lastOk[1] : wert, prozent, batterie: bat ?? null }, serie48: filt(serie48).map(conv), serie30: filt(serie30).map(conv), alarm, aktualisiert: now });
   console.log(name, 'ok', wert, 'Punkte', pts.length);
 }
 

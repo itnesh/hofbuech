@@ -45,6 +45,7 @@ def melden(bild_pfad=None, kamera='Stall', score=None):
         doc['bild'] = _bild_data_url(bild_pfad)
     ref = _db.collection('hoefe').document(HOF).collection('meldungen').document()
     ref.set(doc)
+    link = './#/meldung/' + ref.id
     geraete = _db.collection('hoefe').document(HOF).collection('geraete').stream()
     for g in geraete:
         tok = g.to_dict().get('token')
@@ -54,7 +55,7 @@ def melden(bild_pfad=None, kamera='Stall', score=None):
             messaging.send(messaging.Message(token=tok, data={
                 'title': 'CowCatcher: Aufspringen erkannt',
                 'body': f'{kamera} · {zeit[11:16]} Uhr. In hofbuech Tier zuordnen.',
-                'url': './#/start', 'tag': 'cowcatcher'},
+                'url': link, 'tag': 'cowcatcher'},
                 webpush=messaging.WebpushConfig(headers={'Urgency': 'high', 'TTL': '3600'})))
         except Exception as e:  # Gerät abgemeldet o.ä.
             print('Push-Fehler', g.id, e)

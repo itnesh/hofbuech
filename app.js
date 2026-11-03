@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.11.0';
+const VERSION = '1.11.1';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -255,11 +255,12 @@ function render() {
     if (p[0] === 'start') { title = S.set.hofname || 'hofbuech'; html = vStart(); }
     else if (p[0] === 'tiere') { title = 'Tiere'; html = vTiere(); }
     else if (p[0] === 'tier') { const t = tierById(p[1]); showBack = true; tab = 'tiere'; if (!t) { html = '<div class="empty">Tier nicht gefunden.</div>'; } else if (p[2] === 'laktation') { title = 'Laktationsplanung'; html = vLaktation(t); } else if (p[2] === 'nachkommen') { title = 'Nachkommen'; html = vNachkommen(t); } else if (p[2] === 'behandlungen') { title = 'Behandlungen'; html = vTierBeh(t); } else { title = t.name || t.ohrmarke; html = vTier(t); } }
-    else if (p[0] === 'journale') { title = 'Analyse'; html = vJournale(); }
+    else if (p[0] === 'journale') { title = 'Analyse'; if (p[1] !== undefined) UI.jTab = p[1]; html = vJournale(); }
     else if (p[0] === 'feld') { title = 'Analyse'; UI.jTab = 'lager'; tab = 'journale'; html = vJournale(); }
     else if (p[0] === 'labiola') { title = 'Labiola'; html = vLabiola(); }
     else if (p[0] === 'notizen') { title = 'Notizen'; html = vNotizen(); }
     else if (p[0] === 'notiz') { const n = S.notizen.find(x => x.id === p[1]); title = n ? n.titel : 'Notiz'; tab = 'notizen'; showBack = true; html = n ? vNotiz(n) : '<div class="empty">Notiz nicht gefunden.</div>'; }
+    else if (p[0] === 'meldung') { title = S.set.hofname || 'hofbuech'; tab = 'start'; html = vStart(); const m = S.meldungen.find(x => x.id === p[1]); if (m && !UI.mOpen) { UI.mOpen = 1; setTimeout(() => { meldungSheet(m); history.replaceState(null, '', '#/start'); UI.mOpen = 0; }, 50); } }
     else if (p[0] === 'kalender') { title = 'Kalender'; html = vKalender(); }
     else if (p[0] === 'analyse') { title = 'Analyse'; tab = 'journale'; html = vJournale(); }
     else if (p[0] === 'einstellungen') { title = 'Einstellungen'; html = vSettings(); showBack = true; tab = ''; }
@@ -503,7 +504,7 @@ function jahrSel() { return `<select class="sel" data-act="jahr" aria-label="Jah
 function vJournale() {
   const SECT = { lager: 'Lager', auslauf: 'Auslauf', behandlung: 'Behandlung', feld: 'Feld', zucht: 'Zucht', traenkefass: 'Tränkefass', wasserstand: 'Wasserstand', wetter: 'Wetter' };
   if (!SECT[UI.jTab]) return anaKacheln();
-  const tabs = `<div class="anah"><button type="button" class="back" data-act="jtab" data-v="">‹ Übersicht</button><b>${SECT[UI.jTab]}</b></div>`;
+  const tabs = `<div class="anah"><a class="back" href="#/journale/">‹ Übersicht</a><b>${SECT[UI.jTab]}</b></div>`;
   if (UI.jTab === 'auslauf') return tabs + vAuslauf() + anaAuslaufChart();
   if (UI.jTab === 'feld') return tabs + vFeld();
   if (UI.jTab === 'lager') return tabs + anaLager();
@@ -652,7 +653,7 @@ function anaKacheln() {
   const abk = S.ereignisse.filter(e => e.typ === 'abkalbung' && e.datum.startsWith(J)).length;
   const at = auslaufTage(J), weide = at.filter(([, x]) => x.typ === 'Weide').length;
   const [tf, tfs, tfc] = sx('traenkefass'), [ws, wss, wsc] = sx('wasserstand');
-  const k = (v, t, big, sub, cls = '') => `<button type="button" class="kachel ${cls}" data-act="jtab" data-v="${v}"><span>${t}</span><b>${big}</b><small>${sub}</small></button>`;
+  const k = (v, t, big, sub, cls = '') => `<a class="kachel ${cls}" href="#/journale/${v}"><span>${t}</span><b>${big}</b><small>${sub}</small></a>`;
   return `<div class="kacheln">
     ${k('traenkefass', 'Tränkefass', tf, tfs, tfc)}${k('wasserstand', 'Wasserstand', ws, wss, wsc)}
     ${k('lager', 'Lager', nf(L.heu) + ' Heu', nf(L.silo) + ' Silage · ' + nf(L.stroh) + ' Stroh', L.heu <= 5 || L.silo <= 5 ? 'low' : '')}
@@ -1327,5 +1328,5 @@ async function boot() {
   else initLocal();
   render();
 }
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { });
+if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').catch(() => { }); navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.nav) { const h = e.data.nav.split('#')[1]; if (h !== undefined && location.hash !== '#' + h) location.hash = h; else render(); } }); }
 boot();
