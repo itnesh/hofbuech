@@ -74,7 +74,10 @@ async function akenza(id, deviceId, name, leer, voll) {
   const conv = p => { const q = pct(p[1]); return { 0: p[0], 1: q === null ? p[1] : q }; };
   const filt = a => ok ? a.filter(p => gut(pct(p[1]))) : a;
   const tag = {}; for (const p of filt(pts.filter(p => p[0] >= now - 365 * 864e5))) { const d = new Date(p[0] + 3600e3).toISOString().slice(0, 10); (tag[d] = tag[d] || []).push(p[1]); }
-  const serie365 = Object.keys(tag).sort().map(d => { const v = tag[d]; const m = v.reduce((a, b) => a + b, 0) / v.length; const q = ok ? pct(m) : m; return { 0: Date.parse(d + 'T12:00:00Z'), 1: Math.round(q * 10) / 10 }; });
+  const serie365x = Object.keys(tag).sort().map(d => { const v = tag[d]; const m = v.reduce((a, b) => a + b, 0) / v.length; const q = ok ? pct(m) : m; return { 0: Date.parse(d + 'T12:00:00Z'), 1: Math.round(q * 10) / 10 }; });
+  // akenza speichert nur ca. 3 Monate: Tageswerte in Firestore sammeln, bis 365 Tage
+  const hm = {}; for (const p of (prev.serie365 || [])) if (p[0] >= now - 365 * 864e5) hm[p[0]] = p[1]; for (const p of serie365x) hm[p[0]] = p[1];
+  const hist = Object.keys(hm).map(Number).sort((a, b) => a - b).map(t => ({ 0: t, 1: hm[t] }));
   const fehler = ok ? pts.filter(p => !gut(pct(p[1]))).length : 0; if (fehler) console.log(name, 'Messfehler ignoriert', fehler);
   let alarm = prev.alarm ?? 100;
   if (prozent !== null) {
@@ -82,8 +85,8 @@ async function akenza(id, deviceId, name, leer, voll) {
     if (stufe < alarm && stufe <= 50) { await push(`${name}: unter ${stufe}%`, `Aktuell ${Math.round(prozent)}% (${new Date(lastOk[0]).toLocaleString('de-CH', { timeZone: 'Europe/Zurich' })})`, './#/journale/' + id); alarm = stufe; }
     if (stufe > alarm) alarm = stufe; // wieder gefüllt -> Alarmstufe zurücksetzen
   }
-  await ref.set({ id, name, typ: 'fuellstand', einheit: prozent === null ? 'cm' : '%', keyWert: kW, keyBatterie: kB || null, last: { zeit: lastOk ? lastOk[0] : last.t, wert: lastOk ? lastOk[1] : wert, prozent, batterie: bat ?? null }, serie48: filt(serie48).map(conv), serie30: filt(serie30).map(conv), serie365, alarm, aktualisiert: now });
-  console.log(name, 'ok', wert, 'Punkte', pts.length, 'Tage', serie365.length);
+  await ref.set({ id, name, typ: 'fuellstand', einheit: prozent === null ? 'cm' : '%', keyWert: kW, keyBatterie: kB || null, last: { zeit: lastOk ? lastOk[0] : last.t, wert: lastOk ? lastOk[1] : wert, prozent, batterie: bat ?? null }, serie48: filt(serie48).map(conv), serie30: filt(serie30).map(conv), serie365: hist, alarm, aktualisiert: now });
+  console.log(name, 'ok', wert, 'Punkte', pts.length, 'Tage', hist.length);
 }
 
 // ---------- Agrometeo / vitimeteo ----------
@@ -116,7 +119,7 @@ async function vitimeteo(sensor, fn) {
 }
 // Ausreisser: unplausible Werte und starke Abweichungen vom Monats-Median (über alle Jahre) entfernen
 function bereinigen(rows, art) {
-  const [lo, hi, floor] = art === 'regen' ? [0, 450, 80] : [-20, 32, 4];
+  const [lo, hi, floor] = art === 'regen' ? [0, 450, 400] : [-20, 32, 7];
   const med = a => { const b = [...a].sort((x, y) => x - y), n = b.length; return n ? (n % 2 ? b[(n - 1) / 2] : (b[n / 2 - 1] + b[n / 2]) / 2) : 0; };
   const byM = {}; rows.forEach(([ym, v]) => { if (v >= lo && v <= hi) (byM[ym.slice(5, 7)] = byM[ym.slice(5, 7)] || []).push(v); });
   const out = [];
