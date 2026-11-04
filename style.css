@@ -297,3 +297,7 @@ html,body{overflow-x:hidden;max-width:100%}
 .sheet-h{position:relative;z-index:3;background:var(--bg);border-radius:24px 24px 0 0}
 .sign{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
 .sign canvas{width:100%;max-width:520px;aspect-ratio:3/1;height:auto;background:#fff;border:1px dashed #8A918C;border-radius:12px;touch-action:none;cursor:crosshair}
+.ld{display:inline-block;width:16px;height:16px;border:2.5px solid var(--line,#E2E4DF);border-top-color:#2E8B62;border-radius:50%;animation:ldspin .8s linear infinite;vertical-align:-3px}
+.note .ld{width:12px;height:12px;border-width:2px;margin-right:4px}
+.laedt{opacity:.8}
+@keyframes ldspin{to{transform:rotate(360deg)}}

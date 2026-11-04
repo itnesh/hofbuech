@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.13.1';
+const VERSION = '1.14.0';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -265,7 +265,7 @@ const UI = { tierFilter: { kat: '', lakt: '', q: '', sort: 'alter', abg: false }
 
 function render() {
   if (mode === 'firebase' && !USER) return;
-  feldMigration(); auslaufBereinigen(); lagerKorrektur();
+  feldMigration(); auslaufBereinigen(); lagerKorrektur(); if (!SENS.zuletzt) setTimeout(() => sensorenLaden(), 0);
   if (document.querySelector('.sheet.show [data-dirty="1"]')) return; // Formular offen und bearbeitet: nicht neu zeichnen
   const h = location.hash.replace(/^#\/?/, '') || 'start';
   const p = h.split('/');
@@ -342,7 +342,7 @@ function kpiBlock(k, link = false, L = null) {
     ? `<button type="button" class="stat ${UI.tierFilter.kat === key || UI.tierFilter.lakt === key ? 'sel' : ''}" data-act="filt" data-v="${key}"><b>${k[key]}</b><span>${label}</span></button>`
     : `<a class="stat" href="#/tiere" data-act="filtlink" data-v="${key}"><b>${k[key]}</b><span>${label}</span></a>`;
   const ls = (v, l) => `<a class="stat ${v <= 5 ? 'low' : ''}" href="#/journale/lager"><b>${nf(v)}</b><span>${l}</span></a>`;
-  const sw = id => { const x = S.sensoren.find(s => s.id === id), p = x && x.last ? x.last.prozent : null; return `<a class="stat ${p !== null && p !== undefined && p < 30 ? 'low' : ''}" href="#/journale/${id}"><b>${p === null || p === undefined ? '-' : Math.round(p) + '%'}</b><span>${id === 'wasserstand' ? 'Wasserstand' : 'Tränkefass'}</span></a>`; };
+  const sw = id => { const x = S.sensoren.find(s => s.id === id), p = x && x.last ? x.last.prozent : null; return `<a class="stat ${p !== null && p !== undefined && p < 30 ? 'low' : ''} ${SENS.laedt ? 'laedt' : ''}" href="#/journale/${id}"><b>${SENS.laedt ? '<i class="ld"></i>' : p === null || p === undefined ? '-' : Math.round(p) + '%'}</b><span>${id === 'wasserstand' ? 'Wasserstand' : 'Tränkefass'}</span></a>`; };
   const lg = L ? `<div class="stats-row"><span class="stats-h">Lager</span>${ls(L.heu, 'Heu')}${ls(L.silo, 'Silage')}${ls(L.stroh, 'Stroh')}</div><div class="stats-row two"><span class="stats-h">Wasser</span>${sw('wasserstand')}${sw('traenkefass')}</div>` : '';
   const lk = '';
   return `<div class="stats"><div class="stats-row"><span class="stats-h">Bestand</span>${c('Kalb', 'Kälber')}${c('Rind', 'Rinder')}${c('Kuh', 'Kühe')}</div>${lk}${lg}</div>`;
@@ -701,7 +701,7 @@ function anaKacheln() {
   const L = lager();
   const sx = id => { const x = S.sensoren.find(s => s.id === id); if (!x || !x.last) return ['-', 'noch keine Daten', '']; const v = x.last.prozent ?? x.last.wert; const p = x.last.prozent !== null && x.last.prozent !== undefined; return [nf(Math.round(v)) + (p ? ' %' : ' cm'), 'Batterie ' + (x.last.batterie ?? '-') + ' %', p && v < 30 ? 'low' : '']; };
   const [ws, wss, wsc] = sx('wasserstand'), [tf, tfs, tfc] = sx('traenkefass');
-  const k = (v, t, big, sub, cls = '') => `<a class="kachel ${cls}" href="#/journale/${v}"><span>${t}</span><b>${big}</b><small>${sub}</small></a>`;
+  const k = (v, t, big, sub, cls = '') => SENS.laedt ? `<a class="kachel laedt" href="#/journale/${v}"><span>${t}</span><b><i class="ld"></i></b><small>wird geladen …</small></a>` : `<a class="kachel ${cls}" href="#/journale/${v}"><span>${t}</span><b>${big}</b><small>${sub}</small></a>`;
   const lk = (t, was, v) => `<a class="kachel k3 ${v <= 5 ? 'low' : ''}" href="#/journale/lager"><span>${t}</span><b>${nf(v)}</b><small>${esc(reichweite(was, v))}</small></a>`;
   const gb = (v, t, sub, ic) => `<a class="gross" href="#/journale/${v}"><span class="gi">${ic}</span><span><b>${t}</b><small>${sub}</small></span><i>›</i></a>`;
   return `<div class="kacheln">${k('wasserstand', 'Wasserstand', ws, wss, wsc)}${k('traenkefass', 'Tränkefass', tf, tfs, tfc)}</div>
@@ -748,7 +748,8 @@ function anaZucht() {
 }
 function anaSensor(id) {
   const sx = S.sensoren.find(x => x.id === id);
-  return sx ? sensorKarte(sx) : '<div class="empty">Noch keine Daten. Der Hintergrund-Job lädt sie stündlich.</div>';
+  const ban = SENS.laedt ? '<div class="note blue small" style="margin:8px 0"><i class="ld"></i> Aktuelle Daten von akenza werden geladen …</div>' : SENS.fehler ? `<div class="note small" style="margin:8px 0">akenza nicht erreichbar (${esc(SENS.fehler)}), angezeigt wird der letzte gespeicherte Stand.</div>` : '';
+  return ban + (sx ? sensorKarte(sx) : '<div class="empty">Noch keine Daten.</div>');
 }
 function anaWetter() {
   const a = S.sensoren.find(x => x.id === 'agrometeo');
@@ -850,6 +851,7 @@ function sensorKarte(sx) {
 }
 function agroKarte(a) {
   if (!a) return '';
+  const jetzt = new Date(); if (+a.jahr === jetzt.getFullYear()) { a = clean(a); for (const k of ['regen', 'temp']) if (a[k] && a[k].akt) for (let m = jetzt.getMonth(); m < 12; m++) a[k].akt[m] = null; }
   const ML = MON.map(m => m.slice(0, 1)), cols = ['#2E8B62', '#E0A35C', '#5B8FD6'];
   const leg = `<div class="legend"><span><i class="sw" style="background:${cols[0]}"></i>${a.jahr || 'Aktuell'}</span><span><i class="sw" style="background:${cols[1]}"></i>Vorjahr</span><span><i class="sw" style="background:${cols[2]}"></i>Ø seit ${a.seit || '2004'}</span></div>`;
   const cum = arr => { let t = 0; return arr.map(v => v === null || v === undefined ? null : Math.round((t += v) * 10) / 10); };
@@ -1455,6 +1457,90 @@ async function tvdImport(file) {
     });
 }
 
+/* ---------- Sensoren direkt aus der App (akenza bei jedem Öffnen, Agrometeo 1x pro Tag) ---------- */
+const SENS = { laedt: false, fehler: '', zuletzt: 0 };
+async function akenzaWeb(id, deviceId, leer, voll) {
+  const now = Date.now(), von = now - 31 * 864e5, H = { 'x-api-key': S.set.akenzaKey, accept: 'application/json' };
+  let ende = now + 3600e3, arr = [];
+  for (let seite = 0; seite < 6; seite++) {
+    const r = await fetch(`https://api.akenza.io/v3/devices/${deviceId}/query?topic=measurement&limit=2000&startDate=${encodeURIComponent(new Date(von).toISOString())}&endDate=${encodeURIComponent(new Date(ende).toISOString())}`, { headers: H });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json(), a = Array.isArray(j) ? j : (j.data || j.items || j.results || []);
+    if (!a.length) break; arr = arr.concat(a);
+    const min = Math.min(...a.map(x => Date.parse(x.timestamp || x.time || x.createdAt)).filter(Boolean));
+    if (!isFinite(min) || min >= ende || min <= von || a.length < 2000) break; ende = min - 1;
+  }
+  const seen = new Set();
+  const rows = arr.filter(x => { const k = x.timestamp || x.time || x.createdAt; if (seen.has(k)) return false; seen.add(k); return true; })
+    .map(x => ({ t: Date.parse(x.timestamp || x.time || x.createdAt), d: x.data || x })).filter(x => x.t && x.d && typeof x.d === 'object').sort((a, b) => a.t - b.t);
+  if (!rows.length) return;
+  const prev = S.sensoren.find(x => x.id === id) || {};
+  const keys = Object.keys(rows[rows.length - 1].d).filter(k => typeof rows[rows.length - 1].d[k] === 'number');
+  const pick = (re, not) => keys.find(k => re.test(k) && !(not && not.test(k)));
+  const kW = S.set['sensKey_' + id] || prev.keyWert || pick(/fill|level|percent|prozent|füll/i, /batt/i) || pick(/.*/, /batt|temp|rssi|snr|signal/i), kB = pick(/batt/i) || prev.keyBatterie;
+  const pts = rows.filter(x => typeof x.d[kW] === 'number').map(x => [x.t, Math.round(x.d[kW] * 10) / 10]);
+  const L = parseFloat(leer), V = parseFloat(voll), ok = isFinite(L) && isFinite(V) && L !== V;
+  const pct = x => ok ? Math.round((L - x) / (L - V) * 1000) / 10 : null, gut = q => q !== null && q >= 0 && q <= 100;
+  const filt = a => ok ? a.filter(p => gut(pct(p[1]))) : a, conv = p => { const q = pct(p[1]); return { 0: p[0], 1: q === null ? p[1] : q }; };
+  const last = rows[rows.length - 1], lastOk = ok ? [...pts].reverse().find(p => gut(pct(p[1]))) : null;
+  const serie48 = pts.filter(p => p[0] >= now - 48 * 3600e3), serie30 = []; let lt = 0;
+  for (const p of pts.filter(p => p[0] >= now - 30 * 864e5)) if (p[0] - lt >= 3 * 3600e3) { serie30.push(p); lt = p[0]; }
+  const tag = {}; for (const p of filt(pts)) { const d = new Date(p[0] + 3600e3).toISOString().slice(0, 10); (tag[d] = tag[d] || []).push(p[1]); }
+  const hm = {}; for (const p of (prev.serie365 || [])) if (p[0] >= now - 365 * 864e5) hm[p[0]] = p[1];
+  for (const d of Object.keys(tag)) { const v = tag[d], m = v.reduce((a, b) => a + b, 0) / v.length, q = ok ? pct(m) : m; hm[Date.parse(d + 'T12:00:00Z')] = Math.round(q * 10) / 10; }
+  const bat = kB && typeof last.d[kB] === 'number' ? last.d[kB] : prev.last ? prev.last.batterie : null;
+  put('sensoren', { ...prev, id, name: prev.name || (id === 'wasserstand' ? 'Wasserstand' : 'Tränkefass'), typ: 'fuellstand', einheit: ok ? '%' : 'cm', keyWert: kW, keyBatterie: kB || null,
+    last: { zeit: lastOk ? lastOk[0] : last.t, wert: lastOk ? lastOk[1] : last.d[kW] ?? null, prozent: ok ? (lastOk ? pct(lastOk[1]) : null) : null, batterie: bat ?? null },
+    serie48: filt(serie48).map(conv), serie30: filt(serie30).map(conv), serie365: Object.keys(hm).map(Number).sort((a, b) => a - b).map(t => ({ 0: t, 1: hm[t] })), aktualisiert: now, quelle: 'app' });
+}
+async function sensorenLaden(force = false) {
+  if (SENS.laedt || !S.set.akenzaKey || !S.loaded.sensoren || !S.loaded.set || navigator.onLine === false) return;
+  if (!force && Date.now() - SENS.zuletzt < 5 * 60e3) return;
+  SENS.laedt = true; SENS.fehler = ''; SENS.zuletzt = Date.now(); schedule();
+  const tasks = [];
+  if (S.set.sensWasser !== '') tasks.push(akenzaWeb('wasserstand', S.set.sensWasser || '02bdf0b1b64b4c40', S.set.wasserLeer || 214, S.set.wasserVoll || 56));
+  if (S.set.sensFass !== '') tasks.push(akenzaWeb('traenkefass', S.set.sensFass || '029412d5966ce1d4', S.set.fassLeer || 83, S.set.fassVoll || 9.3));
+  const res = await Promise.allSettled(tasks);
+  const err = res.find(r => r.status === 'rejected'); if (err) { SENS.fehler = err.reason && err.reason.message === 'Failed to fetch' ? 'Browser blockiert die Abfrage' : String(err.reason && err.reason.message || err.reason); console.warn('akenza', err.reason); }
+  SENS.laedt = false; schedule();
+  agroLaden();
+}
+// Agrometeo: beim ersten Start des Tages im Hintergrund, danach den ganzen Tag diese Daten
+function agroReihen(j) {
+  const out = [];
+  const walk = x => {
+    if (Array.isArray(x)) { if (x.length >= 2 && typeof x[0] === 'string' && /^\d{4}-\d{2}/.test(x[0]) && typeof x[1] === 'number') { out.push([x[0].slice(0, 7), x[1]]); return; } x.forEach(walk); return; }
+    if (x && typeof x === 'object') { const dk = Object.keys(x).find(k => typeof x[k] === 'string' && /^\d{4}-\d{2}/.test(x[k])), vk = Object.keys(x).find(k => typeof x[k] === 'number' && !/^(id|station|year|month)$/i.test(k)); if (dk && vk) { out.push([x[dk].slice(0, 7), x[vk]]); return; } Object.values(x).forEach(walk); }
+  };
+  walk(j); return out;
+}
+function agroBereinigen(rows, art) {
+  const [lo, hi, floor] = art === 'regen' ? [0, 450, 400] : [-20, 32, 7];
+  const med = a => { const b = [...a].sort((x, y) => x - y), n = b.length; return n ? (n % 2 ? b[(n - 1) / 2] : (b[n / 2 - 1] + b[n / 2]) / 2) : 0; };
+  const byM = {}; rows.forEach(([ym, v]) => { if (v >= lo && v <= hi) (byM[ym.slice(5, 7)] = byM[ym.slice(5, 7)] || []).push(v); });
+  return rows.filter(([ym, v]) => { const a = byM[ym.slice(5, 7)] || [], md = med(a), mad = med(a.map(x => Math.abs(x - md))); return v >= lo && v <= hi && Math.abs(v - md) <= Math.max(floor, 5 * mad); });
+}
+function agroJahr(rows) {
+  const y = new Date().getFullYear(), akt = Array(12).fill(null), vor = Array(12).fill(null), sum = Array(12).fill(0), n = Array(12).fill(0); let seit = 9999;
+  for (const [ym, v] of rows) { const yy = +ym.slice(0, 4), m = +ym.slice(5, 7) - 1; if (m < 0 || m > 11) continue; seit = Math.min(seit, yy); if (yy === y) akt[m] = Math.round(v * 10) / 10; else { if (yy === y - 1) vor[m] = Math.round(v * 10) / 10; sum[m] += v; n[m]++; } }
+  return { akt, vor, avg: sum.map((s, i) => n[i] ? Math.round(s / n[i] * 10) / 10 : null), seit };
+}
+let agroLaeuft = false;
+async function agroLaden() {
+  const a = S.sensoren.find(x => x.id === 'agrometeo'), heute = today();
+  if (agroLaeuft || !S.set.agroUser || !S.set.agroPass || localStorage.getItem('hb-agro-tag') === heute || (a && a.aktualisiert && iso(new Date(a.aktualisiert)) === heute)) return;
+  agroLaeuft = true; localStorage.setItem('hb-agro-tag', heute);
+  try {
+    const st = S.set.agroStation || '177', auth = 'Basic ' + btoa(unescape(encodeURIComponent(`${S.set.agroUser}:${S.set.agroPass}`)));
+    const hol = async (sensor, fn) => { const r = await fetch(`https://vitimeteo.ch/api/stations/${st}/weatherdata.json?startdate=2004-01-01&enddate=2099-12-31&groupby=month&sen_list=[[${sensor},'${fn}']]&datastructure=json&cflag=0`, { headers: { Authorization: auth } }); if (!r.ok) throw new Error('HTTP ' + r.status); return agroReihen(await r.json()); };
+    const [regen, temp] = await Promise.all([hol(6, 'sum'), hol(S.set.agroTempSensor || 1, 'avg')]);
+    const R = regen.length ? agroJahr(agroBereinigen(regen, 'regen')) : null, T = temp.length ? agroJahr(agroBereinigen(temp, 'temp')) : null;
+    if (R || T) put('sensoren', { id: 'agrometeo', typ: 'agrometeo', station: st, jahr: new Date().getFullYear(), seit: (R || T).seit || 2004, regen: R, temp: T, aktualisiert: Date.now(), quelle: 'app' });
+  } catch (e) { console.warn('agrometeo', e); } // Fallback: Hintergrund-Job (GitHub) lädt täglich
+  agroLaeuft = false;
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') sensorenLaden(); });
+
 /* ---------- Behandlungen-Import (Excel) ---------- */
 // Spalten: Von, Bis, Tiere ("Alle" oder Namen/Ohrmarken mit Komma), Behandlungsgrund, Arzneimittel, Dosis, Absetzfrist Fleisch (Tage), Freigabe Fleisch, Erfasst, Name, Notiz
 async function behImport(file) {
@@ -1557,6 +1643,12 @@ document.addEventListener('submit', e => {
     grafanaUrl: f.grafanaUrl.value.trim(), akenzaKey: f.akenzaKey.value.trim(), sensWasser: f.sensWasser.value.trim(), sensFass: f.sensFass.value.trim(), agroUser: f.agroUser.value.trim(), agroPass: f.agroPass.value, agroStation: f.agroStation.value.trim(), fassLeer: f.fassLeer.value.trim(), fassVoll: f.fassVoll.value.trim(), wasserLeer: f.wasserLeer.value.trim(), wasserVoll: f.wasserVoll.value.trim(), startHeu: num(f.startHeu.value), startSilo: num(f.startSilo.value), startStroh: num(f.startStroh.value)
   });
   toast('Einstellungen gespeichert');
+});
+$('#tabbar').addEventListener('click', e => {
+  const l = e.target.closest('a[data-tab]'); if (!l) return;
+  const t = l.dataset.tab;
+  if (t === 'journale') UI.jTab = ''; if (t === 'labiola') UI.lTab = 'pendenzen'; if (t === 'kalender') { UI.kalMonat = today().slice(0, 7); UI.kalTag = ''; }
+  if (location.hash === l.getAttribute('href')) { e.preventDefault(); closeSheet(true); render(); window.scrollTo(0, 0); }
 });
 $('#plus').addEventListener('click', () => sheetOpen ? closeSheet() : plusMenu());
 $('#back').addEventListener('click', () => history.length > 1 ? history.back() : (location.hash = '#/start'));
