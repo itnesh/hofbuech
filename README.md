@@ -30,7 +30,7 @@ service cloud.firestore {
     match /hoefe/{hof}/{document=**} {
       allow read, write: if request.auth != null
         && request.auth.token.email_verified == true
-        && request.auth.token.email in ['erdinmatthias@gmail.com'];
+        && request.auth.token.email in ['erdinmatthias@gmail.com', 'sandra.huerbin@gmail.com'];
     }
   }
 }
@@ -54,7 +54,7 @@ Einstellungen > "Backup herunterladen (JSON)". Empfehlung: 1x pro Monat.
 - Erwartete Abkalbung = Besamung + 285 Tage.
 - Besamungsverbot = Zeitraum, in dem eine Besamung zur Abkalbung während der Alp führt (Alp von/bis minus Tragzeit, plus Puffer).
 - Lager = Startbestand + Heuen/Silieren − Lagerbezug.
-- Auslauf: ein Eintrag gilt ab Datum bis zum nächsten Eintrag für dieselben Tiere.
+- Auslauf: ein Eintrag gilt ab Datum bis zum nächsten Eintrag (alle Tiere). Mit "Bis" überschreibt er die Einträge in diesem Zeitraum. Gleiche Folgeeinträge werden automatisch zusammengefasst.
 
 ## Updates
 Datei ändern, committen. Die App holt neue Versionen automatisch (Netzwerk zuerst, Cache als Offline-Fallback).

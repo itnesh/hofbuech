@@ -295,3 +295,5 @@ html,body{overflow-x:hidden;max-width:100%}
 .kd i{height:8px!important;gap:3px}.kd i b{width:8px!important;height:8px!important}
 .row.one .mini{width:19px;height:19px;flex:0 0 auto}
 .sheet-h{position:relative;z-index:3;background:var(--bg);border-radius:24px 24px 0 0}
+.sign{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+.sign canvas{width:100%;max-width:520px;aspect-ratio:3/1;height:auto;background:#fff;border:1px dashed #8A918C;border-radius:12px;touch-action:none;cursor:crosshair}

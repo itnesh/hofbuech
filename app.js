@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.12.1';
+const VERSION = '1.13.0';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -15,7 +15,7 @@ const fmtS = s => s ? `${s.slice(8, 10)}.${s.slice(5, 7)}.` : '';
 const months = (a, b) => { const A = pd(a), B = pd(b); let m = (B.getFullYear() - A.getFullYear()) * 12 + B.getMonth() - A.getMonth(); if (B.getDate() < A.getDate()) m--; return m; };
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 const num = v => { const n = parseFloat(String(v ?? '').replace(',', '.')); return isNaN(n) ? 0 : n; };
-const nf = n => (Math.round(n * 10) / 10).toLocaleString('de-CH');
+const nf = n => ((Math.round(n * 10) / 10) || 0).toLocaleString('de-CH');
 const MON = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
 const clean = o => JSON.parse(JSON.stringify(o));
 const kurzOM = om => { const d = String(om || '').replace(/\D/g, ''); return d.length >= 5 ? d.slice(-5, -1) : d; };
@@ -54,14 +54,15 @@ const IC = {
 /* ---------- Einstellungen ---------- */
 const DEF = {
   hofname: 'Hof Bannhalde', tragzeit: 285, kalbMonate: 12, laktAbMonate: 16, abgekalbtTage: 60,
-  alpVon: '05-25', alpBis: '10-05', puffer: 14, unbesamtAb: 16, baldTage: 30, lat: 47.526, lon: 8.141,
+  alpVon: '05-25', alpBis: '10-05', puffer: 14, unbesamtAb: 16, baldTage: 30, lat: 47.5425, lon: 8.1356,
   parzellen: [], gruende: ['Winter / Vegetation', 'Zu nass', 'Kein Futter', 'Geburt', 'Eingriff am Tier', 'Kälte', 'Sturm'],
-  medikamente: [], startHeu: 0, startSilo: 0, startStroh: 0
+  medikamente: [], startHeu: 0, startSilo: 0, startStroh: 0,
+  betrieb: 'Matthias Erdin, Bannhalde 126, 5272 Gansingen', tvd: '164240.7'
 };
 
 /* ---------- Datenhaltung ---------- */
 const COLLS = ['tiere', 'ereignisse', 'behandlungen', 'auslauf', 'feld', 'parzellen', 'labiola', 'aufgaben', 'lprotokoll', 'meldungen', 'notizen', 'sensoren'];
-const S = { tiere: [], ereignisse: [], behandlungen: [], auslauf: [], feld: [], parzellen: [], labiola: [], aufgaben: [], lprotokoll: [], meldungen: [], notizen: [], sensoren: [], set: { ...DEF } };
+const S = { loaded: {}, tiere: [], ereignisse: [], behandlungen: [], auslauf: [], feld: [], parzellen: [], labiola: [], aufgaben: [], lprotokoll: [], meldungen: [], notizen: [], sensoren: [], set: { ...DEF } };
 let W = null; // writer
 let mode = 'local';
 const HOF = window.HB_HOF || 'bannhalde';
@@ -88,7 +89,7 @@ function errBanner() {
 
 function initLocal() {
   mode = 'local';
-  try { const d = JSON.parse(localStorage.getItem('hb-local') || '{}'); COLLS.forEach(c => S[c] = d[c] || []); S.auslauf = S.auslauf.map(a => a.typ === 'Stall' ? { ...a, typ: 'Laufhof' } : a); S.set = mergeSet(d.set); } catch (e) { }
+  try { const d = JSON.parse(localStorage.getItem('hb-local') || '{}'); COLLS.forEach(c => { S[c] = d[c] || []; S.loaded[c] = true; }); S.loaded.set = true; S.auslauf = S.auslauf.map(a => a.typ === 'Stall' ? { ...a, typ: 'Laufhof' } : a); S.set = mergeSet(d.set); } catch (e) { }
   const persist = () => { const d = { set: S.set }; COLLS.forEach(c => d[c] = S[c]); localStorage.setItem('hb-local', JSON.stringify(d)); schedule(); };
   W = {
     put: (c, o) => { const i = S[c].findIndex(x => x.id === o.id); if (i >= 0) S[c][i] = o; else S[c].push(o); persist(); },
@@ -115,11 +116,11 @@ async function initFirebase(cfg) {
   catch (e) { db = F.getFirestore(app); }
   const ref = c => F.collection(db, 'hoefe', HOF, c);
   COLLS.forEach(c => F.onSnapshot(ref(c), { includeMetadataChanges: true }, snap => {
-    S[c] = snap.docs.map(d => ({ ...d.data(), id: d.id })); if (c === 'auslauf') S[c] = S[c].map(a => a.typ === 'Stall' ? { ...a, typ: 'Laufhof' } : a); if (!snap.metadata.fromCache && lastErr) { lastErr = null; }
+    S[c] = snap.docs.map(d => ({ ...d.data(), id: d.id })); S.loaded[c] = true; if (c === 'auslauf') S[c] = S[c].map(a => a.typ === 'Stall' ? { ...a, typ: 'Laufhof' } : a); if (!snap.metadata.fromCache && lastErr) { lastErr = null; }
     setSync(snap.metadata.fromCache ? 'off' : 'ok', snap.metadata.fromCache ? 'Offline - wird später synchronisiert' : 'Synchronisiert');
     schedule();
   }, showErr));
-  F.onSnapshot(F.doc(db, 'hoefe', HOF, 'einstellungen', 'main'), d => { S.set = mergeSet(d.data()); schedule(); }, showErr);
+  F.onSnapshot(F.doc(db, 'hoefe', HOF, 'einstellungen', 'main'), d => { S.set = mergeSet(d.data()); S.loaded.set = true; schedule(); }, showErr);
   W = {
     put: (c, o) => { F.setDoc(F.doc(db, 'hoefe', HOF, c, o.id), clean(o)).catch(showErr); },
     del: (c, id) => { F.deleteDoc(F.doc(db, 'hoefe', HOF, c, id)).catch(showErr); },
@@ -238,7 +239,21 @@ function kpis(list = aktiveTiere()) {
   for (const t of list) { k[kategorie(t)]++; const l = lakt(t); if (l) k[l.status]++; }
   return k;
 }
-function sortedAuslauf() { return [...S.auslauf].sort((a, b) => (a.datum + (a.zeit || '')) < (b.datum + (b.zeit || '')) ? -1 : 1); }
+function sortedAuslauf() { return [...S.auslauf].sort((a, b) => a.datum !== b.datum ? (a.datum < b.datum ? -1 : 1) : (a.geaendert || 0) - (b.geaendert || 0)); }
+const ausKey = a => [a.typ, a.typ === 'Weide' ? a.parzelle || '' : '', a.typ === 'Laufhof' ? a.grund || '' : ''].join('|');
+// Aufeinanderfolgende gleiche Einträge zusammenfassen, bei gleichem Datum gilt der zuletzt erfasste
+let ausMemo = '';
+function auslaufBereinigen() {
+  if (!S.loaded || !S.loaded.auslauf) return;
+  const k = S.auslauf.map(a => a.id + a.datum + (a.geaendert || '')).join(); if (k === ausMemo) return; ausMemo = k;
+  const sl = sortedAuslauf(); let prev = null;
+  sl.forEach((a, i) => {
+    const nx = sl[i + 1];
+    if (nx && nx.datum === a.datum) { del('auslauf', a.id); return; }
+    if (prev && ausKey(prev) === ausKey(a)) { if (a.notiz && !(prev.notiz || '').includes(a.notiz)) { prev.notiz = [prev.notiz, a.notiz].filter(Boolean).join(' · '); put('auslauf', prev); } del('auslauf', a.id); return; }
+    prev = a;
+  });
+}
 function herdeAm(d = today(), list = sortedAuslauf()) { let best = null; for (const a of list) { if (a.datum > d) break; best = a; } return best; }
 const ortTxt = a => !a ? 'Kein Eintrag' : a.typ + (a.typ === 'Weide' && a.parzelle ? ' · ' + a.parzelle : (a.typ === 'Stall' || a.typ === 'Laufhof') && a.grund ? ' · ' + a.grund : a.ort ? ' · ' + a.ort : '');
 function ortAm(tid, d, list = sortedAuslauf()) { let best = null; for (const a of list) { if (a.datum > d) break; if ((a.tierIds || []).includes(tid)) best = a; } return best; }
@@ -250,7 +265,7 @@ const UI = { tierFilter: { kat: '', lakt: '', q: '', sort: 'alter', abg: false }
 
 function render() {
   if (mode === 'firebase' && !USER) return;
-  feldMigration();
+  feldMigration(); auslaufBereinigen(); lagerKorrektur();
   if (document.querySelector('.sheet.show [data-dirty="1"]')) return; // Formular offen und bearbeitet: nicht neu zeichnen
   const h = location.hash.replace(/^#\/?/, '') || 'start';
   const p = h.split('/');
@@ -492,7 +507,7 @@ function vNachkommen(t) {
   return `<div class="sec-t">Nachkommen von ${esc(t.name || t.ohrmarke)}</div><div class="list">${k.map(x => tierRow(x)).join('')}${ext.map(e => `<button type="button" class="row" data-act="edit" data-c="ereignisse" data-id="${e.id}"><span class="av kalb">${TIC.Kalb}</span><div class="main"><span class="t">${esc(e.kalbName || 'Kalb')}${e.kalbOhrmarke ? ` <span class="om">${kurzOM(e.kalbOhrmarke)}</span>` : ''}${e.kalbGeschlecht === 'm' ? ' <span class="om">♂</span>' : ''}</span><span class="s wrap">geb. ${fmt(e.datum)} · nicht mehr im Bestand${e.notiz ? ' · ' + esc(e.notiz) : ''}</span></div></button>`).join('')}${!k.length && !ext.length ? '<div class="empty">Keine Nachkommen erfasst.</div>' : ''}</div>`;
 }
 function behRows(list) {
-  return list.length ? list.map(b => `<button type="button" class="row" data-act="edit" data-c="behandlungen" data-id="${b.id}"><div class="main"><span class="t">${esc(b.medikament || '-')}${b.grund ? ' · ' + esc(b.grund) : ''}</span><span class="s">${esc(tierListe(b.tierIds))} · ${esc([b.menge, b.art, b.durch].filter(Boolean).join(' · '))}</span></div><div class="r">${fmt(b.datum)}<br>${b.freiAb && b.freiAb > today() ? `<span class="pill warn">frei ab ${fmtS(b.freiAb)}</span>` : `<span class="pill">frei</span>`}</div></button>`).join('') : '<div class="empty">Keine Behandlungen.</div>';
+  return list.length ? list.map(b => `<button type="button" class="row" data-act="edit" data-c="behandlungen" data-id="${b.id}"><div class="main"><span class="t">${esc(b.medikament || '-')}${b.grund ? ' · ' + esc(b.grund) : ''}</span><span class="s">${esc(tierListe(b.tierIds))} · ${esc([b.menge, b.art, b.durch].filter(Boolean).join(' · '))}</span></div><div class="r">${fmt(b.datum)}${b.bis && b.bis !== b.datum ? '<br><span class="small muted">bis ' + fmt(b.bis) + '</span>' : ''}<br>${b.freiAb && b.freiAb > today() ? `<span class="pill warn">frei ab ${fmtS(b.freiAb)}</span>` : `<span class="pill">frei</span>`}</div></button>`).join('') : '<div class="empty">Keine Behandlungen.</div>';
 }
 function tierListe(ids = []) { const a = aktiveTiere(); if (ids.length > 3 && a.length && a.every(t => ids.includes(t.id))) return `Alle (${ids.length})`; return ids.length > 3 ? `${ids.length} Tiere` : ids.map(tName).join(', '); }
 function vTierBeh(t) {
@@ -507,7 +522,7 @@ function vJournale() {
   const SECT = { lager: 'Lager', auslauf: 'Auslaufjournal', behandlung: 'Behandlungsjournal', feld: 'Feldkalender', zucht: 'Zucht', traenkefass: 'Tränkefass', wasserstand: 'Wasserstand', wetter: 'Agrometeo Analyse' };
   if (!SECT[UI.jTab]) return anaKacheln();
   const tabs = `<div class="anah"><a class="back" href="#/journale/">‹ Übersicht</a><b>${SECT[UI.jTab]}</b></div>`;
-  if (UI.jTab === 'auslauf') return tabs + vAuslauf() + anaAuslaufChart();
+  if (UI.jTab === 'auslauf') return tabs + vAuslauf();
   if (UI.jTab === 'feld') return tabs + vFeld();
   if (UI.jTab === 'lager') return tabs + anaLager();
   if (UI.jTab === 'zucht') return tabs + anaZucht();
@@ -517,7 +532,8 @@ function vJournale() {
   const offen = S.behandlungen.filter(b => b.freiAb && b.freiAb > today());
   return `${tabs}
   ${offen.length ? `<div class="note" style="margin-bottom:12px">${offen.length} laufende Absetzfrist(en), letzte endet ${fmt(offen.map(b => b.freiAb).sort().pop())}</div>` : ''}
-  <div class="toolbar">${jahrSel()}<button class="btn pri" data-act="form" data-f="behandlung">+ Behandlung</button><button class="btn" data-act="pdf" data-p="beh">PDF ${UI.jahr}</button></div>
+  <div class="stats"><div class="stats-row"><span class="stats-h">${UI.jahr}</span><span class="stat"><b>${list.length}</b><span>Behandlungen</span></span><span class="stat"><b>${list.reduce((a, b) => a + (b.tierIds || []).length, 0)}</b><span>Tierbehandl.</span></span><span class="stat"><b>${offen.length}</b><span>Fristen offen</span></span></div></div>
+  <div class="toolbar">${jahrSel()}<button class="btn pri" data-act="pdf" data-p="beh">PDF ${UI.jahr}</button></div>
   <div class="list">${behRows(list)}</div>`;
 }
 function auslaufPerioden() {
@@ -535,10 +551,9 @@ function vAuslauf() {
   tage.forEach(([, a]) => sum[a.typ] = (sum[a.typ] || 0) + 1);
   const per = auslaufPerioden().filter(p => p.a.datum <= UI.jahr + '-12-31' && (p.bis || '9999') >= UI.jahr + '-01-01');
   const cell = (k) => `<span class="stat"><b>${sum[k] || 0}</b><span>${k}</span></span>`;
-  return `${herdeBanner()}
-  <div class="stats"><div class="stats-row four"><span class="stats-h">Tage ${UI.jahr}</span>${cell('Weide')}${cell('Laufhof')}${cell('Alp')}<span class="stat ghost"></span></div></div>
-  <div class="toolbar">${jahrSel()}<button class="btn pri" data-act="form" data-f="auslauf">+ Eintrag</button><button class="btn" data-act="pdf" data-p="auslaufJahr">PDF ${UI.jahr}</button></div>
-  <div class="toolbar"><input class="search" type="date" value="${d}" id="auslaufTag" aria-label="Tag" style="flex:0 1 180px"><button class="btn" data-act="pdf" data-p="auslaufTag">PDF Tag</button></div>
+  return `${anaAuslaufChart()}
+  <div class="stats" style="margin-top:12px"><div class="stats-row four"><span class="stats-h">Tage ${UI.jahr}</span>${cell('Weide')}${cell('Laufhof')}${cell('Alp')}<span class="stat ghost"></span></div></div>
+  <div class="toolbar">${jahrSel()}<button class="btn pri" data-act="pdf" data-p="auslaufJahr">PDF ${UI.jahr}</button></div>
   <div class="list">${per.length ? per.map(p => { const dauer = diff(p.a.datum, p.bis || addDays(d, 1)); return `<button type="button" class="row" data-act="edit" data-c="auslauf" data-id="${p.a.id}"><span class="av ${p.a.typ.toLowerCase()}">${esc(p.a.typ.slice(0, 1))}</span><div class="main"><span class="t">${esc(ortTxt(p.a))}</span><span class="s">${fmt(p.a.datum)} – ${p.bis ? fmt(addDays(p.bis, -1)) : 'heute'}</span></div><span class="r"><b>${dauer}</b> T.</span></button>`; }).join('') : '<div class="empty">Keine Einträge in diesem Jahr.</div>'}</div>`;
 }
 const FELD = { ernte: { l: 'Ernte', g: 'ernte' }, kauf: { l: 'Kauf', g: 'kauf' }, verbrauch: { l: 'Verbrauch', g: 'lager' }, duengung: { l: 'Düngung', g: 'austrag' } };
@@ -551,6 +566,23 @@ function feldMigration() {
   if (feldMig) return; const alt = S.feld.filter(f => FELD_ALT[f.typ]); if (!alt.length) return; feldMig = true;
   for (const f of alt) { const [typ, was] = FELD_ALT[f.typ]; const n = { ...f, typ, was }; if (f.zweck && f.zweck !== 'Fütterung') n.notiz = [f.zweck, f.notiz].filter(Boolean).join(' · '); delete n.zweck; put('feld', n); }
 }
+// Einmalige Korrektur: linearer Monatsverbrauch 24.11.2025 - 16.04.2026, Bestand am 16.04.2026 = 0
+function lagerKorrektur() {
+  if (!S.loaded.feld || !S.loaded.set || S.set.korrLager2026 || S.feld.some(f => f.korr === 'linear2026')) return;
+  const VON = '2025-11-24', BIS = '2026-04-16', START = { Heu: S.set.startHeu, Silage: S.set.startSilo, Stroh: S.set.startStroh }, msg = [];
+  const daten = []; for (let m = 1; ; m++) { const d = pd(VON); d.setMonth(d.getMonth() + m); if (iso(d) >= BIS) break; daten.push(iso(d)); } daten.push(BIS);
+  const total = diff(VON, BIS), anteil = daten.map((d, i) => diff(i ? daten[i - 1] : VON, d) / total);
+  for (const was of ['Heu', 'Silage', 'Stroh']) {
+    if (S.feld.some(f => f.typ === 'verbrauch' && f.was === was && f.datum >= VON && f.datum <= BIS)) continue;
+    const best = num(START[was]) + S.feld.filter(f => f.was === was && f.datum <= BIS).reduce((a, f) => a + (f.typ === 'ernte' || f.typ === 'kauf' ? num(f.menge) : f.typ === 'verbrauch' ? -num(f.menge) : 0), 0);
+    if (best <= 0) continue;
+    let rest = best;
+    daten.forEach((d, i) => { const m = i === daten.length - 1 ? Math.round(rest * 100) / 100 : Math.round(best * anteil[i] * 100) / 100; rest -= m; put('feld', { typ: 'verbrauch', was, datum: d, menge: m, notiz: 'Korrektur linear', korr: 'linear2026' }); });
+    msg.push(`${was} ${nf(best)}`);
+  }
+  W.setSettings({ ...S.set, korrLager2026: today() });
+  if (msg.length) toast('Lager korrigiert (linear bis 16.04.2026): ' + msg.join(', '));
+}
 function verbrauchProTag(was) {
   const d = today(), von = addDays(d, -90), v = S.feld.filter(f => f.typ === 'verbrauch' && f.was === was);
   if (!v.length) return 0;
@@ -562,17 +594,16 @@ function reichweite(was, bestand) {
   const t = Math.floor(bestand / r); if (t <= 0) return 'aufgebraucht';
   return `reicht ca. ${t < 60 ? t + ' Tage' : Math.round(t / 7) + ' Wochen'} (${fmtS(addDays(today(), t))})`;
 }
-function vFeld() {
-  const L = lager();
-  const list = S.feld.filter(f => (f.datum || '').startsWith(UI.jahr) && FELD[f.typ]).sort((a, b) => a.datum < b.datum ? 1 : -1);
-  const sm = (typ, was) => list.filter(f => f.typ === typ && f.was === was).reduce((a, f) => a + num(f.menge), 0);
+function feldRows(list) {
   const av = g => g === 'austrag' ? 'stall' : g === 'ernte' ? 'weide' : g === 'kauf' ? 'laufhof' : 'alp';
-  const rows = list.length ? list.map(f => `<button type="button" class="row" data-act="edit" data-c="feld" data-id="${f.id}"><span class="av ${av(FELD[f.typ].g)}">${IC[f.typ] || ''}</span><div class="main"><span class="t">${esc(fL(f))}</span><span class="s">${esc(fSub(f))}${f.notiz ? (fSub(f) ? ' · ' : '') + esc(f.notiz) : ''}</span></div><div class="r"><b>${f.typ === 'verbrauch' ? '− ' : ''}${nf(num(f.menge))} ${fE(f)}</b><br><span class="small muted">${fmt(f.datum)}</span></div></button>`).join('') : '<div class="empty">Keine Einträge in diesem Jahr.</div>';
-  return `${lagerKpi(L)}
-  <div class="btns" style="margin:10px 0">${['ernte', 'kauf', 'verbrauch', 'duengung'].map(k => `<button class="btn" data-act="form" data-f="${k}">+ ${FELD[k].l}</button>`).join('')}</div>
-  <div class="toolbar">${jahrSel()}<button class="btn pri" data-act="pdf" data-p="feld">Feldkalender PDF ${UI.jahr}</button></div>
-  ${list.length ? `<div class="stats"><div class="stats-row four"><span class="stats-h">Total ${UI.jahr}</span><span class="stat"><b>${nf(sm('duengung', 'Gülle'))}</b><span>Gülle m³</span></span><span class="stat"><b>${nf(sm('duengung', 'Mist'))}</b><span>Mist t</span></span><span class="stat"><b>${nf(sm('ernte', 'Heu'))}</b><span>Heu geerntet</span></span><span class="stat"><b>${nf(sm('ernte', 'Silage'))}</b><span>Silage geerntet</span></span></div></div>` : ''}
-  <div class="list">${rows}</div>`;
+  return list.length ? list.map(f => `<button type="button" class="row" data-act="edit" data-c="feld" data-id="${f.id}"><span class="av ${av(FELD[f.typ].g)}">${IC[f.typ] || ''}</span><div class="main"><span class="t">${esc(fL(f))}</span><span class="s">${esc(fSub(f))}${f.notiz ? (fSub(f) ? ' · ' : '') + esc(f.notiz) : ''}</span></div><div class="r"><b>${f.typ === 'verbrauch' ? '− ' : ''}${nf(num(f.menge))} ${fE(f)}</b><br><span class="small muted">${fmt(f.datum)}</span></div></button>`).join('') : '<div class="empty">Keine Einträge in diesem Jahr.</div>';
+}
+function vFeld() {
+  const list = S.feld.filter(f => (f.datum || '').startsWith(UI.jahr) && (f.typ === 'duengung' || f.typ === 'ernte')).sort((a, b) => a.datum < b.datum ? 1 : -1);
+  const sm = (typ, was) => list.filter(f => f.typ === typ && f.was === was).reduce((a, f) => a + num(f.menge), 0);
+  return `<div class="stats" style="margin-top:8px"><div class="stats-row four"><span class="stats-h">Total ${UI.jahr}</span><span class="stat"><b>${nf(sm('duengung', 'Gülle'))}</b><span>Gülle m³</span></span><span class="stat"><b>${nf(sm('duengung', 'Mist'))}</b><span>Mist t</span></span><span class="stat"><b>${nf(sm('ernte', 'Heu'))}</b><span>Heu geerntet</span></span><span class="stat"><b>${nf(sm('ernte', 'Silage'))}</b><span>Silage geerntet</span></span></div></div>
+  <div class="toolbar">${jahrSel()}<button class="btn pri" data-act="pdf" data-p="feld">PDF ${UI.jahr}</button></div>
+  <div class="list">${feldRows(list)}</div>`;
 }
 function vParzellen() {
   const tabs = '';
@@ -630,8 +661,9 @@ function vKalender() {
   <div class="list">${rows || '<div class="empty">Keine Einträge.</div>'}</div>`;
 }
 
+const chartW = () => { const v = $('#view'); const w = v ? v.clientWidth - 64 : 340; return Math.max(320, Math.min(960, w || 340)); };
 function svgBars(series, labels, colors, h = 150) {
-  const n = labels.length, W = 340, pad = 22, bw = (W - pad) / n;
+  const n = labels.length, W = chartW(), pad = 22, bw = (W - pad) / n;
   const tot = labels.map((_, i) => series.reduce((a, s) => a + (s[i] || 0), 0)), mx = Math.max(1, ...tot);
   let g = '';
   labels.forEach((l, i) => {
@@ -644,7 +676,7 @@ function svgBars(series, labels, colors, h = 150) {
 }
 const CHARTS = {};
 function svgLines(series, labels, colors, h = 150, tips = null, dyn = false, alle = false) {
-  const W = 340, pad = 26, n = labels.length, all = series.flat().filter(v => v !== null && v !== undefined);
+  const W = chartW(), pad = 26, n = labels.length, all = series.flat().filter(v => v !== null && v !== undefined);
   let mx = Math.max(1, ...all), mn = Math.min(0, ...all);
   if (dyn && all.length) { const a = Math.min(...all), b = Math.max(...all), p = Math.max(1, (b - a) * 0.12); mn = Math.max(0, Math.floor(a - p)); mx = Math.min(100, Math.ceil(b + p)); if (mx - mn < 4) { mn = Math.max(0, mn - 2); mx = mn + 4; } }
   const x = i => pad + i * (W - pad - 6) / Math.max(1, n - 1), y = v => 8 + (mx - v) / (mx - mn || 1) * (h - 30);
@@ -673,10 +705,12 @@ function anaKacheln() {
   const lk = (t, was, v) => `<a class="kachel k3 ${v <= 5 ? 'low' : ''}" href="#/journale/lager"><span>${t}</span><b>${nf(v)}</b><small>${esc(reichweite(was, v))}</small></a>`;
   const gb = (v, t, sub, ic) => `<a class="gross" href="#/journale/${v}"><span class="gi">${ic}</span><span><b>${t}</b><small>${sub}</small></span><i>›</i></a>`;
   return `<div class="kacheln">${k('wasserstand', 'Wasserstand', ws, wss, wsc)}${k('traenkefass', 'Tränkefass', tf, tfs, tfc)}</div>
-  <div class="kacheln drei">${lk('Heu', 'Heu', L.heu)}${lk('Silage', 'Silage', L.silo)}${lk('Stroh', 'Stroh', L.stroh)}</div>
+  <div class="sec-t">Lager</div>
+  <div class="kacheln drei" style="margin-top:0">${lk('Heu', 'Heu', L.heu)}${lk('Silage', 'Silage', L.silo)}${lk('Stroh', 'Stroh', L.stroh)}</div>
   <div class="grosse">
     ${gb('auslauf', 'Auslaufjournal', 'Weide, Laufhof, Alp · PDF', IC.auslauf)}
-    ${gb('feld', 'Feldkalender', 'Ernte, Kauf, Verbrauch, Düngung · PDF', IC.ernte)}
+    ${gb('lager', 'Lager', 'Heu, Silage, Stroh · Ernte, Kauf, Verbrauch', IC.verbrauch)}
+    ${gb('feld', 'Feldkalender', 'Düngung, Ernte · PDF', IC.ernte)}
     ${gb('behandlung', 'Behandlungsjournal', 'Behandlungen, Absetzfristen · PDF', IC.behandlung)}
     ${gb('wetter', 'Agrometeo Analyse', 'Niederschlag und Temperatur', I('<path d="M7 18a4 4 0 0 1-.5-8 6 6 0 0 1 11.5 1.5A3.5 3.5 0 0 1 17.5 18z"/>'))}
   </div>`;
@@ -687,18 +721,20 @@ function anaLager() {
   const bal = (was, start) => mons.map(e => num(start) + S.feld.filter(f => f.datum <= e && f.was === was).reduce((a, f) => a + (f.typ === 'ernte' || f.typ === 'kauf' ? num(f.menge) : f.typ === 'verbrauch' ? -num(f.menge) : 0), 0));
   const H = bal('Heu', S.set.startHeu), Si = bal('Silage', S.set.startSilo), St = bal('Stroh', S.set.startStroh), L = lager();
   const cols = ['#2E8B62', '#E0A35C', '#B8A04A'];
-  return `${lagerKpi(L)}
-  <div class="list" style="margin-top:8px">${[['Heu', L.heu], ['Silage', L.silo], ['Stroh', L.stroh]].map(([w, v]) => `<div class="row one"><i class="bar green"></i><div class="main"><span class="t1"><span class="hd">${w}</span> <span class="ex">${esc(reichweite(w, v))}</span></span></div><small class="rt">${nf(verbrauchProTag(w) * 7)}/Woche</small></div>`).join('')}</div>
-  <div class="btns" style="margin:10px 0"><button class="btn" data-act="form" data-f="verbrauch">+ Verbrauch</button><button class="btn" data-act="form" data-f="kauf">+ Kauf</button><button class="btn" data-act="form" data-f="ernte">+ Ernte</button></div>
-  <div class="sec-t">Verlauf 24 Monate</div>
+  const logs = S.feld.filter(f => (f.datum || '').startsWith(UI.jahr) && ['ernte', 'kauf', 'verbrauch'].includes(f.typ)).sort((a, b) => a.datum < b.datum ? 1 : -1);
+  return `<div class="sec-t" style="margin-top:8px">Verlauf 24 Monate</div>
   <div class="card">${svgLines([H, Si, St], mons.map(m => MON[+m.slice(5, 7) - 1].slice(0, 1)), cols, 150, mons.map((m, i) => `Ende ${ML[+m.slice(5, 7) - 1]} ${m.slice(0, 4)}: Heu ${nf(H[i])} · Silage ${nf(Si[i])} · Stroh ${nf(St[i])}`), false, true)}<div class="legend"><span><i class="sw" style="background:${cols[0]}"></i>Heu</span><span><i class="sw" style="background:${cols[1]}"></i>Silage</span><span><i class="sw" style="background:${cols[2]}"></i>Stroh</span></div></div>
-  <p class="small muted" style="margin:6px 4px">Reichweite = aktueller Bestand geteilt durch den Ø Verbrauch der letzten 90 Tage.</p>`;
+  <div style="margin-top:12px">${lagerKpi(L)}</div>
+  <div class="list" style="margin-top:8px">${[['Heu', L.heu], ['Silage', L.silo], ['Stroh', L.stroh]].map(([w, v]) => `<div class="row one"><i class="bar green"></i><div class="main"><span class="t1"><span class="hd">${w}</span> <span class="ex">${esc(reichweite(w, v))}</span></span></div><small class="rt">${nf(verbrauchProTag(w) * 7)}/Woche</small></div>`).join('')}</div>
+  <p class="small muted" style="margin:6px 4px">Reichweite = aktueller Bestand geteilt durch den Ø Verbrauch der letzten 90 Tage.</p>
+  <div class="toolbar">${jahrSel()}</div>
+  <div class="list">${feldRows(logs)}</div>`;
 }
 function anaAuslaufChart() {
   const J = UI.jahr, typs = ['Weide', 'Laufhof', 'Alp'], cols = ['#2E8B62', '#5B8FD6', '#E0A35C'];
   const per = typs.map(() => Array(12).fill(0));
   auslaufTage(J).forEach(([d, a]) => { const k = typs.indexOf(a.typ); if (k >= 0) per[k][+d.slice(5, 7) - 1]++; });
-  return `<div class="sec-t">Tage pro Monat ${J}</div><div class="card">${svgBars(per, MON.map(m => m.slice(0, 1)), cols)}<div class="legend">${typs.map((t, i) => `<span><i class="sw" style="background:${cols[i]}"></i>${t}</span>`).join('')}</div></div>`;
+  return `<div class="sec-t" style="margin-top:8px">Tage pro Monat ${J}</div><div class="card">${svgBars(per, MON.map(m => m.slice(0, 1)), cols)}<div class="legend">${typs.map((t, i) => `<span><i class="sw" style="background:${cols[i]}"></i>${t}</span>`).join('')}</div></div>`;
 }
 function anaZucht() {
   const J = UI.jahr, yrs = jahre([S.ereignisse]).sort();
@@ -757,15 +793,17 @@ const WIC = {
 };
 let wetterLaden = false;
 function wetterZeile() {
-  let w = null; try { w = JSON.parse(localStorage.getItem('hb-wetter') || 'null'); } catch (e) { }
+  let w = null; try { w = JSON.parse(localStorage.getItem('hb-wetter2') || 'null'); } catch (e) { }
   if ((!w || Date.now() - w.t > 3 * 3600e3) && !wetterLaden && navigator.onLine !== false) {
     wetterLaden = true;
-    fetch(`https://api.open-meteo.com/v1/forecast?latitude=${S.set.lat}&longitude=${S.set.lon}&daily=weather_code,temperature_2m_max,precipitation_sum&forecast_days=14&timezone=Europe%2FZurich`)
-      .then(r => r.json()).then(j => { localStorage.setItem('hb-wetter', JSON.stringify({ t: Date.now(), d: j.daily })); wetterLaden = false; schedule(); }).catch(() => { wetterLaden = false; });
+    fetch(`https://api.open-meteo.com/v1/forecast?latitude=${S.set.lat}&longitude=${S.set.lon}&daily=weather_code,temperature_2m_max,precipitation_sum,precipitation_probability_max&forecast_days=14&timezone=Europe%2FZurich`)
+      .then(r => r.json()).then(j => { localStorage.setItem('hb-wetter2', JSON.stringify({ t: Date.now(), d: j.daily })); wetterLaden = false; schedule(); }).catch(() => { wetterLaden = false; });
   }
   if (!w || !w.d) return '';
   const D = w.d, WT = ['S', 'M', 'D', 'M', 'D', 'F', 'S'];
-  return `<div class="wetter" title="Wetter 14 Tage">${D.time.map((t, i) => `<span title="${fmt(t)}: ${Math.round(D.temperature_2m_max[i])}°, ${D.precipitation_sum[i]} mm"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">${WIC[WMO(D.weather_code[i])]}</svg><small>${i === 0 ? 'H' : WT[pd(t).getDay()]}</small></span>`).join('')}</div>`;
+  // Regen-Symbol nur bei relevantem Niederschlag (>= 1 mm und Wahrscheinlichkeit >= 50 %), sonst bewölkt
+  const sym = i => { let c = WMO(D.weather_code[i]); const mm = D.precipitation_sum[i] || 0, pr = D.precipitation_probability_max ? D.precipitation_probability_max[i] : null; if ((c === 'rain' || c === 'storm') && (mm < 1 || (pr !== null && pr < 50))) c = 'cloud'; return c; };
+  return `<div class="wetter" title="Wetter 14 Tage (Open-Meteo)">${D.time.map((t, i) => `<span title="${fmt(t)}: ${Math.round(D.temperature_2m_max[i])}°, ${D.precipitation_sum[i]} mm${D.precipitation_probability_max ? ', ' + D.precipitation_probability_max[i] + ' %' : ''}"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">${WIC[sym(i)]}</svg><small>${i === 0 ? 'H' : WT[pd(t).getDay()]}</small></span>`).join('')}</div>`;
 }
 
 function bildKomprimieren(file, max = 1280, q = 0.72) {
@@ -832,7 +870,7 @@ function vSettings() {
   const numf = (n, l, v) => fld(n, l, v, 'type="number" inputmode="decimal"');
   const ta = (n, l, v, ph = '') => `<label class="fld"><span>${l}</span><textarea name="${n}" rows="4" placeholder="${ph}">${esc(v)}</textarea></label>`;
   return `<form class="form" id="setform" style="margin-top:8px;gap:8px">
-  ${grp('hof', 'Hof', s.hofname || '', fld('hofname', 'Hofname', s.hofname) + numf('lat', 'Wetter: Breitengrad', s.lat) + numf('lon', 'Wetter: Längengrad', s.lon))}
+  ${grp('hof', 'Hof', s.hofname || '', fld('hofname', 'Hofname', s.hofname) + fld('betrieb', 'Betrieb (Kopf PDF)', s.betrieb) + fld('tvd', 'TVD-Nummer', s.tvd) + numf('lat', 'Wetter: Breitengrad', s.lat) + numf('lon', 'Wetter: Längengrad', s.lon))}
   ${grp('zucht', 'Zucht & Alp', `Tragzeit ${s.tragzeit} T. · Alp ${s.alpVon} bis ${s.alpBis}`, numf('tragzeit', 'Tragzeit (Tage)', s.tragzeit) + numf('kalbMonate', 'Kalb bis (Monate)', s.kalbMonate) + numf('laktAbMonate', 'Laktations-KPI ab (Monate)', s.laktAbMonate) + numf('abgekalbtTage', 'Status "Abgekalbt" während (Tage)', s.abgekalbtTage) + fld('alpVon', 'Alp von, Schätzung (MM-TT)', s.alpVon, 'placeholder="05-25"') + fld('alpBis', 'Alp bis, Schätzung (MM-TT)', s.alpBis, 'placeholder="10-05"') + numf('puffer', 'Puffer Besamungsverbot (Tage)', s.puffer))}
   ${grp('liste', 'Tierliste', `unbesamt ab ${s.unbesamtAb} Mt. · Abkalbung ${s.baldTage} T.`, numf('unbesamtAb', 'Unbesamt markieren ab (Monate)', s.unbesamtAb) + numf('baldTage', 'Abkalbung markieren (Tage vorher)', s.baldTage))}
   ${grp('listen', 'Auswahllisten', 'Gründe, Medikamente', ta('gruende', 'Gründe Stall / Laufhof', (s.gruende || []).join('\n')) + ta('medikamente', 'Medikamente (Name ; Absetzfrist Tage)', (s.medikamente || []).map(m => `${m.name} ; ${m.frist}`).join('\n'), 'Beispielpräparat ; 21'))}
@@ -903,33 +941,43 @@ const FORMS = {
     calc: v => v.datum ? `Brunstkontrolle <b>${fmt(addDays(v.datum, 21))}</b> · Abkalbung ca. <b>${fmt(addDays(v.datum, S.set.tragzeit))}</b>${inAlp(addDays(v.datum, S.set.tragzeit)) ? ' <span class="pill red">während Alp!</span>' : ''}` : '' },
   auslauf: { t: 'Auslaufjournal', coll: 'auslauf', fields: [
     { k: 'datum', l: 'Ab Datum', t: 'date' },
-    { k: 'bis', l: 'Bis Datum', t: 'date', def: '' },
+    { k: 'bis', l: 'Bis Datum (leer = läuft weiter)', t: 'date', def: '' },
     { k: 'typ', l: 'Wo (alle Tiere)', t: 'seg', o: [['Weide', 'Weide'], ['Laufhof', 'Laufhof'], ['Alp', 'Alp']], def: 'Weide' },
     { k: 'parzelle', l: 'Parzelle', t: 'tag', fixed: true, list: parzellen, show: v => v.typ === 'Weide' },
     { k: 'grund', l: 'Grund', t: 'tag', list: gruende, show: v => v.typ === 'Laufhof' },
     { k: 'notiz', l: 'Notiz', t: 'textarea' }],
-    hint: 'Gilt für alle Tiere ab diesem Datum und läuft automatisch jeden Tag weiter, bis zum nächsten Eintrag. Mit "Bis" wird nur dieser Zeitraum gesetzt, danach gilt wieder der vorherige Zustand.',
     saveEdit: true,
     save(v, rec) {
-      const von = v.datum, bis = v.bis; delete v.bis;
-      const sl = sortedAuslauf().filter(a => !rec || a.id !== rec.id);
-      if (bis && bis >= von) {
-        const nach = herdeAm(addDays(bis, 1), sl), startsNext = sl.some(a => a.datum === addDays(bis, 1));
-        sl.filter(a => a.datum >= von && a.datum <= bis).forEach(a => del('auslauf', a.id));
-        put('auslauf', { ...(rec || {}), ...v });
-        if (nach && !startsNext) put('auslauf', { datum: addDays(bis, 1), typ: nach.typ, parzelle: nach.parzelle || '', grund: nach.grund || '', notiz: '' });
-      } else put('auslauf', { ...(rec || {}), ...v });
+      // Der gespeicherte Eintrag gilt für seinen Zeitraum, überlagerte Einträge werden überschrieben
+      const von = v.datum, bis = v.bis && v.bis >= von ? v.bis : ''; delete v.bis;
+      const all = sortedAuslauf(), sl = all.filter(a => !rec || a.id !== rec.id);
+      const oldNext = rec ? all.find(a => a.datum > rec.datum) : null;
+      if (bis) {
+        const b1 = addDays(bis, 1);
+        if (oldNext && oldNext.datum > b1 && oldNext.datum > von) {
+          sl.filter(a => a.datum >= von && a.datum <= bis).forEach(a => del('auslauf', a.id));
+          put('auslauf', { ...oldNext, datum: b1 });
+        } else {
+          const nach = herdeAm(b1, sl), startsNext = sl.some(a => a.datum === b1);
+          sl.filter(a => a.datum >= von && a.datum <= bis).forEach(a => del('auslauf', a.id));
+          if (nach && !startsNext) put('auslauf', { datum: b1, typ: nach.typ, parzelle: nach.parzelle || '', grund: nach.grund || '', notiz: '' });
+        }
+      } else sl.filter(a => a.datum === von).forEach(a => del('auslauf', a.id));
+      put('auslauf', { ...(rec || {}), ...v });
     } },
   behandlung: { t: 'Behandlung', coll: 'behandlungen', fields: [
-    { k: 'tierIds', l: 'Tiere', t: 'tiere' }, { k: 'datum', l: 'Datum', t: 'date' },
-    { k: 'grund', l: 'Grund / Diagnose', t: 'text' },
-    { k: 'medikament', l: 'Medikament', t: 'text', list: () => (S.set.medikamente || []).map(m => m.name) },
+    { k: 'tierIds', l: 'Tiere', t: 'tiere' }, { k: 'datum', l: 'Behandlung von', t: 'date' }, { k: 'bis', l: 'Behandlung bis (leer = 1 Tag)', t: 'date', def: '' },
+    { k: 'grund', l: 'Behandlungsgrund', t: 'text' },
+    { k: 'medikament', l: 'Arzneimittel', t: 'text', list: () => (S.set.medikamente || []).map(m => m.name) },
     { k: 'menge', l: 'Menge pro Tier', t: 'text', ph: 'z.B. 20 ml' },
     { k: 'art', l: 'Verabreichung', t: 'seg', o: ART.map(a => [a, a]), def: 'i.m.' },
-    { k: 'durch', l: 'Verabreicht durch', t: 'text', def: 'Tierhalter', list: () => ['Tierhalter', ...new Set(S.behandlungen.map(b => b.durch).filter(Boolean))] },
-    { k: 'frist', l: 'Absetzfrist Fleisch (Tage)', t: 'number', def: '0' }, { k: 'notiz', l: 'Notiz', t: 'textarea' }],
-    calc: v => v.datum ? `Frei ab: <b>${fmt(addDays(v.datum, num(v.frist)))}</b>` : '',
-    prep: v => { v.freiAb = addDays(v.datum, num(v.frist)); v.frist = num(v.frist); } },
+    { k: 'frist', l: 'Absetzfrist Fleisch (Tage)', t: 'number', def: '0' },
+    { k: 'erfasst', l: 'Erfassungsdatum', t: 'date' },
+    { k: 'durch', l: 'Name', t: 'text', def: 'Matthias Erdin', list: () => [...new Set(['Matthias Erdin', ...S.behandlungen.map(b => b.durch).filter(x => x && x !== 'Tierhalter')])] },
+    { k: 'unterschrift', l: 'Unterschrift', t: 'sign', req: true },
+    { k: 'notiz', l: 'Notiz', t: 'textarea' }],
+    calc: v => v.datum ? `Freigabe Fleisch ab: <b>${fmt(addDays(v.bis && v.bis >= v.datum ? v.bis : v.datum, num(v.frist)))}</b>` : '',
+    prep: v => { if (!v.bis || v.bis < v.datum) v.bis = ''; v.freiAb = addDays(v.bis || v.datum, num(v.frist)); v.frist = num(v.frist); } },
 };
 const lagerCalc = typ => v => { const w = feldWarnung(typ, v.parzelle, v.datum); const L = lager(), k = { Heu: 'heu', Silage: 'silo', Stroh: 'stroh' }[v.was]; if (!k) return w; const cur = L[k], n = cur + (typ === 'verbrauch' ? -1 : 1) * num(v.menge); return `Lager ${v.was}: ${nf(cur)} → <b>${nf(n)}</b> ${v.was === 'Stroh' ? 'Kleinballen' : 'Ballen'}` + w; };
 const fDat = { k: 'datum', l: 'Datum', t: 'date' }, fNot = { k: 'notiz', l: 'Notiz', t: 'textarea' }, fPz = { k: 'parzelle', l: 'Parzelle', t: 'tag', fixed: true, list: parzellen };
@@ -1005,7 +1053,8 @@ function plusMenu() {
   const a = (k, l) => `<button type="button" class="act" data-act="form" data-f="${k}"${tid ? ` data-tier="${tid}"` : ''}>${IC[k] || ''}<span>${l}</span></button>`;
   const tt = tid ? tierById(tid) : null;
   openSheet('Neuer Eintrag', `<div class="sec-t" style="margin-top:0">Tiere${tt ? ' · ' + esc(tt.name || tt.ohrmarke) : ''}</div><div class="actgrid">${a('geburt', 'Geburt')}${a('brunst', 'Brunst')}${a('besamung', 'Besamung')}${a('behandlung', 'Behandlung')}${a('auslauf', 'Weide / Stall')}${a('zugang', 'Zugang')}${a('abgang', 'Abgang')}</div>
-  <div class="sec-t">Feldkalender</div><div class="actgrid">${a('ernte', 'Ernte')}${a('kauf', 'Kauf')}${a('verbrauch', 'Verbrauch')}${a('duengung', 'Düngung')}</div>`);
+  <div class="sec-t">Feldkalender</div><div class="actgrid">${a('duengung', 'Düngung')}${a('ernte', 'Ernte')}</div>
+  <div class="sec-t">Lager</div><div class="actgrid">${a('verbrauch', 'Verbrauch')}${a('kauf', 'Kauf')}</div>`);
 }
 function fieldHtml(f, v) {
   const val = v[f.k] ?? '';
@@ -1020,6 +1069,7 @@ function fieldHtml(f, v) {
     const arr = Array.isArray(val) ? val : [];
     return `<div class="fld"><span>${f.l}</span><div class="thumbs" data-bilder="${f.k}">${arr.map((b, i) => `<span class="th"><img src="${b}" alt=""><button type="button" data-delbild="${i}" aria-label="Bild entfernen">×</button></span>`).join('')}<label class="th add">+<input type="file" accept="image/*" multiple data-addbild="${f.k}" class="hidden"></label></div></div>`;
   }
+  if (f.t === 'sign') return `<div class="fld"><span>${f.l}</span><input type="hidden" name="${f.k}" value="${esc(val)}"><div class="sign"><canvas data-sign="${f.k}" width="600" height="200"></canvas><button type="button" class="chip" data-signclear="${f.k}">Neu unterschreiben</button></div></div>`;
   if (f.t === 'textarea') return `<label class="fld"><span>${f.l}</span><textarea name="${f.k}" rows="${f.rows || 2}">${esc(val)}</textarea></label>`;
   if (f.t === 'tier') {
     const opts = S.tiere.filter(t => (aktiv(t) || t.id === val) && (!f.filter || f.filter(t))).sort(sortName);
@@ -1044,7 +1094,7 @@ function openForm(key, rec = null, pre = {}) {
   if (rec) { Object.assign(v, rec); if (key === 'lobjekt' && v.szp) v.szp = `${v.szp.slice(3)}.${v.szp.slice(0, 2)}.`; if (key === 'aufgabe') ['faelligMT', 'abMT'].forEach(k => { if (v[k]) v[k] = `${v[k].slice(3)}.${v[k].slice(0, 2)}.`; }); if (key === 'parzelle') ['schnittAb', 'fruehBis', 'schnitt2Ab'].forEach(k => { if (v[k]) v[k] = `${v[k].slice(3)}.${v[k].slice(0, 2)}.`; }); if (def.multi && rec.tierId) v.tierIds = [rec.tierId]; }
   if (pre.tier) { if ('tierIds' in v) v.tierIds = [pre.tier]; if ('tierId' in v) v.tierId = pre.tier; }
   if (key === 'tiere' || key === 'zugang') { if (!rec) { v.geburt = ''; v.zugang = ''; } }
-  if (key === 'auslauf') v.bis = '';
+  if (key === 'auslauf') { v.bis = ''; if (rec) { const nx = sortedAuslauf().find(a => a.datum > rec.datum); if (nx) v.bis = addDays(nx.datum, -1); } }
   const body = `${def.hint ? `<div class="note blue small" style="margin-bottom:14px">${def.hint}</div>` : ''}<form class="form" data-form>${def.fields.map(f => `<div data-fk="${f.k}">${fieldHtml(f, v)}</div>`).join('')}<div class="calc" data-calc></div>
   ${def.more && !isEdit ? '<button type="button" class="btn block" data-more>Sichern + nächstes Tier</button>' : ''}</form>`;
   const sh = openSheet(def.t, body, {
@@ -1095,12 +1145,25 @@ function openForm(key, rec = null, pre = {}) {
   });
   if (def.onTier && pre.tier) def.onTier(form, tierById(pre.tier), 'tierId');
   if (isEdit) def.fields.forEach(f => { if (f.hideEdit) $(`[data-fk="${f.k}"]`, form).classList.add('hidden'); });
+  $$('canvas[data-sign]', form).forEach(cv => {
+    const k = cv.dataset.sign, inp = form.elements[k], ctx = cv.getContext('2d');
+    ctx.lineWidth = 3.2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#10201A';
+    if (inp.value) { const im = new Image(); im.onload = () => ctx.drawImage(im, 0, 0, cv.width, cv.height); im.src = inp.value; }
+    let drawing = false, used = false;
+    const pt = e => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * cv.width, (e.clientY - r.top) / r.height * cv.height]; };
+    cv.addEventListener('pointerdown', e => { e.preventDefault(); cv.setPointerCapture(e.pointerId); drawing = true; const [x, y] = pt(e); ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 0.1, y + 0.1); ctx.stroke(); });
+    cv.addEventListener('pointermove', e => { if (!drawing) return; e.preventDefault(); const [x, y] = pt(e); ctx.lineTo(x, y); ctx.stroke(); used = true; });
+    const end = () => { if (!drawing) return; drawing = false; used = true; inp.value = cv.toDataURL('image/png'); form.dataset.dirty = '1'; };
+    cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+    $(`[data-signclear="${k}"]`, form).addEventListener('click', () => { ctx.clearRect(0, 0, cv.width, cv.height); inp.value = ''; form.dataset.dirty = '1'; });
+  });
   upd();
   function doSave(more) {
     const o = read();
     // Pflichtfelder
     if (def.fields.some(f => f.t === 'date' && !['geburt', 'zugang', 'bis', 'faellig'].includes(f.k)) && def.fields.filter(f => f.t === 'date' && !['geburt', 'zugang', 'bis', 'faellig'].includes(f.k)).some(f => !o[f.k])) return toast('Datum fehlt');
     if ('tierIds' in o && !o.tierIds.length) return toast('Mindestens ein Tier wählen');
+    if (def.fields.some(f => f.req && f.t === 'sign' && !o[f.k])) return toast('Unterschrift fehlt');
     if ('tierId' in o && !o.tierId && !def.fields.find(f => f.k === 'tierId').opt) return toast('Tier wählen');
     if ((key === 'zugang' || key === 'tiere') && !o.name && !o.ohrmarke) return toast('Name oder Ohrmarke fehlt');
     if (key === 'zugang' || key === 'tiere') { if (!o.zugang) o.zugang = o.geburt; if (!o.zugang) return toast('Geburts- oder Zugangsdatum fehlt'); }
@@ -1157,48 +1220,139 @@ async function makePdf(title, sub, sections, fname, landscape = false) {
   }
   const n = doc.internal.getNumberOfPages();
   for (let i = 1; i <= n; i++) { doc.setPage(i); doc.setFontSize(8); doc.setTextColor(120); doc.text(`Seite ${i} / ${n}`, pw - 14, doc.internal.pageSize.getHeight() - 8, { align: 'right' }); }
-  if (sections.sign) { doc.setPage(n); }
+  await pdfAusgabe(doc, title, fname);
+}
+async function pdfAusgabe(doc, title, fname) {
   const blob = doc.output('blob');
   const file = new File([blob], fname, { type: 'application/pdf' });
   const touch = matchMedia('(pointer:coarse)').matches;
   if (touch && navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file], title }); return; } catch (e) { if (e.name === 'AbortError') return; } }
   doc.save(fname);
 }
+/* Querformat-Journale: Kopf, Quartals-Matrix, Seitenfuss */
+async function pdfQuer() { const J = await getPdf(); return new J({ orientation: 'landscape', unit: 'mm', format: 'a4' }); }
+function pdfKopf(doc, title, tvd) {
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(0); doc.text(title, 10, 13);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
+  doc.text([S.set.betrieb || DEF.betrieb, tvd ? 'TVD-Nr. ' + (S.set.tvd || DEF.tvd) : ''].filter(Boolean), 287, 9.5, { align: 'right' });
+  doc.setDrawColor(31, 77, 54); doc.setLineWidth(0.4); doc.line(10, 16.5, 287, 16.5);
+  return 21;
+}
+function pdfFuss(doc) {
+  const n = doc.internal.getNumberOfPages(), w = doc.internal.pageSize.getWidth(), h = doc.internal.pageSize.getHeight();
+  for (let i = 1; i <= n; i++) { doc.setPage(i); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(120); doc.text(`erstellt ${fmt(today())} · hofbuech`, 10, h - 6); doc.text(`Seite ${i} / ${n}`, w - 10, h - 6, { align: 'right' }); }
+  doc.setTextColor(0);
+}
+const QSTART = ['01-01', '04-01', '07-01', '10-01'];
+// rows: [{ label, g (Gruppe), cell(d) -> { t, fill } | null }]
+function pdfMatrix(doc, title, tvd, J, q, rows) {
+  const y0 = pdfKopf(doc, `${title} · ${q + 1}. Quartal`, tvd);
+  const von = `${J}-${QSTART[q]}`, bis = q < 3 ? addDays(`${J}-${QSTART[q + 1]}`, -1) : `${J}-12-31`;
+  const tage = []; for (let d = von; d <= bis; d = addDays(d, 1)) tage.push(d);
+  const x0 = 10, lw = 42, dw = (277 - lw) / tage.length, hm = 5, hd = 4;
+  const rh = Math.max(3.2, Math.min(8, (210 - 14 - y0 - hm - hd) / Math.max(1, rows.length)));
+  const yT = y0 + hm + hd, yE = yT + rows.length * rh;
+  const ML = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
+  // Wochenenden
+  doc.setFillColor(238, 240, 236);
+  tage.forEach((d, i) => { const wd = pd(d).getDay(); if (wd === 0 || wd === 6) doc.rect(x0 + lw + i * dw, y0 + hm, dw, hd + rows.length * rh, 'F'); });
+  // Gruppenzeilen
+  rows.forEach((r, i) => { if (r.g) { doc.setFillColor(222, 233, 226); doc.rect(x0, yT + i * rh, lw, rh, 'F'); } });
+  // Zellen
+  rows.forEach((r, i) => tage.forEach((d, j) => {
+    const c = r.cell(d); if (!c) return;
+    const x = x0 + lw + j * dw, y = yT + i * rh;
+    if (c.fill) { doc.setFillColor(...c.fill); doc.rect(x, y, dw, rh, 'F'); }
+    if (c.t) { const fs = c.t.length > 2 ? 4 : 5.2; doc.setFontSize(fs); doc.setFont('helvetica', 'bold'); doc.text(c.t, x + dw / 2, y + rh / 2 + fs * 0.12, { align: 'center' }); }
+  }));
+  // Gitter
+  doc.setDrawColor(205); doc.setLineWidth(0.05);
+  tage.forEach((d, j) => doc.line(x0 + lw + j * dw, y0 + hm, x0 + lw + j * dw, yE));
+  rows.forEach((r, i) => doc.line(x0, yT + i * rh, x0 + lw + tage.length * dw, yT + i * rh));
+  doc.setDrawColor(90); doc.setLineWidth(0.25);
+  doc.rect(x0, y0, lw + tage.length * dw, yE - y0); doc.line(x0 + lw, y0, x0 + lw, yE); doc.line(x0, yT, x0 + lw + tage.length * dw, yT);
+  // Monate + Tage
+  doc.setTextColor(0);
+  let start = 0;
+  tage.forEach((d, j) => {
+    const last = j === tage.length - 1 || tage[j + 1].slice(5, 7) !== d.slice(5, 7);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(4.6); doc.text(String(+d.slice(8)), x0 + lw + j * dw + dw / 2, y0 + hm + hd - 1.1, { align: 'center' });
+    if (last) {
+      const xa = x0 + lw + start * dw, xb = x0 + lw + (j + 1) * dw;
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.text(`${ML[+d.slice(5, 7) - 1]} ${J}`, (xa + xb) / 2, y0 + 3.6, { align: 'center' });
+      doc.setDrawColor(90); doc.setLineWidth(0.25); doc.line(xb, y0, xb, yE); doc.line(xa, y0 + hm, xb, y0 + hm);
+      start = j + 1;
+    }
+  });
+  rows.forEach((r, i) => { doc.setFont('helvetica', r.g ? 'bold' : 'normal'); doc.setFontSize(r.g ? 7.5 : 6.8); doc.text(doc.splitTextToSize((r.g ? '' : '   ') + r.label, lw - 2)[0], x0 + 1.2, yT + i * rh + rh / 2 + 1.1); });
+  return yE;
+}
 const tLabel = id => { const t = tierById(id); return t ? `${t.name || ''}${t.ohrmarke ? ' (' + t.ohrmarke + ')' : ''}` : '?'; };
 async function pdf(p, id) {
   const J = UI.jahr;
+  const tabelle = (doc, y, head, body, opt = {}) => { doc.autoTable({ startY: y, head: [head], body: body.length ? body : [[{ content: 'Keine Einträge', colSpan: head.length }]], styles: { fontSize: 8, cellPadding: 1.4, valign: 'middle' }, headStyles: { fillColor: [31, 77, 54] }, margin: { left: 10, right: 10, top: 22 }, didDrawPage: d => { if (d.pageNumber > 1 && opt.kopf) opt.kopf(); }, ...opt.at }); return doc.lastAutoTable.finalY; };
   if (p === 'beh' || p === 'behTier') {
-    let list = S.behandlungen.filter(b => p === 'behTier' ? (b.tierIds || []).includes(id) : (b.datum || '').startsWith(J)).sort((a, b) => a.datum < b.datum ? -1 : 1);
-    const body = [];
-    list.forEach(b => (b.tierIds || []).forEach(tid => body.push([fmt(b.datum), tLabel(tid), b.grund || '', b.medikament || '', b.menge || '', b.art || '', b.durch || '', String(b.frist ?? ''), fmt(b.freiAb)])));
-    const sum = {}; list.forEach(b => { const k = b.medikament || '-'; sum[k] = sum[k] || { n: 0, t: 0 }; sum[k].n++; sum[k].t += (b.tierIds || []).length; });
-    await makePdf(p === 'behTier' ? `Behandlungen ${tName(id)}` : `Behandlungsjournal ${J}`, p === 'behTier' ? tLabel(id) : `Jahr ${J}`, [
-      { head: ['Datum', 'Tier', 'Grund', 'Medikament', 'Menge', 'Verabr.', 'Durch', 'Frist T.', 'Frei ab'], body },
-      { h: 'Zusammenfassung pro Medikament', head: ['Medikament', 'Behandlungen', 'Tierbehandlungen'], body: Object.entries(sum).map(([k, v]) => [k, v.n, v.t]) }
-    ], p === 'behTier' ? `Behandlungen_${tName(id)}.pdf` : `Behandlungsjournal_${J}.pdf`, true);
-  }
-  if (p === 'auslaufTag') {
-    const d = ($('#auslaufTag') || {}).value || today(); const a = herdeAm(d);
-    await makePdf(`Auslaufjournal ${fmt(d)}`, `Tag ${fmt(d)} · ${ortTxt(a)}`, [
-      { h: 'Herde', head: ['Datum', 'Wo', 'Parzelle / Grund', 'seit'], body: [[fmt(d), a ? a.typ : '-', a ? (a.parzelle || a.grund || a.ort || '') : '', a ? fmt(a.datum) : '']] },
-      { h: 'Tiere (alle)', head: ['Tier', 'Ohrmarke', 'Kategorie'], body: aktiveTiere(d).map(t => [t.name || '', t.ohrmarke || '', kategorie(t, d)]) }
-    ], `Auslauf_${d}.pdf`);
+    const list = S.behandlungen.filter(b => p === 'behTier' ? (b.tierIds || []).includes(id) : (b.datum || '').startsWith(J)).sort((a, b) => a.datum < b.datum ? -1 : 1);
+    const title = p === 'behTier' ? `Behandlungsjournal ${tName(id)}` : `Behandlungsjournal ${J}`;
+    const doc = await pdfQuer(); let y = pdfKopf(doc, title, true);
+    const body = [], sig = [];
+    list.forEach(b => (b.tierIds || []).filter(t => p !== 'behTier' || t === id).forEach(tid => {
+      const t = tierById(tid);
+      body.push([fmt(b.datum), fmt(b.bis || b.datum), `${t ? t.name || '' : '?'}${t && t.ohrmarke ? '\n' + t.ohrmarke : ''}`, b.grund || '', [b.medikament, b.menge, b.art].filter(Boolean).join(' · '), String(b.frist ?? ''), fmt(b.freiAb), fmt(b.erfasst || (b.geaendert ? iso(new Date(b.geaendert)) : '')), b.durch || '', '']);
+      sig.push(b.unterschrift || '');
+    }));
+    tabelle(doc, y, ['Beh. von', 'Beh. bis', 'Tier (Name / Nr.)', 'Behandlungsgrund', 'Arzneimittel', 'Absetzfrist Fleisch (T.)', 'Freigabe Fleisch', 'Erfasst', 'Name', 'Unterschrift'], body, {
+      kopf: () => pdfKopf(doc, title, true),
+      at: { columnStyles: { 0: { cellWidth: 17 }, 1: { cellWidth: 17 }, 2: { cellWidth: 34 }, 5: { cellWidth: 19, halign: 'center' }, 6: { cellWidth: 19 }, 7: { cellWidth: 17 }, 8: { cellWidth: 26 }, 9: { cellWidth: 34 } }, bodyStyles: { minCellHeight: 11 },
+        didDrawCell: d => { if (d.section === 'body' && d.column.index === 9 && sig[d.row.index]) { try { doc.addImage(sig[d.row.index], 'PNG', d.cell.x + 1, d.cell.y + 0.8, Math.min(d.cell.width - 2, (d.cell.height - 1.6) * 3), d.cell.height - 1.6); } catch (e) { } } } }
+    });
+    pdfFuss(doc);
+    return pdfAusgabe(doc, title, p === 'behTier' ? `Behandlungen_${tName(id)}.pdf` : `Behandlungsjournal_${J}.pdf`);
   }
   if (p === 'auslaufJahr') {
-    const tage = auslaufTage(J), sum = {};
-    const body = tage.map(([d, a]) => { const k = a.typ + '|' + (a.parzelle || a.grund || ''); sum[k] = (sum[k] || 0) + 1; return [fmt(d), a.typ, a.parzelle || a.grund || '', aktiveTiere(d).length]; });
-    await makePdf(`Auslaufjournal ${J}`, `Jahr ${J} · alle Tiere`, [
-      { h: 'Zusammenfassung', head: ['Wo', 'Parzelle / Grund', 'Tage'], body: Object.entries(sum).sort().map(([k, n]) => { const [a, b] = k.split('|'); return [a, b, n]; }) },
-      { h: 'Pro Tag', head: ['Datum', 'Wo', 'Parzelle / Grund', 'Anzahl Tiere'], body }
-    ], `Auslaufjournal_${J}.pdf`);
+    const tage = auslaufTage(J), am = Object.fromEntries(tage);
+    const pz = [...new Set(tage.filter(([, a]) => a.typ === 'Weide').map(([, a]) => a.parzelle || '(ohne Parzelle)'))].sort((a, b) => a.localeCompare(b, 'de', { numeric: true }));
+    const gr = [...new Set(tage.filter(([, a]) => a.typ === 'Laufhof').map(([, a]) => a.grund || '(ohne Grund)'))].sort((a, b) => a.localeCompare(b, 'de'));
+    const COL = { Weide: [46, 139, 98], Laufhof: [91, 143, 214], Alp: [224, 163, 92] }, hell = c => c.map(v => Math.round(v + (255 - v) * 0.72));
+    const grp = typ => ({ label: typ, g: 1, cell: d => am[d] && am[d].typ === typ ? { fill: hell(COL[typ]), t: typ === 'Alp' ? 'x' : '' } : null });
+    const sub = (typ, k, v) => ({ label: v, cell: d => am[d] && am[d].typ === typ && (am[d][k] || (k === 'parzelle' ? '(ohne Parzelle)' : '(ohne Grund)')) === v ? { fill: hell(COL[typ]), t: 'x' } : null });
+    const rows = [grp('Weide'), ...pz.map(v => sub('Weide', 'parzelle', v)), grp('Laufhof'), ...gr.map(v => sub('Laufhof', 'grund', v)), grp('Alp')];
+    const title = `Auslaufjournal ${J}`, doc = await pdfQuer();
+    for (let q = 0; q < 4; q++) { if (q) doc.addPage(); pdfMatrix(doc, title, true, J, q, rows); }
+    // Zusammenfassung
+    doc.addPage(); let y = pdfKopf(doc, `${title} · Zusammenfassung`, true);
+    const typs = ['Weide', 'Laufhof', 'Alp'], per = typs.map(() => Array(12).fill(0));
+    tage.forEach(([d, a]) => { const k = typs.indexOf(a.typ); if (k >= 0) per[k][+d.slice(5, 7) - 1]++; });
+    const tot = per.map(r => r.reduce((a, b) => a + b, 0));
+    y = tabelle(doc, y, ['Tage', ...MON, 'Total'], [...typs.map((t, i) => [t, ...per[i], tot[i]]), ['Total', ...MON.map((_, m) => per.reduce((a, r) => a + r[m], 0)), tot.reduce((a, b) => a + b, 0)]], { at: { styles: { fontSize: 8.5, cellPadding: 1.6, halign: 'center' }, columnStyles: { 0: { halign: 'left', fontStyle: 'bold', cellWidth: 26 } }, didParseCell: d => { if (d.section === 'body' && d.row.index === 3) d.cell.styles.fontStyle = 'bold'; } } });
+    // Diagramm Tage pro Monat
+    y += 8; doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.text(`Tage pro Monat ${J}`, 10, y); y += 3;
+    const cx = 22, cw = 265, ch = 205 - 14 - y - 8, bw = cw / 12, mx = 31;
+    doc.setDrawColor(200); doc.setLineWidth(0.1); doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(95);
+    [0, 10, 20, 31].forEach(v => { const yy = y + ch - v / mx * ch; doc.line(cx, yy, cx + cw, yy); doc.text(String(v), cx - 2, yy + 1, { align: 'right' }); });
+    MON.forEach((m, i) => {
+      let yy = y + ch;
+      typs.forEach((t, k) => { const v = per[k][i], hh = v / mx * ch; if (hh > 0) { yy -= hh; doc.setFillColor(...COL[t]); doc.rect(cx + i * bw + 3, yy, bw - 6, hh, 'F'); } });
+      doc.text(m, cx + i * bw + bw / 2, y + ch + 4, { align: 'center' });
+    });
+    let lx = cx; typs.forEach(t => { doc.setFillColor(...COL[t]); doc.rect(lx, y + ch + 7, 3, 3, 'F'); doc.setTextColor(0); doc.text(t, lx + 4.5, y + ch + 9.5); lx += 28; });
+    pdfFuss(doc);
+    return pdfAusgabe(doc, title, `Auslaufjournal_${J}.pdf`);
   }
   if (p === 'feld') {
-    const list = S.feld.filter(f => (f.datum || '').startsWith(J)).sort((a, b) => a.datum < b.datum ? -1 : 1);
-    const sum = {}; list.forEach(f => { if (!FELD[f.typ] || f.typ === 'verbrauch' || f.typ === 'kauf') return; const k = (f.parzelle || '-') + '|' + fL(f) + '|' + fE(f); sum[k] = (sum[k] || 0) + num(f.menge); });
-    await makePdf(`Feldkalender ${J}`, `Jahr ${J}`, [
-      { head: ['Datum', 'Massnahme', 'Parzelle / Verkäufer', 'Menge', 'Einheit', 'Notiz'], body: list.filter(f => FELD[f.typ]).map(f => [fmt(f.datum), fL(f), fSub(f), nf(num(f.menge)), fE(f), f.notiz || '']) },
-      { h: 'Total pro Parzelle', head: ['Parzelle', 'Massnahme', 'Menge'], body: Object.entries(sum).sort().map(([k, v]) => { const [pz, t, e] = k.split('|'); return [pz, t, `${nf(v)} ${e}`]; }) }
-    ], `Feldkalender_${J}.pdf`);
+    const aus = S.feld.filter(f => f.typ === 'duengung' && (f.datum || '').startsWith(J)).sort((a, b) => a.datum < b.datum ? -1 : a.datum > b.datum ? 1 : (a.parzelle || '').localeCompare(b.parzelle || ''));
+    aus.forEach((f, i) => f._id = i + 1);
+    const pzs = [...new Set([...parzellen(), ...aus.map(f => f.parzelle || '(ohne Parzelle)')])];
+    const rows = pzs.map(z => ({ label: z, cell: d => { const e = aus.filter(f => f.datum === d && (f.parzelle || '(ohne Parzelle)') === z); if (!e.length) return null; const g = e.some(f => f.was === 'Gülle'), m = e.some(f => f.was === 'Mist'); return { t: e.map(f => f._id).join(','), fill: g && m ? [225, 225, 225] : g ? [208, 226, 243] : [236, 221, 196] }; } }));
+    const title = `Feldkalender ${J}`, doc = await pdfQuer();
+    for (let q = 0; q < 4; q++) { if (q) doc.addPage(); const yE = pdfMatrix(doc, title, false, J, q, rows); doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.setFillColor(208, 226, 243); doc.rect(10, yE + 2.5, 3, 3, 'F'); doc.text('Gülle', 14.5, yE + 5); doc.setFillColor(236, 221, 196); doc.rect(28, yE + 2.5, 3, 3, 'F'); doc.text('Mist', 32.5, yE + 5); doc.text('Zahl = ID, siehe Übersicht', 46, yE + 5); }
+    doc.addPage(); const y = pdfKopf(doc, `${title} · Übersicht Austräge`, false);
+    const sum = {}; aus.forEach(f => { const k = `${f.parzelle || '(ohne Parzelle)'}|${f.was}`; sum[k] = (sum[k] || 0) + num(f.menge); });
+    const y2 = tabelle(doc, y, ['ID', 'Datum', 'Parzelle', 'Art', 'Menge', 'Notiz'], aus.map(f => [f._id, fmt(f.datum), f.parzelle || '', f.was || '', `${nf(num(f.menge))} ${fE(f).replace('³', '3')}`, f.notiz || '']), { kopf: () => pdfKopf(doc, `${title} · Übersicht Austräge`, false), at: { columnStyles: { 0: { cellWidth: 12, halign: 'center', fontStyle: 'bold' }, 1: { cellWidth: 22 }, 3: { cellWidth: 18 }, 4: { cellWidth: 24, halign: 'right' } } } });
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.text('Total pro Parzelle', 10, y2 + 8);
+    tabelle(doc, y2 + 10, ['Parzelle', 'Art', 'Menge'], Object.entries(sum).sort().map(([k, v]) => { const [z, w] = k.split('|'); return [z, w, `${nf(v)} ${w === 'Mist' ? 't' : 'm3'}`]; }), { kopf: () => pdfKopf(doc, `${title} · Übersicht Austräge`, false), at: { tableWidth: 140, columnStyles: { 2: { halign: 'right' } } } });
+    pdfFuss(doc);
+    return pdfAusgabe(doc, title, `Feldkalender_${J}.pdf`);
   }
 }
 
@@ -1332,7 +1486,7 @@ document.addEventListener('submit', e => {
   e.preventDefault();
   const f = e.target.elements, lines = s => s.split('\n').map(x => x.trim()).filter(Boolean);
   W.setSettings({
-    ...S.set, hofname: f.hofname.value.trim(), lat: num(f.lat.value) || 47.526, lon: num(f.lon.value) || 8.141,
+    ...S.set, hofname: f.hofname.value.trim(), betrieb: f.betrieb.value.trim(), tvd: f.tvd.value.trim(), lat: num(f.lat.value) || 47.526, lon: num(f.lon.value) || 8.141,
     tragzeit: num(f.tragzeit.value) || 285, kalbMonate: num(f.kalbMonate.value) || 12, laktAbMonate: num(f.laktAbMonate.value) || 16,
     abgekalbtTage: num(f.abgekalbtTage.value) || 60, alpVon: f.alpVon.value.trim() || '06-15', alpBis: f.alpBis.value.trim() || '09-15', puffer: num(f.puffer.value), unbesamtAb: num(f.unbesamtAb.value) || 16, baldTage: num(f.baldTage.value) || 30,
     gruende: lines(f.gruende.value),
