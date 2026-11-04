@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.13.0';
+const VERSION = '1.13.1';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -507,7 +507,7 @@ function vNachkommen(t) {
   return `<div class="sec-t">Nachkommen von ${esc(t.name || t.ohrmarke)}</div><div class="list">${k.map(x => tierRow(x)).join('')}${ext.map(e => `<button type="button" class="row" data-act="edit" data-c="ereignisse" data-id="${e.id}"><span class="av kalb">${TIC.Kalb}</span><div class="main"><span class="t">${esc(e.kalbName || 'Kalb')}${e.kalbOhrmarke ? ` <span class="om">${kurzOM(e.kalbOhrmarke)}</span>` : ''}${e.kalbGeschlecht === 'm' ? ' <span class="om">♂</span>' : ''}</span><span class="s wrap">geb. ${fmt(e.datum)} · nicht mehr im Bestand${e.notiz ? ' · ' + esc(e.notiz) : ''}</span></div></button>`).join('')}${!k.length && !ext.length ? '<div class="empty">Keine Nachkommen erfasst.</div>' : ''}</div>`;
 }
 function behRows(list) {
-  return list.length ? list.map(b => `<button type="button" class="row" data-act="edit" data-c="behandlungen" data-id="${b.id}"><div class="main"><span class="t">${esc(b.medikament || '-')}${b.grund ? ' · ' + esc(b.grund) : ''}</span><span class="s">${esc(tierListe(b.tierIds))} · ${esc([b.menge, b.art, b.durch].filter(Boolean).join(' · '))}</span></div><div class="r">${fmt(b.datum)}${b.bis && b.bis !== b.datum ? '<br><span class="small muted">bis ' + fmt(b.bis) + '</span>' : ''}<br>${b.freiAb && b.freiAb > today() ? `<span class="pill warn">frei ab ${fmtS(b.freiAb)}</span>` : `<span class="pill">frei</span>`}</div></button>`).join('') : '<div class="empty">Keine Behandlungen.</div>';
+  return list.length ? list.map(b => `<button type="button" class="row" data-act="edit" data-c="behandlungen" data-id="${b.id}"><div class="main"><span class="t">${esc(b.medikament || '-')}${b.grund ? ' · ' + esc(b.grund) : ''}</span><span class="s">${esc(tierListe(b.tierIds))} · ${esc([b.menge, b.durch].filter(Boolean).join(' · '))}</span></div><div class="r">${fmt(b.datum)}${b.bis && b.bis !== b.datum ? '<br><span class="small muted">bis ' + fmt(b.bis) + '</span>' : ''}<br>${b.freiAb && b.freiAb > today() ? `<span class="pill warn">frei ab ${fmtS(b.freiAb)}</span>` : `<span class="pill">frei</span>`}</div></button>`).join('') : '<div class="empty">Keine Behandlungen.</div>';
 }
 function tierListe(ids = []) { const a = aktiveTiere(); if (ids.length > 3 && a.length && a.every(t => ids.includes(t.id))) return `Alle (${ids.length})`; return ids.length > 3 ? `${ids.length} Tiere` : ids.map(tName).join(', '); }
 function vTierBeh(t) {
@@ -880,7 +880,7 @@ function vSettings() {
   </form>
   <div class="form" style="gap:8px;margin-top:8px">
   ${grp('push', 'Benachrichtigungen', localStorage.getItem('hb-push') ? 'auf diesem Gerät aktiv' : 'aus', `<p class="small muted" style="margin:0">Täglich am Morgen eine Push-Nachricht mit den Terminen: Abkalbung (7 Tage, 1 Tag vorher, am Tag), Brunst, Brunstkontrolle, Absetzfrist, Labiola-Pendenzen und Schnitttermine, Alp. iPhone: nur über das Homescreen-Icon.</p><button class="btn ${localStorage.getItem('hb-push') ? '' : 'pri'}" data-act="push">${localStorage.getItem('hb-push') ? 'Push erneuern' : 'Push auf diesem Gerät aktivieren'}</button>`)}
-  ${grp('daten', 'Daten & Konto', mode === 'firebase' && USER ? USER.email : 'nur dieses Gerät', `<p class="small muted" style="margin:0">Speicherort: <b>${mode === 'firebase' ? 'Firebase (synchronisiert)' : 'nur dieses Gerät'}</b> · Version ${VERSION}</p><div class="btns"><button class="btn" data-act="backup">Backup herunterladen</button><label class="btn">Datei einlesen (Backup/Import)<input type="file" accept="application/json" data-act="restore" class="hidden"></label><label class="btn">TVD-Import (Excel)<input type="file" accept=".xlsx,.xls,.csv" data-act="tvdimport" class="hidden"></label>${mode === 'firebase' ? '<button class="btn" data-act="logout">Abmelden</button>' : ''}</div>`)}
+  ${grp('daten', 'Daten & Konto', mode === 'firebase' && USER ? USER.email : 'nur dieses Gerät', `<p class="small muted" style="margin:0">Speicherort: <b>${mode === 'firebase' ? 'Firebase (synchronisiert)' : 'nur dieses Gerät'}</b> · Version ${VERSION}</p><div class="btns"><button class="btn" data-act="backup">Backup herunterladen</button><label class="btn">Datei einlesen (Backup/Import)<input type="file" accept="application/json" data-act="restore" class="hidden"></label><label class="btn">Behandlungen-Import (Excel)<input type="file" accept=".xlsx,.xls,.csv" data-act="behimport" class="hidden"></label><label class="btn">TVD-Import (Excel)<input type="file" accept=".xlsx,.xls,.csv" data-act="tvdimport" class="hidden"></label>${mode === 'firebase' ? '<button class="btn" data-act="logout">Abmelden</button>' : ''}</div>`)}
   </div>`;
 }
 
@@ -970,7 +970,6 @@ const FORMS = {
     { k: 'grund', l: 'Behandlungsgrund', t: 'text' },
     { k: 'medikament', l: 'Arzneimittel', t: 'text', list: () => (S.set.medikamente || []).map(m => m.name) },
     { k: 'menge', l: 'Menge pro Tier', t: 'text', ph: 'z.B. 20 ml' },
-    { k: 'art', l: 'Verabreichung', t: 'seg', o: ART.map(a => [a, a]), def: 'i.m.' },
     { k: 'frist', l: 'Absetzfrist Fleisch (Tage)', t: 'number', def: '0' },
     { k: 'erfasst', l: 'Erfassungsdatum', t: 'date' },
     { k: 'durch', l: 'Name', t: 'text', def: 'Matthias Erdin', list: () => [...new Set(['Matthias Erdin', ...S.behandlungen.map(b => b.durch).filter(x => x && x !== 'Tierhalter')])] },
@@ -1244,33 +1243,46 @@ function pdfFuss(doc) {
   doc.setTextColor(0);
 }
 const QSTART = ['01-01', '04-01', '07-01', '10-01'];
+const QML = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
+const RH = 4.5, PDF_UNTEN = 196; // Zeilenhöhe Matrix, unterer Rand Inhalt
+const qVonBis = (J, q) => [`${J}-${QSTART[q]}`, q < 3 ? addDays(`${J}-${QSTART[q + 1]}`, -1) : `${J}-12-31`];
+const matrixH = rows => 9 + rows.length * RH;
+// Einheitliche Tabelle (gleiches Design wie Matrix)
+function pdfTabelle(doc, y, head, body, { kopf, st = {}, at = {} } = {}) {
+  doc.autoTable({
+    startY: y, head: [head], body: body.length ? body : [[{ content: 'Keine Einträge', colSpan: head.length }]], theme: 'grid',
+    styles: { font: 'helvetica', fontSize: 7, cellPadding: 1.1, textColor: 0, lineColor: [205, 205, 205], lineWidth: 0.05, valign: 'middle', ...st },
+    headStyles: { fillColor: [222, 233, 226], textColor: 0, fontStyle: 'bold', lineColor: [90, 90, 90], lineWidth: 0.25 },
+    tableLineColor: [90, 90, 90], tableLineWidth: 0.25, margin: { left: 10, right: 10, top: 22, bottom: 14 },
+    didDrawPage: d => { if (d.pageNumber > 1 && kopf) kopf(); }, ...at
+  });
+  return doc.lastAutoTable.finalY;
+}
 // rows: [{ label, g (Gruppe), cell(d) -> { t, fill } | null }]
-function pdfMatrix(doc, title, tvd, J, q, rows) {
-  const y0 = pdfKopf(doc, `${title} · ${q + 1}. Quartal`, tvd);
-  const von = `${J}-${QSTART[q]}`, bis = q < 3 ? addDays(`${J}-${QSTART[q + 1]}`, -1) : `${J}-12-31`;
+function pdfMatrix(doc, J, q, rows, y0) {
+  const [von, bis] = qVonBis(J, q);
   const tage = []; for (let d = von; d <= bis; d = addDays(d, 1)) tage.push(d);
-  const x0 = 10, lw = 42, dw = (277 - lw) / tage.length, hm = 5, hd = 4;
-  const rh = Math.max(3.2, Math.min(8, (210 - 14 - y0 - hm - hd) / Math.max(1, rows.length)));
-  const yT = y0 + hm + hd, yE = yT + rows.length * rh;
-  const ML = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
+  const x0 = 10, lw = 42, dw = (277 - lw) / tage.length, hm = 5, hd = 4, rh = RH;
+  const yT = y0 + hm + hd, yE = yT + rows.length * rh, xE = x0 + lw + tage.length * dw;
+  // Kopfzeilen und Gruppenzeilen hinterlegen
+  doc.setFillColor(222, 233, 226); doc.rect(x0, y0, xE - x0, hm + hd, 'F');
+  rows.forEach((r, i) => { if (r.g) doc.rect(x0, yT + i * rh, lw, rh, 'F'); });
   // Wochenenden
   doc.setFillColor(238, 240, 236);
-  tage.forEach((d, i) => { const wd = pd(d).getDay(); if (wd === 0 || wd === 6) doc.rect(x0 + lw + i * dw, y0 + hm, dw, hd + rows.length * rh, 'F'); });
-  // Gruppenzeilen
-  rows.forEach((r, i) => { if (r.g) { doc.setFillColor(222, 233, 226); doc.rect(x0, yT + i * rh, lw, rh, 'F'); } });
+  tage.forEach((d, i) => { const wd = pd(d).getDay(); if (wd === 0 || wd === 6) doc.rect(x0 + lw + i * dw, yT, dw, rows.length * rh, 'F'); });
   // Zellen
   rows.forEach((r, i) => tage.forEach((d, j) => {
     const c = r.cell(d); if (!c) return;
     const x = x0 + lw + j * dw, y = yT + i * rh;
     if (c.fill) { doc.setFillColor(...c.fill); doc.rect(x, y, dw, rh, 'F'); }
-    if (c.t) { const fs = c.t.length > 2 ? 4 : 5.2; doc.setFontSize(fs); doc.setFont('helvetica', 'bold'); doc.text(c.t, x + dw / 2, y + rh / 2 + fs * 0.12, { align: 'center' }); }
+    if (c.t) { const fs = c.t.length > 2 ? 4 : 5.2; doc.setFontSize(fs); doc.setFont('helvetica', 'bold'); doc.setTextColor(0); doc.text(c.t, x + dw / 2, y + rh / 2 + fs * 0.12, { align: 'center' }); }
   }));
   // Gitter
   doc.setDrawColor(205); doc.setLineWidth(0.05);
   tage.forEach((d, j) => doc.line(x0 + lw + j * dw, y0 + hm, x0 + lw + j * dw, yE));
-  rows.forEach((r, i) => doc.line(x0, yT + i * rh, x0 + lw + tage.length * dw, yT + i * rh));
+  rows.forEach((r, i) => doc.line(x0, yT + i * rh, xE, yT + i * rh));
   doc.setDrawColor(90); doc.setLineWidth(0.25);
-  doc.rect(x0, y0, lw + tage.length * dw, yE - y0); doc.line(x0 + lw, y0, x0 + lw, yE); doc.line(x0, yT, x0 + lw + tage.length * dw, yT);
+  doc.rect(x0, y0, xE - x0, yE - y0); doc.line(x0 + lw, y0, x0 + lw, yE); doc.line(x0, yT, xE, yT);
   // Monate + Tage
   doc.setTextColor(0);
   let start = 0;
@@ -1279,29 +1291,42 @@ function pdfMatrix(doc, title, tvd, J, q, rows) {
     doc.setFont('helvetica', 'normal'); doc.setFontSize(4.6); doc.text(String(+d.slice(8)), x0 + lw + j * dw + dw / 2, y0 + hm + hd - 1.1, { align: 'center' });
     if (last) {
       const xa = x0 + lw + start * dw, xb = x0 + lw + (j + 1) * dw;
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.text(`${ML[+d.slice(5, 7) - 1]} ${J}`, (xa + xb) / 2, y0 + 3.6, { align: 'center' });
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.text(`${QML[+d.slice(5, 7) - 1]} ${J}`, (xa + xb) / 2, y0 + 3.6, { align: 'center' });
       doc.setDrawColor(90); doc.setLineWidth(0.25); doc.line(xb, y0, xb, yE); doc.line(xa, y0 + hm, xb, y0 + hm);
       start = j + 1;
     }
   });
-  rows.forEach((r, i) => { doc.setFont('helvetica', r.g ? 'bold' : 'normal'); doc.setFontSize(r.g ? 7.5 : 6.8); doc.text(doc.splitTextToSize((r.g ? '' : '   ') + r.label, lw - 2)[0], x0 + 1.2, yT + i * rh + rh / 2 + 1.1); });
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.text(`${q + 1}. Quartal`, x0 + 1.2, y0 + 6);
+  rows.forEach((r, i) => { doc.setFont('helvetica', r.g ? 'bold' : 'normal'); doc.setFontSize(r.g ? 7 : 6.5); doc.text(doc.splitTextToSize((r.g ? '' : '   ') + r.label, lw - 2)[0], x0 + 1.2, yT + i * rh + rh / 2 + 1.1); });
   return yE;
+}
+// Ganzes Jahr: 2 Quartale pro Seite, wenn es Platz hat; legende(qs) zeichnet die Legende der Seite ab y
+function pdfJahrMatrix(doc, title, J, rows, legende = null, legH = () => 0) {
+  const mh = matrixH(rows); let q = 0, first = true;
+  while (q < 4) {
+    const zwei = q % 2 === 0 && 21 + 2 * mh + 6 + legH([q, q + 1]) <= PDF_UNTEN;
+    const qs = zwei ? [q, q + 1] : [q];
+    if (!first) doc.addPage(); first = false;
+    let y = pdfKopf(doc, title, true);
+    qs.forEach(qq => { y = pdfMatrix(doc, J, qq, rows, y) + 6; });
+    if (legende) legende(qs, y - 2);
+    q += qs.length;
+  }
 }
 const tLabel = id => { const t = tierById(id); return t ? `${t.name || ''}${t.ohrmarke ? ' (' + t.ohrmarke + ')' : ''}` : '?'; };
 async function pdf(p, id) {
   const J = UI.jahr;
-  const tabelle = (doc, y, head, body, opt = {}) => { doc.autoTable({ startY: y, head: [head], body: body.length ? body : [[{ content: 'Keine Einträge', colSpan: head.length }]], styles: { fontSize: 8, cellPadding: 1.4, valign: 'middle' }, headStyles: { fillColor: [31, 77, 54] }, margin: { left: 10, right: 10, top: 22 }, didDrawPage: d => { if (d.pageNumber > 1 && opt.kopf) opt.kopf(); }, ...opt.at }); return doc.lastAutoTable.finalY; };
   if (p === 'beh' || p === 'behTier') {
     const list = S.behandlungen.filter(b => p === 'behTier' ? (b.tierIds || []).includes(id) : (b.datum || '').startsWith(J)).sort((a, b) => a.datum < b.datum ? -1 : 1);
     const title = p === 'behTier' ? `Behandlungsjournal ${tName(id)}` : `Behandlungsjournal ${J}`;
-    const doc = await pdfQuer(); let y = pdfKopf(doc, title, true);
+    const doc = await pdfQuer(); const y = pdfKopf(doc, title, true);
     const body = [], sig = [];
     list.forEach(b => (b.tierIds || []).filter(t => p !== 'behTier' || t === id).forEach(tid => {
       const t = tierById(tid);
-      body.push([fmt(b.datum), fmt(b.bis || b.datum), `${t ? t.name || '' : '?'}${t && t.ohrmarke ? '\n' + t.ohrmarke : ''}`, b.grund || '', [b.medikament, b.menge, b.art].filter(Boolean).join(' · '), String(b.frist ?? ''), fmt(b.freiAb), fmt(b.erfasst || (b.geaendert ? iso(new Date(b.geaendert)) : '')), b.durch || '', '']);
+      body.push([fmt(b.datum), fmt(b.bis || b.datum), `${t ? t.name || '' : '?'}${t && t.ohrmarke ? '\n' + t.ohrmarke : ''}`, b.grund || '', [b.medikament, b.menge].filter(Boolean).join(' · '), String(b.frist ?? ''), fmt(b.freiAb), fmt(b.erfasst || (b.geaendert ? iso(new Date(b.geaendert)) : '')), b.durch || '', '']);
       sig.push(b.unterschrift || '');
     }));
-    tabelle(doc, y, ['Beh. von', 'Beh. bis', 'Tier (Name / Nr.)', 'Behandlungsgrund', 'Arzneimittel', 'Absetzfrist Fleisch (T.)', 'Freigabe Fleisch', 'Erfasst', 'Name', 'Unterschrift'], body, {
+    pdfTabelle(doc, y, ['Beh. von', 'Beh. bis', 'Tier (Name / Nr.)', 'Behandlungsgrund', 'Arzneimittel', 'Absetzfrist Fleisch (Tage)', 'Freigabe Fleisch', 'Erfasst', 'Name', 'Unterschrift'], body, {
       kopf: () => pdfKopf(doc, title, true),
       at: { columnStyles: { 0: { cellWidth: 17 }, 1: { cellWidth: 17 }, 2: { cellWidth: 34 }, 5: { cellWidth: 19, halign: 'center' }, 6: { cellWidth: 19 }, 7: { cellWidth: 17 }, 8: { cellWidth: 26 }, 9: { cellWidth: 34 } }, bodyStyles: { minCellHeight: 11 },
         didDrawCell: d => { if (d.section === 'body' && d.column.index === 9 && sig[d.row.index]) { try { doc.addImage(sig[d.row.index], 'PNG', d.cell.x + 1, d.cell.y + 0.8, Math.min(d.cell.width - 2, (d.cell.height - 1.6) * 3), d.cell.height - 1.6); } catch (e) { } } } }
@@ -1318,39 +1343,47 @@ async function pdf(p, id) {
     const sub = (typ, k, v) => ({ label: v, cell: d => am[d] && am[d].typ === typ && (am[d][k] || (k === 'parzelle' ? '(ohne Parzelle)' : '(ohne Grund)')) === v ? { fill: hell(COL[typ]), t: 'x' } : null });
     const rows = [grp('Weide'), ...pz.map(v => sub('Weide', 'parzelle', v)), grp('Laufhof'), ...gr.map(v => sub('Laufhof', 'grund', v)), grp('Alp')];
     const title = `Auslaufjournal ${J}`, doc = await pdfQuer();
-    for (let q = 0; q < 4; q++) { if (q) doc.addPage(); pdfMatrix(doc, title, true, J, q, rows); }
+    pdfJahrMatrix(doc, title, J, rows);
     // Zusammenfassung
     doc.addPage(); let y = pdfKopf(doc, `${title} · Zusammenfassung`, true);
     const typs = ['Weide', 'Laufhof', 'Alp'], per = typs.map(() => Array(12).fill(0));
     tage.forEach(([d, a]) => { const k = typs.indexOf(a.typ); if (k >= 0) per[k][+d.slice(5, 7) - 1]++; });
     const tot = per.map(r => r.reduce((a, b) => a + b, 0));
-    y = tabelle(doc, y, ['Tage', ...MON, 'Total'], [...typs.map((t, i) => [t, ...per[i], tot[i]]), ['Total', ...MON.map((_, m) => per.reduce((a, r) => a + r[m], 0)), tot.reduce((a, b) => a + b, 0)]], { at: { styles: { fontSize: 8.5, cellPadding: 1.6, halign: 'center' }, columnStyles: { 0: { halign: 'left', fontStyle: 'bold', cellWidth: 26 } }, didParseCell: d => { if (d.section === 'body' && d.row.index === 3) d.cell.styles.fontStyle = 'bold'; } } });
+    y = pdfTabelle(doc, y, ['Tage', ...MON, 'Total'], [...typs.map((t, i) => [t, ...per[i], tot[i]]), ['Total', ...MON.map((_, m) => per.reduce((a, r) => a + r[m], 0)), tot.reduce((a, b) => a + b, 0)]], { st: { halign: 'center' }, at: { columnStyles: { 0: { halign: 'left', fontStyle: 'bold', cellWidth: 26, fillColor: [222, 233, 226] } }, didParseCell: d => { if (d.section === 'body' && d.row.index === 3) d.cell.styles.fontStyle = 'bold'; } } });
     // Diagramm Tage pro Monat
-    y += 8; doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.text(`Tage pro Monat ${J}`, 10, y); y += 3;
-    const cx = 22, cw = 265, ch = 205 - 14 - y - 8, bw = cw / 12, mx = 31;
-    doc.setDrawColor(200); doc.setLineWidth(0.1); doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(95);
+    y += 8; doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(0); doc.text(`Tage pro Monat ${J}`, 10, y); y += 4;
+    const cx = 18, cw = 269, ch = PDF_UNTEN - y - 12, bw = cw / 12, mx = 31;
+    doc.setDrawColor(205); doc.setLineWidth(0.05); doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5);
     [0, 10, 20, 31].forEach(v => { const yy = y + ch - v / mx * ch; doc.line(cx, yy, cx + cw, yy); doc.text(String(v), cx - 2, yy + 1, { align: 'right' }); });
     MON.forEach((m, i) => {
       let yy = y + ch;
       typs.forEach((t, k) => { const v = per[k][i], hh = v / mx * ch; if (hh > 0) { yy -= hh; doc.setFillColor(...COL[t]); doc.rect(cx + i * bw + 3, yy, bw - 6, hh, 'F'); } });
       doc.text(m, cx + i * bw + bw / 2, y + ch + 4, { align: 'center' });
     });
-    let lx = cx; typs.forEach(t => { doc.setFillColor(...COL[t]); doc.rect(lx, y + ch + 7, 3, 3, 'F'); doc.setTextColor(0); doc.text(t, lx + 4.5, y + ch + 9.5); lx += 28; });
+    doc.setDrawColor(90); doc.setLineWidth(0.25); doc.line(cx, y + ch, cx + cw, y + ch);
+    let lx = cx; typs.forEach(t => { doc.setFillColor(...COL[t]); doc.rect(lx, y + ch + 7, 3, 3, 'F'); doc.text(t, lx + 4.5, y + ch + 9.5); lx += 28; });
     pdfFuss(doc);
     return pdfAusgabe(doc, title, `Auslaufjournal_${J}.pdf`);
   }
   if (p === 'feld') {
     const aus = S.feld.filter(f => f.typ === 'duengung' && (f.datum || '').startsWith(J)).sort((a, b) => a.datum < b.datum ? -1 : a.datum > b.datum ? 1 : (a.parzelle || '').localeCompare(b.parzelle || ''));
     aus.forEach((f, i) => f._id = i + 1);
+    const GF = [208, 226, 243], MF = [236, 221, 196];
     const pzs = [...new Set([...parzellen(), ...aus.map(f => f.parzelle || '(ohne Parzelle)')])];
-    const rows = pzs.map(z => ({ label: z, cell: d => { const e = aus.filter(f => f.datum === d && (f.parzelle || '(ohne Parzelle)') === z); if (!e.length) return null; const g = e.some(f => f.was === 'Gülle'), m = e.some(f => f.was === 'Mist'); return { t: e.map(f => f._id).join(','), fill: g && m ? [225, 225, 225] : g ? [208, 226, 243] : [236, 221, 196] }; } }));
+    const rows = pzs.map(z => ({ label: z, cell: d => { const e = aus.filter(f => f.datum === d && (f.parzelle || '(ohne Parzelle)') === z); if (!e.length) return null; const g = e.some(f => f.was === 'Gülle'), m = e.some(f => f.was === 'Mist'); return { t: e.map(f => f._id).join(','), fill: g && m ? [225, 225, 225] : g ? GF : MF }; } }));
     const title = `Feldkalender ${J}`, doc = await pdfQuer();
-    for (let q = 0; q < 4; q++) { if (q) doc.addPage(); const yE = pdfMatrix(doc, title, false, J, q, rows); doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.setFillColor(208, 226, 243); doc.rect(10, yE + 2.5, 3, 3, 'F'); doc.text('Gülle', 14.5, yE + 5); doc.setFillColor(236, 221, 196); doc.rect(28, yE + 2.5, 3, 3, 'F'); doc.text('Mist', 32.5, yE + 5); doc.text('Zahl = ID, siehe Übersicht', 46, yE + 5); }
-    doc.addPage(); const y = pdfKopf(doc, `${title} · Übersicht Austräge`, false);
-    const sum = {}; aus.forEach(f => { const k = `${f.parzelle || '(ohne Parzelle)'}|${f.was}`; sum[k] = (sum[k] || 0) + num(f.menge); });
-    const y2 = tabelle(doc, y, ['ID', 'Datum', 'Parzelle', 'Art', 'Menge', 'Notiz'], aus.map(f => [f._id, fmt(f.datum), f.parzelle || '', f.was || '', `${nf(num(f.menge))} ${fE(f).replace('³', '3')}`, f.notiz || '']), { kopf: () => pdfKopf(doc, `${title} · Übersicht Austräge`, false), at: { columnStyles: { 0: { cellWidth: 12, halign: 'center', fontStyle: 'bold' }, 1: { cellWidth: 22 }, 3: { cellWidth: 18 }, 4: { cellWidth: 24, halign: 'right' } } } });
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.text('Total pro Parzelle', 10, y2 + 8);
-    tabelle(doc, y2 + 10, ['Parzelle', 'Art', 'Menge'], Object.entries(sum).sort().map(([k, v]) => { const [z, w] = k.split('|'); return [z, w, `${nf(v)} ${w === 'Mist' ? 't' : 'm3'}`]; }), { kopf: () => pdfKopf(doc, `${title} · Übersicht Austräge`, false), at: { tableWidth: 140, columnStyles: { 2: { halign: 'right' } } } });
+    const inQ = qs => aus.filter(f => qs.some(q => { const [v, b] = qVonBis(J, q); return f.datum >= v && f.datum <= b; }));
+    const N = 3; // Einträge pro Legendenzeile
+    const legH = qs => { const n = inQ(qs).length; return n ? 6 + (Math.ceil(n / N) + 1) * 4.3 : 6; };
+    const legende = (qs, y) => {
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(0); doc.text('Austräge (ID)', 10, y + 2.6);
+      doc.setFont('helvetica', 'normal'); doc.setFillColor(...GF); doc.rect(32, y + 0.4, 3, 3, 'F'); doc.text('Gülle', 36.5, y + 2.6); doc.setFillColor(...MF); doc.rect(48, y + 0.4, 3, 3, 'F'); doc.text('Mist', 52.5, y + 2.6);
+      const e = inQ(qs); if (!e.length) { doc.text('Keine Austräge in diesem Zeitraum.', 64, y + 2.6); return; }
+      const body = []; for (let i = 0; i < e.length; i += N) { const r = []; for (let k = 0; k < N; k++) { const f = e[i + k]; r.push(...(f ? [f._id, fmt(f.datum), f.parzelle || '', f.was || '', `${nf(num(f.menge))} ${fE(f).replace('³', '3')}`] : ['', '', '', '', ''])); } body.push(r); }
+      const cs = {}; for (let k = 0; k < N; k++) { cs[k * 5] = { cellWidth: 8, halign: 'center', fontStyle: 'bold', fillColor: [222, 233, 226] }; cs[k * 5 + 1] = { cellWidth: 16 }; cs[k * 5 + 3] = { cellWidth: 11 }; cs[k * 5 + 4] = { cellWidth: 15, halign: 'right' }; }
+      pdfTabelle(doc, y + 5, Array(N).fill(['ID', 'Datum', 'Parzelle', 'Art', 'Menge']).flat(), body, { kopf: () => pdfKopf(doc, title, true), at: { columnStyles: cs } });
+    };
+    pdfJahrMatrix(doc, title, J, rows, legende, legH);
     pdfFuss(doc);
     return pdfAusgabe(doc, title, `Feldkalender_${J}.pdf`);
   }
@@ -1422,6 +1455,35 @@ async function tvdImport(file) {
     });
 }
 
+/* ---------- Behandlungen-Import (Excel) ---------- */
+// Spalten: Von, Bis, Tiere ("Alle" oder Namen/Ohrmarken mit Komma), Behandlungsgrund, Arzneimittel, Dosis, Absetzfrist Fleisch (Tage), Freigabe Fleisch, Erfasst, Name, Notiz
+async function behImport(file) {
+  if (!window.XLSX) await loadScript('vendor/xlsx.mini.min.js');
+  const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '', raw: true });
+  const col = (r, ...names) => { for (const k of Object.keys(r)) { const kk = k.toLowerCase(); if (names.some(n => kk.startsWith(n))) return r[k]; } return ''; };
+  const neu = [], fehler = [];
+  rows.forEach((r, i) => {
+    const von = parseDatum(col(r, 'von', 'behandlung von', 'datum')); if (!von) return;
+    const bis = parseDatum(col(r, 'bis')), txt = String(col(r, 'tiere', 'tier')).trim();
+    let ids = [], offen = [];
+    if (!txt || /^alle/i.test(txt)) ids = aktiveTiere(von).map(t => t.id);
+    else txt.split(/[,;\n]/).map(x => x.trim()).filter(Boolean).forEach(x => { const t = S.tiere.find(t => (t.name || '').toLowerCase() === x.toLowerCase() || (normOM(t.ohrmarke) && normOM(t.ohrmarke) === normOM(x)) || (x.length >= 4 && normOM(t.ohrmarke).endsWith(normOM(x)))); if (t) ids.push(t.id); else offen.push(x); });
+    if (offen.length) fehler.push(`Zeile ${i + 2}: nicht gefunden ${offen.join(', ')}`);
+    if (!ids.length) return;
+    const frist = num(col(r, 'absetzfrist')), frei = parseDatum(col(r, 'freigabe'));
+    neu.push({ tierIds: [...new Set(ids)], datum: von, bis: bis && bis > von ? bis : '', grund: String(col(r, 'behandlungsgrund', 'grund')).trim(), medikament: String(col(r, 'arzneimittel', 'medikament')).trim(), menge: String(col(r, 'dosis', 'menge')).trim(), frist, freiAb: frei || addDays(bis && bis > von ? bis : von, frist), erfasst: parseDatum(col(r, 'erfasst')) || von, durch: String(col(r, 'name')).trim(), notiz: String(col(r, 'notiz')).trim() });
+  });
+  const dup = b => S.behandlungen.some(x => x.datum === b.datum && (x.medikament || '').toLowerCase() === b.medikament.toLowerCase());
+  const imp = neu.filter(b => !dup(b));
+  openSheet('Behandlungen-Import', `
+    <div class="note blue small">${imp.length} neu · ${neu.length - imp.length} schon vorhanden (gleiches Datum + Arzneimittel, wird übersprungen)</div>
+    ${fehler.length ? `<div class="note small" style="margin-top:8px">${fehler.map(esc).join('<br>')}</div>` : ''}
+    <div class="list" style="margin-top:8px">${imp.map(b => `<div class="row"><div class="main"><span class="t">${esc(b.medikament || '-')} · ${esc(b.grund)}</span><span class="s">${esc(tierListe(b.tierIds))} · frei ab ${fmt(b.freiAb)}</span></div><span class="r">${fmt(b.datum)}</span></div>`).join('')}</div>
+    <p class="small muted">Importierte Einträge haben keine Unterschrift. Diese pro Eintrag nachtragen.</p>`,
+    { saveLabel: 'Importieren', onSave: () => { imp.forEach(b => put('behandlungen', b)); toast(`${imp.length} Behandlungen importiert`); closeSheet(); } });
+}
+
 /* ---------- Events ---------- */
 document.addEventListener('pointerdown', e => { const svg = e.target.closest && e.target.closest('svg[data-chart]'); if (svg) chartTap(svg, e.clientX); });
 document.addEventListener('pointermove', e => { if (!e.buttons && e.pointerType !== 'mouse') return; const svg = e.target.closest && e.target.closest('svg[data-chart]'); if (svg) chartTap(svg, e.clientX); });
@@ -1460,6 +1522,7 @@ document.addEventListener('change', e => {
   const a = e.target.dataset && e.target.dataset.act;
   if (a === 'sort') { UI.tierFilter.sort = e.target.value; render(); }
   if (a === 'jahr') { UI.jahr = e.target.value; render(); }
+  if (a === 'behimport') { const f = e.target.files[0]; e.target.value = ''; if (f) behImport(f).catch(showErr); }
   if (a === 'tvdimport') { const f = e.target.files[0]; e.target.value = ''; if (f) tvdImport(f).catch(showErr); }
   if (a === 'restore') {
     const f = e.target.files[0]; if (!f) return;
