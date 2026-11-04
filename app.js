@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.14.0';
+const VERSION = '1.14.1';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -226,6 +226,10 @@ function feldWarnung(typ, pz, datum) {
   if (isS && z.schnittAb && datum.slice(5) < z.schnittAb) w.push(`Frühester Schnitt auf ${z.name}: ${z.schnittAb.slice(3)}.${z.schnittAb.slice(0, 2)}.`);
   return w.map(x => `<div class="note" style="margin-top:6px"><b>Achtung:</b> ${esc(x)}</div>`).join('');
 }
+// Freigabe Fleisch = letzter Behandlungstag (Bis, sonst Von) + Absetzfrist Fleisch
+const freiCalc = b => b.datum ? addDays(b.bis && b.bis > b.datum ? b.bis : b.datum, num(b.frist)) : '';
+function behFreiKorr() { if (!S.loaded.behandlungen) return; for (const b of S.behandlungen) { const f = freiCalc(b); if (f && b.freiAb !== f) put('behandlungen', { ...b, freiAb: f }); } }
+const alleTiere = (ids = [], d = today()) => { const a = aktiveTiere(d); return a.length > 1 && a.every(t => ids.includes(t.id)); };
 function frist(tid, d = today()) {
   return S.behandlungen.filter(b => (b.tierIds || []).includes(tid) && b.freiAb && b.freiAb > d).sort((a, b) => a.freiAb < b.freiAb ? 1 : -1)[0];
 }
@@ -265,7 +269,7 @@ const UI = { tierFilter: { kat: '', lakt: '', q: '', sort: 'alter', abg: false }
 
 function render() {
   if (mode === 'firebase' && !USER) return;
-  feldMigration(); auslaufBereinigen(); lagerKorrektur(); if (!SENS.zuletzt) setTimeout(() => sensorenLaden(), 0);
+  feldMigration(); auslaufBereinigen(); lagerKorrektur(); behFreiKorr(); if (!SENS.zuletzt) setTimeout(() => sensorenLaden(), 0);
   if (document.querySelector('.sheet.show [data-dirty="1"]')) return; // Formular offen und bearbeitet: nicht neu zeichnen
   const h = location.hash.replace(/^#\/?/, '') || 'start';
   const p = h.split('/');
@@ -507,9 +511,9 @@ function vNachkommen(t) {
   return `<div class="sec-t">Nachkommen von ${esc(t.name || t.ohrmarke)}</div><div class="list">${k.map(x => tierRow(x)).join('')}${ext.map(e => `<button type="button" class="row" data-act="edit" data-c="ereignisse" data-id="${e.id}"><span class="av kalb">${TIC.Kalb}</span><div class="main"><span class="t">${esc(e.kalbName || 'Kalb')}${e.kalbOhrmarke ? ` <span class="om">${kurzOM(e.kalbOhrmarke)}</span>` : ''}${e.kalbGeschlecht === 'm' ? ' <span class="om">♂</span>' : ''}</span><span class="s wrap">geb. ${fmt(e.datum)} · nicht mehr im Bestand${e.notiz ? ' · ' + esc(e.notiz) : ''}</span></div></button>`).join('')}${!k.length && !ext.length ? '<div class="empty">Keine Nachkommen erfasst.</div>' : ''}</div>`;
 }
 function behRows(list) {
-  return list.length ? list.map(b => `<button type="button" class="row" data-act="edit" data-c="behandlungen" data-id="${b.id}"><div class="main"><span class="t">${esc(b.medikament || '-')}${b.grund ? ' · ' + esc(b.grund) : ''}</span><span class="s">${esc(tierListe(b.tierIds))} · ${esc([b.menge, b.durch].filter(Boolean).join(' · '))}</span></div><div class="r">${fmt(b.datum)}${b.bis && b.bis !== b.datum ? '<br><span class="small muted">bis ' + fmt(b.bis) + '</span>' : ''}<br>${b.freiAb && b.freiAb > today() ? `<span class="pill warn">frei ab ${fmtS(b.freiAb)}</span>` : `<span class="pill">frei</span>`}</div></button>`).join('') : '<div class="empty">Keine Behandlungen.</div>';
+  return list.length ? list.map(b => `<button type="button" class="row" data-act="edit" data-c="behandlungen" data-id="${b.id}"><div class="main"><span class="t">${esc(b.medikament || '-')}${b.grund ? ' · ' + esc(b.grund) : ''}</span><span class="s">${esc(tierListe(b.tierIds, b.datum))} · ${esc([b.menge, b.durch].filter(Boolean).join(' · '))}</span></div><div class="r">${fmt(b.datum)}${b.bis && b.bis !== b.datum ? '<br><span class="small muted">bis ' + fmt(b.bis) + '</span>' : ''}<br>${b.freiAb && b.freiAb > today() ? `<span class="pill warn">frei ab ${fmtS(b.freiAb)}</span>` : `<span class="pill">frei</span>`}</div></button>`).join('') : '<div class="empty">Keine Behandlungen.</div>';
 }
-function tierListe(ids = []) { const a = aktiveTiere(); if (ids.length > 3 && a.length && a.every(t => ids.includes(t.id))) return `Alle (${ids.length})`; return ids.length > 3 ? `${ids.length} Tiere` : ids.map(tName).join(', '); }
+function tierListe(ids = [], d) { if (alleTiere(ids, d)) return `Alle Tiere (${ids.length})`; return ids.length > 3 ? `${ids.length} Tiere` : ids.map(tName).join(', '); }
 function vTierBeh(t) {
   const list = S.behandlungen.filter(b => (b.tierIds || []).includes(t.id)).sort((a, b) => a.datum < b.datum ? 1 : -1);
   return `<div class="sec-t">${esc(t.name || t.ohrmarke)}</div><div class="btns" style="margin-bottom:12px"><button class="btn" data-act="form" data-f="behandlung" data-tier="${t.id}">+ Behandlung</button><button class="btn" data-act="pdf" data-p="behTier" data-id="${t.id}">PDF</button></div><div class="list">${behRows(list)}</div>`;
@@ -1323,11 +1327,11 @@ async function pdf(p, id) {
     const title = p === 'behTier' ? `Behandlungsjournal ${tName(id)}` : `Behandlungsjournal ${J}`;
     const doc = await pdfQuer(); const y = pdfKopf(doc, title, true);
     const body = [], sig = [];
-    list.forEach(b => (b.tierIds || []).filter(t => p !== 'behTier' || t === id).forEach(tid => {
-      const t = tierById(tid);
-      body.push([fmt(b.datum), fmt(b.bis || b.datum), `${t ? t.name || '' : '?'}${t && t.ohrmarke ? '\n' + t.ohrmarke : ''}`, b.grund || '', [b.medikament, b.menge].filter(Boolean).join(' · '), String(b.frist ?? ''), fmt(b.freiAb), fmt(b.erfasst || (b.geaendert ? iso(new Date(b.geaendert)) : '')), b.durch || '', '']);
-      sig.push(b.unterschrift || '');
-    }));
+    list.forEach(b => {
+      const zeile = tier => { body.push([fmt(b.datum), fmt(b.bis || b.datum), tier, b.grund || '', [b.medikament, b.menge].filter(Boolean).join(' · '), String(b.frist ?? ''), fmt(freiCalc(b)), fmt(b.erfasst || (b.geaendert ? iso(new Date(b.geaendert)) : '')), b.durch || '', '']); sig.push(b.unterschrift || ''); };
+      if (p !== 'behTier' && alleTiere(b.tierIds, b.datum)) return zeile(`Alle Tiere (${(b.tierIds || []).length})`);
+      (b.tierIds || []).filter(t => p !== 'behTier' || t === id).forEach(tid => { const t = tierById(tid); zeile(`${t ? t.name || '' : '?'}${t && t.ohrmarke ? '\n' + t.ohrmarke : ''}`); });
+    });
     pdfTabelle(doc, y, ['Beh. von', 'Beh. bis', 'Tier (Name / Nr.)', 'Behandlungsgrund', 'Arzneimittel', 'Absetzfrist Fleisch (Tage)', 'Freigabe Fleisch', 'Erfasst', 'Name', 'Unterschrift'], body, {
       kopf: () => pdfKopf(doc, title, true),
       at: { columnStyles: { 0: { cellWidth: 17 }, 1: { cellWidth: 17 }, 2: { cellWidth: 34 }, 5: { cellWidth: 19, halign: 'center' }, 6: { cellWidth: 19 }, 7: { cellWidth: 17 }, 8: { cellWidth: 26 }, 9: { cellWidth: 34 } }, bodyStyles: { minCellHeight: 11 },
@@ -1557,8 +1561,8 @@ async function behImport(file) {
     else txt.split(/[,;\n]/).map(x => x.trim()).filter(Boolean).forEach(x => { const t = S.tiere.find(t => (t.name || '').toLowerCase() === x.toLowerCase() || (normOM(t.ohrmarke) && normOM(t.ohrmarke) === normOM(x)) || (x.length >= 4 && normOM(t.ohrmarke).endsWith(normOM(x)))); if (t) ids.push(t.id); else offen.push(x); });
     if (offen.length) fehler.push(`Zeile ${i + 2}: nicht gefunden ${offen.join(', ')}`);
     if (!ids.length) return;
-    const frist = num(col(r, 'absetzfrist')), frei = parseDatum(col(r, 'freigabe'));
-    neu.push({ tierIds: [...new Set(ids)], datum: von, bis: bis && bis > von ? bis : '', grund: String(col(r, 'behandlungsgrund', 'grund')).trim(), medikament: String(col(r, 'arzneimittel', 'medikament')).trim(), menge: String(col(r, 'dosis', 'menge')).trim(), frist, freiAb: frei || addDays(bis && bis > von ? bis : von, frist), erfasst: parseDatum(col(r, 'erfasst')) || von, durch: String(col(r, 'name')).trim(), notiz: String(col(r, 'notiz')).trim() });
+    const frist = num(col(r, 'absetzfrist'));
+    neu.push({ tierIds: [...new Set(ids)], datum: von, bis: bis && bis > von ? bis : '', grund: String(col(r, 'behandlungsgrund', 'grund')).trim(), medikament: String(col(r, 'arzneimittel', 'medikament')).trim(), menge: String(col(r, 'dosis', 'menge')).trim(), frist, freiAb: addDays(bis && bis > von ? bis : von, frist), erfasst: parseDatum(col(r, 'erfasst')) || von, durch: String(col(r, 'name')).trim(), notiz: String(col(r, 'notiz')).trim() });
   });
   const dup = b => S.behandlungen.some(x => x.datum === b.datum && (x.medikament || '').toLowerCase() === b.medikament.toLowerCase());
   const imp = neu.filter(b => !dup(b));
