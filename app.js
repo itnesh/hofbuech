@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.17.0';
+const VERSION = '1.17.1';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -267,7 +267,7 @@ function ortAm(tid, d, list = sortedAuslauf()) { let best = null; for (const a o
 /* ---------- Router ---------- */
 let rq = false;
 function schedule() { if (rq) return; rq = true; requestAnimationFrame(() => { rq = false; render(); }); }
-const UI = { tierFilter: { kat: '', lakt: '', q: '', sort: 'alter', abg: false }, jTab: '', lTab: 'pendenzen', lPz: '', lAlle: false, lJahr: '', kalMonat: today().slice(0, 7), kalTag: '', fTab: 'austrag', jahr: String(new Date().getFullYear()) };
+const UI = { tierFilter: { kat: '', lakt: '', q: '', sort: 'alter', abg: false }, jTab: '', lTab: 'pendenzen', lPz: '', lAlle: false, lJahr: '', lOpen: '', kalMonat: today().slice(0, 7), kalTag: '', fTab: 'austrag', jahr: String(new Date().getFullYear()) };
 
 function render() {
   if (mode === 'firebase' && !USER) return;
@@ -931,8 +931,9 @@ function labGantt(items, y) {
     const yy = top + i * rh; let ab = labAb(a, y) || addDays(d, a.faelligMT && a.faelligMT <= '03-31' && !a.abMT ? -40 : -21);
     const s = ab < y0 ? y0 : ab > y1 ? y1 : ab, e = d > y1 ? y1 : d < y0 ? y0 : d;
     const col = done ? '#2E8B62' : d < T ? '#C0392B' : '#E08A1E';
+    g += `<g data-act="lpend" data-id="${a.id}" style="cursor:pointer"><rect x="0" y="${yy}" width="${W}" height="${rh}" fill="transparent"/>`;
     g += `<text x="4" y="${yy + 12}" font-size="9.5" fill="#1F2A24">${esc(labName(labNr(a.objekt)).slice(0, 18))}</text>`;
-    g += `<rect x="${x(s)}" y="${yy + 4}" width="${Math.max(3, x(e) - x(s) + cw / 30)}" height="${rh - 8}" rx="4" fill="${col}" opacity="${done ? 0.55 : 0.85}"><title>${esc(labTitel(a, y))}: ${ab ? 'ab ' + fmt(ab) + ' ' : ''}bis ${fmt(d)}</title></rect>`;
+    g += `<rect x="${x(s)}" y="${yy + 4}" width="${Math.max(3, x(e) - x(s) + cw / 30)}" height="${rh - 8}" rx="4" fill="${col}" opacity="${done ? 0.55 : 0.85}"><title>${esc(labTitel(a, y))}: ${ab ? 'ab ' + fmt(ab) + ' ' : ''}bis ${fmt(d)}</title></rect></g>`;
   });
   if (T.startsWith(String(y))) g += `<line x1="${x(T)}" x2="${x(T)}" y1="14" y2="${H}" stroke="#1F4D36" stroke-width="1.5"/>`;
   return `<div class="card" style="padding:8px 6px"><svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Jahreskalender Pendenzen">${g}</svg><div class="small muted" style="display:flex;gap:12px;flex-wrap:wrap;margin:4px 4px 0"><span><i class="sw" style="background:#E08A1E"></i>offen</span><span><i class="sw" style="background:#C0392B"></i>überfällig</span><span><i class="sw" style="background:#2E8B62;opacity:.55"></i>erledigt</span></div></div>`;
@@ -946,7 +947,7 @@ function labInfo(nr, extra = '') {
   openSheet(`${labName(nr)} · Obj. ${o.nr}`, `${zs.some(x => x.geo) ? '<div class="karte klein" id="lmini"></div>' : ''}${zuord}${extra}
     <div class="list"><div class="row"><div class="main"><span class="t wrap">${esc(o.typ || '')}</span><span class="s">${nf(num(o.aren))} ${esc(o.einheit || 'a')}${o.szp ? ' · Schnitt ab ' + o.szp.slice(3) + '.' + o.szp.slice(0, 2) + '.' : ''}${o.duengen === 'nein' ? ' · keine Düngung' : ''}</span></div></div></div>
     <div class="sec-t">Massnahmen / Bemerkungen</div><div class="card lab-mass">${esc(o.massnahmen || '-')}</div>`);
-  const sh = $('.sheet'); if (sh) sh.classList.add('mittel');
+  const sh = $('.sheet'); if (sh) sh.classList.add(extra ? 'gross' : 'mittel');
   const el = $('#lmini'); if (el && zs.length) miniKarte(el, zs);
 }
 function labTeilSheet(a, y) {
@@ -960,7 +961,7 @@ function vLabiola() {
     const g = {};
     [...S.labiola].filter(o => labPzOk(o.nr)).sort((a, b) => num(a.nr) - num(b.nr)).forEach(o => { const hs = labHosts(o).map(z => pzKurz(z.name)); (hs.length ? hs : ['Einzelobjekte']).forEach(k => (g[k] = g[k] || []).push(o)); });
     const keys = Object.keys(g).sort((a, b) => a === 'Einzelobjekte' ? 1 : b === 'Einzelobjekte' ? -1 : a.localeCompare(b, 'de', { numeric: true }));
-    return `${tabs}${labKarte()}${keys.length ? keys.map(pz => [pz, g[pz]]).map(([pz, os]) => `<div class="sec-t">${esc(pz)}</div><div class="list">${os.map(o => `<button type="button" class="row" data-act="linfo" data-v="${esc(o.nr)}"><span class="av weide">${esc(o.nr)}</span><div class="main"><span class="t wrap"><b>${esc(labName(o.nr))}</b> · ${esc(o.typ || '')}</span><span class="s">${nf(num(o.aren))} ${esc(o.einheit || 'a')}${o.szp ? ' · Schnitt ab ' + o.szp.slice(3) + '.' + o.szp.slice(0, 2) + '.' : ''}${o.duengen === 'nein' ? ' · keine Düngung' : ''}</span>${o.massnahmen ? `<span class="s wrap lab-mass-k">${esc(o.massnahmen)}</span>` : ''}</div></button>`).join('')}</div>`).join('') : '<div class="empty">Keine Objekte.</div>'}`;
+    return `${tabs}${labKarte()}${keys.length ? keys.map(pz => [pz, g[pz]]).map(([pz, os]) => `<button type="button" class="grp-h ${UI.lOpen === pz ? 'on' : ''}" data-act="lgrp" data-v="${esc(pz)}"><span>${esc(pz)}</span><small>${os.length}</small><i>${UI.lOpen === pz ? '−' : '+'}</i></button>${UI.lOpen !== pz ? '' : `<div class="list" style="margin-bottom:8px">${os.map(o => `<button type="button" class="row" data-act="linfo" data-v="${esc(o.nr)}"><span class="av weide">${esc(o.nr)}</span><div class="main"><span class="t wrap"><b>${esc(labName(o.nr))}</b> · ${esc(o.typ || '')}</span><span class="s">${nf(num(o.aren))} ${esc(o.einheit || 'a')}${o.szp ? ' · Schnitt ab ' + o.szp.slice(3) + '.' + o.szp.slice(0, 2) + '.' : ''}${o.duengen === 'nein' ? ' · keine Düngung' : ''}</span>${o.massnahmen ? `<span class="s wrap lab-mass-k">${esc(o.massnahmen)}</span>` : ''}</div></button>`).join('')}</div>`}`).join('') : '<div class="empty">Keine Objekte.</div>'}`;
   }
   const alle = labAufg().filter(a => labPzOk(labNr(a.objekt)) && (a.art === 'einmalig' || ((a.vonJahr || 0) <= +y && +y <= (a.bisJahr || 9999))))
     .map(a => ({ a, d: aufgabeFaellig(a, y), done: (a.erledigt || {})[y] })).filter(x => x.d).sort((p, q) => (labAb(p.a, y) || p.d) < (labAb(q.a, y) || q.d) ? -1 : 1);
@@ -1899,9 +1900,11 @@ document.addEventListener('click', e => {
   else if (a === 'backup') { const d = { version: VERSION, exportiert: new Date().toISOString(), set: S.set }; COLLS.forEach(c => d[c] = S[c]); const b = new Blob([JSON.stringify(d, null, 1)], { type: 'application/json' }); const u = URL.createObjectURL(b); const l = document.createElement('a'); l.href = u; l.download = `hofbuech_backup_${today()}.json`; l.click(); setTimeout(() => URL.revokeObjectURL(u), 2000); }
   else if (a === 'ausbchart') ausbChart(el.dataset.id);
   else if (a === 'lpz') { UI.lPz = el.dataset.v; render(); }
+  else if (a === 'lgrp') { UI.lOpen = UI.lOpen === el.dataset.v ? '' : el.dataset.v; render(); }
   else if (a === 'lalle') { UI.lAlle = !!el.dataset.v; render(); }
   else if (a === 'linfo') labInfo(el.dataset.v);
-  else if (a === 'lpend') { const r = S.aufgaben.find(x => x.id === el.dataset.id); if (r) { const y = UI.lJahr, done = (r.erledigt || {})[y], ab = labAb(r, y); labInfo(labNr(r.objekt), `<div class="card" style="margin-bottom:8px"><b>${esc(labTitel(r, y))}</b><div class="small muted" style="margin-top:4px">${esc([r.art === 'einmalig' ? 'einmalig' : 'jährlich', ab ? 'ab ' + fmt(ab) : '', r.nurAb ? '' : 'bis ' + fmt(aufgabeFaellig(r, y)), done ? 'erledigt ' + fmt(done) : 'offen'].filter(Boolean).join(' · '))}</div>${r.notiz ? `<div class="small" style="margin-top:6px">${esc(r.notiz)}</div>` : ''}<div class="btns" style="margin-top:10px">${r.teilwahl && done ? `<button class="btn" data-act="lteil" data-id="${r.id}" data-y="${y}" data-v="oben">Teil: oben</button><button class="btn" data-act="lteil" data-id="${r.id}" data-y="${y}" data-v="unten">Teil: unten</button>` : ''}${r.vid ? '' : `<button class="btn" data-act="edit" data-c="aufgaben" data-id="${r.id}">Bearbeiten</button>`}</div></div>`); } }
+  else if (a === 'lpend') { const r = S.aufgaben.find(x => x.id === el.dataset.id); if (r) { const y = UI.lJahr, done = (r.erledigt || {})[y], ab = labAb(r, y); labInfo(labNr(r.objekt), `<div class="card" style="margin-bottom:8px"><b>${esc(labTitel(r, y))}</b><div class="small muted" style="margin-top:4px">${esc([r.art === 'einmalig' ? 'einmalig' : 'jährlich', ab ? 'ab ' + fmt(ab) : '', r.nurAb ? '' : 'bis ' + fmt(aufgabeFaellig(r, y)), done ? 'erledigt ' + fmt(done) : 'offen'].filter(Boolean).join(' · '))}</div>${r.notiz ? `<div class="small" style="margin-top:6px">${esc(r.notiz)}</div>` : ''}<div style="margin-top:12px">${done ? `<div class="note green" style="margin:0"><b>Am ${fmt(done)} erledigt</b>${r.teilwahl && labTeil(y) ? ` · ${labTeil(y) === 'oben' ? 'oberer' : 'unterer'} Teil` : ''}</div>` : `<button class="btn pri" style="width:100%" data-act="lerledigt" data-id="${r.id}" data-y="${y}">Erledigt</button>`}</div><div class="btns" style="margin-top:10px">${r.teilwahl && done ? `<button class="btn" data-act="lteil" data-id="${r.id}" data-y="${y}" data-v="oben">Teil: oben</button><button class="btn" data-act="lteil" data-id="${r.id}" data-y="${y}" data-v="unten">Teil: unten</button>` : ''}${r.vid ? '' : `<button class="btn" data-act="edit" data-c="aufgaben" data-id="${r.id}">Bearbeiten</button>`}</div></div>`); } }
+  else if (a === 'lerledigt') { const r = S.aufgaben.find(x => x.id === el.dataset.id); if (r) { const y = el.dataset.y; if (r.teilwahl) { labTeilSheet(r, y); return; } put('aufgaben', { ...r, erledigt: { ...(r.erledigt || {}), [y]: today() } }); closeSheet(); toast('Erledigt'); } }
   else if (a === 'lteil') { const r = S.aufgaben.find(x => x.id === el.dataset.id); if (r) { const y = el.dataset.y, er = { ...(r.erledigt || {}) }; if (!er[y]) er[y] = today(); put('aufgaben', { ...r, erledigt: er, teil: { ...(r.teil || {}), [y]: el.dataset.v } }); closeSheet(); toast(`Obj. 1 ${y}: ${el.dataset.v === 'oben' ? 'oberer' : 'unterer'} Teil`); } }
   else if (a === 'push') { pushAktivieren().catch(showErr); }
   else if (a === 'logout') { if (AUTH) AUTH.A.signOut(AUTH.auth).then(() => location.reload()); }
