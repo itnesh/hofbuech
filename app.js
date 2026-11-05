@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.18.0';
+const VERSION = '1.18.1';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -340,14 +340,14 @@ async function karteZeichnen() {
       poly.setStyle(obj ? { color: oc, weight: 2, fillColor: oc, fillOpacity: 0.35, dashArray: z.nutzung === 'Bäume' ? '5 4' : null } : { color: '#FFFFFF', weight: 2, fillColor: '#FFFFFF', fillOpacity: 0.12 });
       if (sel) poly.setStyle({ color: '#E08A1E', weight: 4, fillColor: '#E08A1E', fillOpacity: 0.5 }); else if (UI.lPz) poly.setStyle({ fillOpacity: 0.06, opacity: 0.5 });
       if (obj) poly.bringToFront();
-      poly.on('click', e => { L.DomEvent.stopPropagation(e); UI.lPz = sel ? '' : z.name; render(); });
+      poly.on('click', e => { L.DomEvent.stopPropagation(e); UI.lPz = sel ? '' : z.name; UI.lOpen = ''; render(); });
       poly.bindTooltip(esc(pzKurz(z.name)), { permanent: !obj || sel, direction: 'center', className: obj ? 'pzlabel obj' : 'pzlabel' });
       continue;
     }
     poly.bindPopup(`<b>${esc(z.name)}</b><br>${nf(num(z.ha))} ha${z.programm ? ' · ' + esc(z.programm) : ''}${z.schnittAb ? '<br>Schnitt ab ' + md(z.schnittAb) : ''}${z.fruehBis ? '<br>Frühschnitt bis ' + md(z.fruehBis) : ''}${z.duengen === 'nein' ? '<br>keine Düngung' : ''}${f.length ? '<br><small>' + f.filter(x => FELD[x.typ]).map(x => fmtS(x.datum) + ' ' + fL(x)).join('<br>') + '</small>' : ''}`);
     poly.bindTooltip(esc(z.name.replace(/\s*\(.*\)/, '')), { permanent: !hecke && num(z.ha) > 0.1, direction: 'center', className: 'pzlabel' });
   }
-  if (grp.getLayers().length) map.fitBounds(grp.getBounds(), { padding: [8, 8] });
+  if (grp.getLayers().length) { map.fitBounds(grp.getBounds(), { padding: [8, 8] }); setTimeout(() => { if (!document.body.contains(el)) return; map.invalidateSize(); map.fitBounds(grp.getBounds(), { padding: [8, 8] }); }, 350); }
 }
 function afterRender() {
   karteZeichnen();
@@ -811,8 +811,6 @@ const LAB_PEND = [
   { vid: 'o8-s1', objekt: 'Obj. 8', titel: 'Schnitt ab 15.07., Fauna schonend (Balkenmäher / Rapid, nicht zetten)', art: 'jaehrlich', abMT: '07-15', faelligMT: '10-31', nurAb: true },
   { vid: 'o9-saum', objekt: 'Obj. 9', titel: 'Saum 3 m rundherum mit Obj. 8 mähen, sauber bis an die Hecke', art: 'jaehrlich', abMT: '07-15', faelligMT: '10-31', nurAb: true },
   { vid: 'o3-nist', objekt: 'Obj. 3', titel: 'Nistkästen (mind. 13) auswischen', art: 'jaehrlich', faelligMT: '01-31' },
-  { vid: 'o3-baeume', objekt: 'Obj. 3', titel: 'Hochstamm- und Nussbäume pflegen, Abgänge ersetzen (Obj. 3, 15, 17, 19); Strukturen erhalten', art: 'jaehrlich', faelligMT: '12-31', notiz: 'Mind. 3 Obstarten, 2 Linden, 2 Bäume mit Efeu, 1 Baum mit Totholz.' },
-  { vid: 'klein', objekt: 'Obj. 2', titel: 'Kleinstrukturen erhalten: 3 Asthaufen (Obj. 2) und 2 Totholzstapel (Obj. 6)', art: 'jaehrlich', faelligMT: '12-31', notiz: 'Vertrag: mind. 3 Kleinstrukturen.' },
   { vid: 'o6-hasel', objekt: 'Obj. 6', titel: 'Einen Teil der Hasel auf Stock setzen (Winter)', art: 'jaehrlich', faelligMT: '02-28', vonJahr: 2027, notiz: 'Erster Eingriff spätestens im Winter 2026/27.' },
   { vid: 'o6-totholz', objekt: 'Obj. 6', titel: '2 Stapel Totholz mit Bohrlöchern erstellen (Merkblatt Kleinstrukturen)', art: 'einmalig', faellig: '2025-05-31' },
   { vid: 'o2-asthaufen', objekt: 'Obj. 2', titel: '3 Asthaufen mit Aufzuchtkammer (Wiesel) an der Grenze zu Obj. 1, ca. 30 m Abstand', art: 'einmalig', faellig: '2026-05-31', notiz: 'Möglichst bis Ende Februar, spätestens Ende Mai 2026.' },
@@ -893,6 +891,7 @@ function pzMigration() {
 }
 function labiolaSeed() {
   pzMigration();
+  if (S.loaded.aufgaben && S.loaded.set && S.set.labPend !== 2) { S.set.labPend = 2; W.setSettings({ ...S.set, labPend: 2 }); for (const a of S.aufgaben) if (['klein', 'o3-baeume'].includes(a.vid) && !a.archiv) put('aufgaben', { ...a, archiv: true }); }
   if (!S.loaded.labiola || !S.loaded.aufgaben || !S.loaded.set || !S.loaded.lprotokoll || S.set.labSeed === LAB_VERTRAG) return;
   S.set.labSeed = LAB_VERTRAG; W.setSettings({ ...S.set, labSeed: LAB_VERTRAG });
   for (const o of LAB_OBJ) { const alt = labObj(o.nr); put('labiola', { ...(alt || {}), ...o, parzelle: alt && alt.parzelle || '', vertrag: LAB_VERTRAG }); }
@@ -951,7 +950,7 @@ function labInfo(nr, extra = '') {
   const el = $('#lmini'); if (el && zs.length) miniKarte(el, zs);
 }
 function labTeilSheet(a, y) {
-  openSheet('Welcher Teil wurde geschnitten?', `<p class="small muted">Obj. 1, ${y}: 1/3 bis 1/2 der Fläche bis Ende Mai. Nächstes Jahr ist der andere Teil dran.</p><div class="btns" style="margin-top:10px"><button class="btn pri" data-act="lteil" data-id="${a.id}" data-y="${y}" data-v="oben">Oberer Teil</button><button class="btn pri" data-act="lteil" data-id="${a.id}" data-y="${y}" data-v="unten">Unterer Teil</button></div>`);
+  openSheet('Welcher Teil wurde geschnitten?', `<p class="small muted">Obj. 1, ${y}: 1/3 bis 1/2 der Fläche bis Ende Mai. Nächstes Jahr ist der andere Teil dran. Ab dem Schnittdatum + 4 Wochen darf die Restfläche gemäht werden.</p><div class="fld"><span>Geschnitten am</span><input type="date" id="lteildat" value="${(a.erledigt || {})[y] || (today().startsWith(String(y)) ? today() : y + '-05-31')}"></div><div class="btns" style="margin-top:10px"><button class="btn pri" data-act="lteil" data-id="${a.id}" data-y="${y}" data-v="oben">Oberer Teil</button><button class="btn pri" data-act="lteil" data-id="${a.id}" data-y="${y}" data-v="unten">Unterer Teil</button></div>`);
 }
 function vLabiola() {
   const y = LAB_JAHRE.includes(UI.lJahr) ? UI.lJahr : (LAB_JAHRE.includes(String(new Date().getFullYear())) ? String(new Date().getFullYear()) : '2026'), T = today();
@@ -960,8 +959,9 @@ function vLabiola() {
   if (UI.lTab === 'objekte') {
     const g = {};
     [...S.labiola].filter(o => labPzOk(o.nr)).sort((a, b) => num(a.nr) - num(b.nr)).forEach(o => { const hs = labHosts(o).map(z => pzKurz(z.name)); (hs.length ? hs : ['Einzelobjekte']).forEach(k => (g[k] = g[k] || []).push(o)); });
+    const offen = pz => UI.lPz ? UI.lOpen !== '-' + pz : UI.lOpen === pz;
     const keys = Object.keys(g).sort((a, b) => a === 'Einzelobjekte' ? 1 : b === 'Einzelobjekte' ? -1 : a.localeCompare(b, 'de', { numeric: true }));
-    return `${tabs}${labKarte()}${keys.length ? keys.map(pz => [pz, g[pz]]).map(([pz, os]) => `<button type="button" class="grp-h ${UI.lOpen === pz ? 'on' : ''}" data-act="lgrp" data-v="${esc(pz)}"><span>${esc(pz)}</span><small>${os.length}</small><i>${UI.lOpen === pz ? '−' : '+'}</i></button>${UI.lOpen !== pz ? '' : `<div class="list" style="margin-bottom:8px">${os.map(o => `<button type="button" class="row" data-act="linfo" data-v="${esc(o.nr)}"><span class="av weide">${esc(o.nr)}</span><div class="main"><span class="t wrap"><b>${esc(labName(o.nr))}</b> · ${esc(o.typ || '')}</span><span class="s">${nf(num(o.aren))} ${esc(o.einheit || 'a')}${o.szp ? ' · Schnitt ab ' + o.szp.slice(3) + '.' + o.szp.slice(0, 2) + '.' : ''}${o.duengen === 'nein' ? ' · keine Düngung' : ''}</span>${o.massnahmen ? `<span class="s wrap lab-mass-k">${esc(o.massnahmen)}</span>` : ''}</div></button>`).join('')}</div>`}`).join('') : '<div class="empty">Keine Objekte.</div>'}`;
+    return `${tabs}${labKarte()}${keys.length ? keys.map(pz => [pz, g[pz]]).map(([pz, os]) => `<button type="button" class="grp-h ${offen(pz) ? 'on' : ''}" data-act="lgrp" data-v="${esc(pz)}"><span>${esc(pz)}</span><small>${os.length}</small><i>${offen(pz) ? '−' : '+'}</i></button>${!offen(pz) ? '' : `<div class="list" style="margin-bottom:8px">${os.map(o => `<button type="button" class="row" data-act="linfo" data-v="${esc(o.nr)}"><span class="av weide">${esc(o.nr)}</span><div class="main"><span class="t wrap"><b>${esc(labName(o.nr))}</b> · ${esc(o.typ || '')}</span><span class="s">${nf(num(o.aren))} ${esc(o.einheit || 'a')}${o.szp ? ' · Schnitt ab ' + o.szp.slice(3) + '.' + o.szp.slice(0, 2) + '.' : ''}${o.duengen === 'nein' ? ' · keine Düngung' : ''}</span>${o.massnahmen ? `<span class="s wrap lab-mass-k">${esc(o.massnahmen)}</span>` : ''}</div></button>`).join('')}</div>`}`).join('') : '<div class="empty">Keine Objekte.</div>'}`;
   }
   const alle = labAufg().filter(a => labPzOk(labNr(a.objekt)) && (a.art === 'einmalig' || ((a.vonJahr || 0) <= +y && +y <= (a.bisJahr || 9999))))
     .map(a => ({ a, d: aufgabeFaellig(a, y), done: (a.erledigt || {})[y] })).filter(x => x.d).sort((p, q) => (labAb(p.a, y) || p.d) < (labAb(q.a, y) || q.d) ? -1 : 1);
@@ -1228,10 +1228,10 @@ function lockScroll(on) {
 function openSheet(title, body, { onSave, saveLabel = 'Sichern', onDelete } = {}) {
   closeSheet(true);
   const wrap = $('#sheets');
-  wrap.innerHTML = `<div class="backdrop"></div><div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="sheet-h"><button type="button" data-x>${onSave ? 'Abbrechen' : 'Schliessen'}</button><b>${esc(title)}</b>${onSave ? `<button type="button" class="save" data-s>${saveLabel}</button>` : '<span style="width:70px"></span>'}</div><div class="sheet-b">${body}${onDelete ? '<button type="button" class="btn danger block" data-d style="margin-top:18px">Löschen</button>' : ''}</div></div>`;
+  wrap.innerHTML = `<div class="backdrop"></div><div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="sheet-h"><button type="button" data-x class="${onSave ? '' : 'zurueck'}">${onSave ? 'Abbrechen' : '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>Zurück'}</button><b>${esc(title)}</b>${onSave ? '' : '<button type="button" data-x class="xrund" aria-label="Schliessen"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>'}${onSave ? `<button type="button" class="save" data-s>${saveLabel}</button>` : '<span style="width:70px"></span>'}</div><div class="sheet-b">${body}${onDelete ? '<button type="button" class="btn danger block" data-d style="margin-top:18px">Löschen</button>' : ''}</div></div>`;
   const sh = $('.sheet', wrap), bd = $('.backdrop', wrap);
   requestAnimationFrame(() => { sh.classList.add('show'); bd.classList.add('show'); });
-  bd.onclick = () => closeSheet(); $('[data-x]', sh).onclick = () => closeSheet();
+  bd.onclick = () => closeSheet(); $$('[data-x]', sh).forEach(b => b.onclick = () => closeSheet());
   if (onSave) $('[data-s]', sh).onclick = onSave;
   if (onDelete) $('[data-d]', sh).onclick = () => { if (confirm('Wirklich löschen?')) { onDelete(); closeSheet(); } };
   sheetOpen = sh; lockScroll(true);
@@ -1900,12 +1900,12 @@ document.addEventListener('click', e => {
   else if (a === 'backup') { const d = { version: VERSION, exportiert: new Date().toISOString(), set: S.set }; COLLS.forEach(c => d[c] = S[c]); const b = new Blob([JSON.stringify(d, null, 1)], { type: 'application/json' }); const u = URL.createObjectURL(b); const l = document.createElement('a'); l.href = u; l.download = `hofbuech_backup_${today()}.json`; l.click(); setTimeout(() => URL.revokeObjectURL(u), 2000); }
   else if (a === 'ausbchart') ausbChart(el.dataset.id);
   else if (a === 'lpz') { UI.lPz = el.dataset.v; render(); }
-  else if (a === 'lgrp') { UI.lOpen = UI.lOpen === el.dataset.v ? '' : el.dataset.v; render(); }
+  else if (a === 'lgrp') { const v = el.dataset.v; UI.lOpen = UI.lPz ? (UI.lOpen === '-' + v ? '' : '-' + v) : (UI.lOpen === v ? '' : v); render(); }
   else if (a === 'lalle') { UI.lAlle = !!el.dataset.v; render(); }
   else if (a === 'linfo') labInfo(el.dataset.v);
   else if (a === 'lpend') { const r = S.aufgaben.find(x => x.id === el.dataset.id); if (r) { const y = UI.lJahr, done = (r.erledigt || {})[y], ab = labAb(r, y); labInfo(labNr(r.objekt), `<div class="card" style="margin-bottom:8px"><b>${esc(labTitel(r, y))}</b><div class="small muted" style="margin-top:4px">${esc([r.art === 'einmalig' ? 'einmalig' : 'jährlich', ab ? 'ab ' + fmt(ab) : '', r.nurAb ? '' : 'bis ' + fmt(aufgabeFaellig(r, y)), done ? 'erledigt ' + fmt(done) : 'offen'].filter(Boolean).join(' · '))}</div>${r.notiz ? `<div class="small" style="margin-top:6px">${esc(r.notiz)}</div>` : ''}<div style="margin-top:12px">${done ? `<div class="note green" style="margin:0"><b>Am ${fmt(done)} erledigt</b>${r.teilwahl && labTeil(y) ? ` · ${labTeil(y) === 'oben' ? 'oberer' : 'unterer'} Teil` : ''}</div>` : `<button class="btn pri" style="width:100%" data-act="lerledigt" data-id="${r.id}" data-y="${y}">Erledigt</button>`}</div><div class="btns" style="margin-top:10px">${r.teilwahl && done ? `<button class="btn" data-act="lteil" data-id="${r.id}" data-y="${y}" data-v="oben">Teil: oben</button><button class="btn" data-act="lteil" data-id="${r.id}" data-y="${y}" data-v="unten">Teil: unten</button>` : ''}${r.vid ? '' : `<button class="btn" data-act="edit" data-c="aufgaben" data-id="${r.id}">Bearbeiten</button>`}</div></div>`); } }
   else if (a === 'lerledigt') { const r = S.aufgaben.find(x => x.id === el.dataset.id); if (r) { const y = el.dataset.y; if (r.teilwahl) { labTeilSheet(r, y); return; } put('aufgaben', { ...r, erledigt: { ...(r.erledigt || {}), [y]: today() } }); closeSheet(); toast('Erledigt'); } }
-  else if (a === 'lteil') { const r = S.aufgaben.find(x => x.id === el.dataset.id); if (r) { const y = el.dataset.y, er = { ...(r.erledigt || {}) }; if (!er[y]) er[y] = today(); put('aufgaben', { ...r, erledigt: er, teil: { ...(r.teil || {}), [y]: el.dataset.v } }); closeSheet(); toast(`Obj. 1 ${y}: ${el.dataset.v === 'oben' ? 'oberer' : 'unterer'} Teil`); } }
+  else if (a === 'lteil') { const r = S.aufgaben.find(x => x.id === el.dataset.id); if (r) { const y = el.dataset.y, er = { ...(r.erledigt || {}) }, dIn = $('#lteildat'); if (dIn && dIn.value) er[y] = dIn.value; else if (!er[y]) er[y] = today(); put('aufgaben', { ...r, erledigt: er, teil: { ...(r.teil || {}), [y]: el.dataset.v } }); closeSheet(); toast(`Obj. 1 ${y}: ${el.dataset.v === 'oben' ? 'oberer' : 'unterer'} Teil`); } }
   else if (a === 'push') { pushAktivieren().catch(showErr); }
   else if (a === 'logout') { if (AUTH) AUTH.A.signOut(AUTH.auth).then(() => location.reload()); }
 });
