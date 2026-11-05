@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.18.2';
+const VERSION = '1.18.3';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -945,6 +945,7 @@ function labTeilSheet(a, y) {
   openSheet('Welcher Teil wurde geschnitten?', `<p class="small muted">Obj. 1, ${y}: 1/3 bis 1/2 der Fläche bis Ende Mai. Nächstes Jahr ist der andere Teil dran. Ab dem Schnittdatum + 4 Wochen darf die Restfläche gemäht werden.</p><div class="fld"><span>Geschnitten am</span><input type="date" id="lteildat" value="${(a.erledigt || {})[y] || (today().startsWith(String(y)) ? today() : y + '-05-31')}"></div><div class="btns" style="margin-top:10px"><button class="btn pri" data-act="lteil" data-id="${a.id}" data-y="${y}" data-v="oben">Oberer Teil</button><button class="btn pri" data-act="lteil" data-id="${a.id}" data-y="${y}" data-v="unten">Unterer Teil</button></div>`);
 }
 function vLabiola() {
+  UI.lPz = '';
   const y = LAB_JAHRE.includes(UI.lJahr) ? UI.lJahr : (LAB_JAHRE.includes(String(new Date().getFullYear())) ? String(new Date().getFullYear()) : '2026'), T = today();
   UI.lJahr = y;
   const tabs = `<div class="seg" style="margin:8px 0 12px">${[['pendenzen', 'Pendenzen'], ['objekte', 'Objekte']].map(([v, l]) => `<button type="button" class="${UI.lTab === v ? 'on' : ''}" data-act="ltab" data-v="${v}">${l}</button>`).join('')}</div>`;
@@ -953,14 +954,14 @@ function vLabiola() {
     [...S.labiola].filter(o => labPzOk(o.nr)).sort((a, b) => num(a.nr) - num(b.nr)).forEach(o => { const hs = labHosts(o).map(z => pzKurz(z.name)); (hs.length ? hs : ['Einzelobjekte']).forEach(k => (g[k] = g[k] || []).push(o)); });
     const offen = pz => UI.lPz ? UI.lOpen !== '-' + pz : UI.lOpen === pz;
     const keys = Object.keys(g).sort((a, b) => a === 'Einzelobjekte' ? 1 : b === 'Einzelobjekte' ? -1 : a.localeCompare(b, 'de', { numeric: true }));
-    return `${tabs}${labKarte()}${keys.length ? keys.map(pz => [pz, g[pz]]).map(([pz, os]) => `<button type="button" class="grp-h ${offen(pz) ? 'on' : ''}" data-act="lgrp" data-v="${esc(pz)}"><span>${esc(pz)}</span><small>${os.length}</small><i>${offen(pz) ? '−' : '+'}</i></button>${!offen(pz) ? '' : `<div class="list" style="margin-bottom:8px">${os.map(o => `<button type="button" class="row" data-act="linfo" data-v="${esc(o.nr)}"><span class="av weide">${esc(o.nr)}</span><div class="main"><span class="t wrap"><b>${esc(labName(o.nr))}</b> · ${esc(o.typ || '')}</span><span class="s">${nf(num(o.aren))} ${esc(o.einheit || 'a')}${o.szp ? ' · Schnitt ab ' + o.szp.slice(3) + '.' + o.szp.slice(0, 2) + '.' : ''}${o.duengen === 'nein' ? ' · keine Düngung' : ''}</span>${o.massnahmen ? `<span class="s wrap lab-mass-k">${esc(o.massnahmen)}</span>` : ''}</div></button>`).join('')}</div>`}`).join('') : '<div class="empty">Keine Objekte.</div>'}`;
+    return `${tabs}${keys.length ? keys.map(pz => [pz, g[pz]]).map(([pz, os]) => `<button type="button" class="grp-h ${offen(pz) ? 'on' : ''}" data-act="lgrp" data-v="${esc(pz)}"><span>${esc(pz)}</span><small>${os.length}</small><i>${offen(pz) ? '−' : '+'}</i></button>${!offen(pz) ? '' : `<div class="list" style="margin-bottom:8px">${os.map(o => `<button type="button" class="row" data-act="linfo" data-v="${esc(o.nr)}"><span class="av weide">${esc(o.nr)}</span><div class="main"><span class="t wrap"><b>${esc(labName(o.nr))}</b> · ${esc(o.typ || '')}</span><span class="s">${nf(num(o.aren))} ${esc(o.einheit || 'a')}${o.szp ? ' · Schnitt ab ' + o.szp.slice(3) + '.' + o.szp.slice(0, 2) + '.' : ''}${o.duengen === 'nein' ? ' · keine Düngung' : ''}</span>${o.massnahmen ? `<span class="s wrap lab-mass-k">${esc(o.massnahmen)}</span>` : ''}</div></button>`).join('')}</div>`}`).join('') : '<div class="empty">Keine Objekte.</div>'}`;
   }
   const alle = labAufg().filter(a => labPzOk(labNr(a.objekt)) && (a.art === 'einmalig' || ((a.vonJahr || 0) <= +y && +y <= (a.bisJahr || 9999))))
     .map(a => ({ a, d: aufgabeFaellig(a, y), done: (a.erledigt || {})[y] })).filter(x => x.d).sort((p, q) => (labAb(p.a, y) || p.d) < (labAb(q.a, y) || q.d) ? -1 : 1);
   const items = UI.lAlle ? alle : alle.filter(x => !x.done);
   const nOff = alle.filter(x => !x.done).length;
   const chk = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg>';
-  return `${tabs}${labKarte()}
+  return `${tabs}
   <div class="toolbar"><select class="sel" data-act="ljahr" aria-label="Jahr">${LAB_JAHRE.map(j => `<option ${j === y ? 'selected' : ''}>${j}</option>`).join('')}</select><div class="seg mini">${[['', `Offen (${nOff})`], ['1', `Alle (${alle.length})`]].map(([v, l]) => `<button type="button" class="${(UI.lAlle ? '1' : '') === v ? 'on' : ''}" data-act="lalle" data-v="${v}">${l}</button>`).join('')}</div></div>
   <div class="sec-t">Jahreskalender ${y}</div>${labGantt(alle, y) || '<div class="empty">Keine Pendenzen.</div>'}
   <div class="sec-t">Pendenzen ${y}</div>
