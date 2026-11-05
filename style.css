@@ -336,3 +336,13 @@ html,body{overflow-x:hidden;max-width:100%}
 .sheet-h button.zurueck{display:inline-flex;align-items:center;gap:4px;background:#E7F1EC;color:#1F4D36;font-weight:650;border-radius:999px;min-height:36px;padding:0 14px 0 10px;margin:4px 0}
 .sheet-h button.xrund{width:36px;min-height:36px;height:36px;border-radius:50%;background:#EEF0EC;color:#3B433E;display:inline-flex;align-items:center;justify-content:center;padding:0}
 .sheet-h b{flex:1;text-align:center;padding:0 6px;line-height:1.25}
+.legende{display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin:8px 6px 2px}
+.legende span{display:inline-flex;align-items:center;gap:6px;line-height:1}
+.legende .sw{width:11px;height:11px;flex:0 0 11px}
+.lab-row{align-items:center;min-height:76px}
+.lab-pend{display:flex;align-items:center;gap:10px;flex:1;min-width:0;border:0;background:none;text-align:left;padding:0;cursor:pointer;font:inherit;color:inherit}
+.lab-thumb{flex:0 0 64px;border-radius:10px;background:#F2F5F1;box-shadow:inset 0 0 0 1px #E2E7E2}
+.lab-txt{display:flex;flex-direction:column;gap:2px;min-width:0}
+.lab-ort{font-weight:750;font-size:14.5px;color:#1F4D36}
+.lab-ort small{font-weight:500;font-size:11px;color:var(--muted);margin-left:2px}
+.lab-row .t{font-size:12.5px;font-weight:500}

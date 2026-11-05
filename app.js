@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.18.3';
+const VERSION = '1.18.4';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -911,6 +911,19 @@ function labTitel(a, y) {
   return `1. Schnitt gestaffelt: 1/3 bis 1/2 der Fläche${t ? ` - geschnitten: ${t === 'oben' ? 'oberer' : 'unterer'} Teil` : v ? ` - dieses Jahr: ${v === 'oben' ? 'unterer' : 'oberer'} Teil (${+y - 1}: ${v})` : ' (Teil jährlich wechseln)'}`;
 }
 // Jahreskalender (Monate als Spalten, Pendenzen als Balken)
+// Mini-Plan (SVG): alle Flächen grau, betroffene hervorgehoben
+let labBox = null, labBoxKey = '';
+function labThumb(nr, w = 64, h = 52) {
+  const all = S.parzellen.filter(z => z.geo && !istArchiv(z)).map(z => { try { return [z, JSON.parse(z.geo)]; } catch (e) { return null; } }).filter(Boolean);
+  if (!all.length) return '';
+  const key = all.map(([z]) => z.id).join();
+  if (key !== labBoxKey) { let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9; all.forEach(([, rs]) => rs.forEach(r => r.forEach(([x, y]) => { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }))); labBox = [x0, x1, y0, y1]; labBoxKey = key; }
+  const [x0, x1, y0, y1] = labBox, kx = Math.cos(((y0 + y1) / 2) * Math.PI / 180), bw = (x1 - x0) * kx || 1e-6, bh = (y1 - y0) || 1e-6, sc = Math.min((w - 6) / bw, (h - 6) / bh), ox = (w - bw * sc) / 2, oy = (h - bh * sc) / 2;
+  const pt = ([x, y]) => `${(ox + (x - x0) * kx * sc).toFixed(1)},${(oy + (y1 - y) * sc).toFixed(1)}`;
+  const ziel = labPzs(labObj(nr)).map(z => z.id);
+  const poly = ([z, rs], on) => rs.map(r => `<polygon points="${r.map(pt).join(' ')}" fill="${on ? (istObjekt(z) ? '#8B5A2B' : '#2E8B62') : '#DCE3DD'}" stroke="${on ? '#1F4D36' : '#C3CCC5'}" stroke-width="${on ? 1 : 0.6}"/>`).join('');
+  return `<svg class="lab-thumb" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" aria-hidden="true">${all.filter(([z]) => !ziel.includes(z.id)).map(p => poly(p, false)).join('')}${all.filter(([z]) => ziel.includes(z.id)).map(p => poly(p, true)).join('')}</svg>`;
+}
 function labGantt(items, y) {
   if (!items.length) return '';
   const W = chartW(), lw = Math.min(150, Math.round(W * 0.34)), rh = 18, top = 18, H = top + items.length * rh + 6, cw = (W - lw - 4) / 12;
@@ -927,7 +940,7 @@ function labGantt(items, y) {
     g += `<rect x="${x(s)}" y="${yy + 4}" width="${Math.max(3, x(e) - x(s) + cw / 30)}" height="${rh - 8}" rx="4" fill="${col}" opacity="${done ? 0.55 : 0.85}"><title>${esc(labTitel(a, y))}: ${ab ? 'ab ' + fmt(ab) + ' ' : ''}bis ${fmt(d)}</title></rect></g>`;
   });
   if (T.startsWith(String(y))) g += `<line x1="${x(T)}" x2="${x(T)}" y1="14" y2="${H}" stroke="#1F4D36" stroke-width="1.5"/>`;
-  return `<div class="card" style="padding:8px 6px"><svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Jahreskalender Pendenzen">${g}</svg><div class="small muted" style="display:flex;gap:12px;flex-wrap:wrap;margin:4px 4px 0"><span><i class="sw" style="background:#E08A1E"></i>offen</span><span><i class="sw" style="background:#C0392B"></i>überfällig</span><span><i class="sw" style="background:#2E8B62;opacity:.55"></i>erledigt</span></div></div>`;
+  return `<div class="card" style="padding:8px 6px"><svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Jahreskalender Pendenzen">${g}</svg><div class="small muted legende"><span><i class="sw" style="background:#E08A1E"></i>offen</span><span><i class="sw" style="background:#C0392B"></i>überfällig</span><span><i class="sw" style="background:#2E8B62;opacity:.55"></i>erledigt</span></div></div>`;
 }
 function labKarte() { return S.parzellen.some(z => z.geo) ? `<div id="karte" class="karte" data-filter="1"></div>${UI.lPz ? `<div class="toolbar"><span class="chip on">${esc(pzKurz(UI.lPz))}</span><button class="btn" data-act="lpz" data-v="">Filter aufheben</button></div>` : '<p class="small muted" style="margin:2px 4px 8px">Parzelle antippen zum Filtern.</p>'}` : ''; }
 const labPzOk = nr => !UI.lPz || labPzs(labObj(nr)).some(z => z.name === UI.lPz);
@@ -965,7 +978,7 @@ function vLabiola() {
   <div class="toolbar"><select class="sel" data-act="ljahr" aria-label="Jahr">${LAB_JAHRE.map(j => `<option ${j === y ? 'selected' : ''}>${j}</option>`).join('')}</select><div class="seg mini">${[['', `Offen (${nOff})`], ['1', `Alle (${alle.length})`]].map(([v, l]) => `<button type="button" class="${(UI.lAlle ? '1' : '') === v ? 'on' : ''}" data-act="lalle" data-v="${v}">${l}</button>`).join('')}</div></div>
   <div class="sec-t">Jahreskalender ${y}</div>${labGantt(alle, y) || '<div class="empty">Keine Pendenzen.</div>'}
   <div class="sec-t">Pendenzen ${y}</div>
-  <div class="list">${items.length ? items.map(({ a, d, done }) => { const ab = labAb(a, y), late = !done && d < T, vorAb = !done && ab && ab > T; return `<div class="row"><button type="button" class="chk ${done ? 'on' : ''}" data-act="aufgabe" data-id="${a.id}" data-y="${y}" aria-label="erledigt">${done ? chk : ''}</button><button type="button" class="main" data-act="lpend" data-id="${a.id}" style="border:0;background:none;text-align:left;padding:0;cursor:pointer"><span class="t wrap" style="${done ? 'text-decoration:line-through;color:var(--muted)' : ''}">${esc(labTitel(a, y))}</span><span class="s wrap">${esc([labName(labNr(a.objekt)) + ' (' + a.objekt + ')', a.art === 'einmalig' ? 'einmalig' : 'jährlich', ab ? 'ab ' + fmtS(ab) : '', done ? 'erledigt ' + fmt(done) : ''].filter(Boolean).join(' · '))}</span></button><span class="pill ${done ? '' : late ? 'red' : vorAb ? 'grey' : 'warn'}">${done ? 'erledigt' : vorAb ? 'ab ' + fmtS(ab) : a.nurAb ? 'offen' : 'bis ' + fmtS(d)}</span></div>`; }).join('') : `<div class="empty">${UI.lAlle ? 'Keine Pendenzen.' : 'Alles erledigt.'}</div>`}</div>
+  <div class="list">${items.length ? items.map(({ a, d, done }) => { const ab = labAb(a, y), late = !done && d < T, vorAb = !done && ab && ab > T, nr = labNr(a.objekt); return `<div class="row lab-row"><button type="button" class="chk ${done ? 'on' : ''}" data-act="aufgabe" data-id="${a.id}" data-y="${y}" aria-label="erledigt">${done ? chk : ''}</button><button type="button" class="lab-pend" data-act="lpend" data-id="${a.id}">${labThumb(nr)}<span class="lab-txt"><span class="lab-ort">${esc(labName(nr))} <small>Obj. ${esc(nr)}</small></span><span class="t wrap" style="${done ? 'text-decoration:line-through;color:var(--muted)' : ''}">${esc(labTitel(a, y))}</span>${done ? `<span class="s">erledigt ${fmt(done)}</span>` : ''}</span></button><span class="pill ${done ? '' : late ? 'red' : vorAb ? 'grey' : 'warn'}">${done ? 'erledigt' : vorAb ? 'ab ' + fmtS(ab) : a.nurAb ? 'offen' : 'bis ' + fmtS(d)}</span></div>`; }).join('') : `<div class="empty">${UI.lAlle ? 'Keine Pendenzen.' : 'Alles erledigt.'}</div>`}</div>
 `;
 }
 
