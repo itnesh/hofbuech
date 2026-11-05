@@ -63,6 +63,7 @@ async function akenza(id, deviceId, name, leer, voll) {
   for (const p of pts.filter(p => p[0] >= now - 30 * 864e5)) if (p[0] - lastT >= 3 * 3600e3) { serie30.push(p); lastT = p[0]; }
   const ref = base.collection('sensoren').doc(id);
   const prev = (await ref.get()).data() || {};
+  console.log(name, 'Vorher in Firestore: quelle', prev.quelle || 'job', 'aktualisiert', prev.aktualisiert ? new Date(prev.aktualisiert).toISOString() : '-', 'letzter Messwert', prev.last ? new Date(prev.last.zeit).toISOString() : '-');
   const wert = typeof last.d[kW] === 'number' ? last.d[kW] : null;
   const L = parseFloat(leer), V = parseFloat(voll);
   const ok = isFinite(L) && isFinite(V) && L !== V;
@@ -152,6 +153,12 @@ async function agrometeo() {
   await ref.set({ id: 'agrometeo', typ: 'agrometeo', station: set.agroStation || '177', jahr: new Date().getFullYear(), seit: (R || T || {}).seit || 2004, regen: R, temp: T, aktualisiert: now });
 }
 
+if (set.akenzaKey && process.env.CORS_TEST) {
+  for (const m of ['OPTIONS', 'GET']) {
+    const r = await fetch(`https://api.akenza.io/v3/devices/${set.sensWasser || '02bdf0b1b64b4c40'}/query?topic=measurement&limit=1`, { method: m, headers: m === 'OPTIONS' ? { Origin: 'https://itnesh.github.io', 'Access-Control-Request-Method': 'GET', 'Access-Control-Request-Headers': 'x-api-key,accept' } : { Origin: 'https://itnesh.github.io', 'x-api-key': set.akenzaKey, accept: 'application/json' } });
+    console.log('CORS', m, r.status, [...r.headers].filter(([k]) => /access-control/i.test(k)).map(([k, v]) => k + '=' + v).join(' | ') || 'keine CORS-Header');
+  }
+}
 if (set.akenzaKey) {
   if (set.sensWasser !== '') await akenza('wasserstand', set.sensWasser || '02bdf0b1b64b4c40', 'Wasserstand', set.wasserLeer || 214, set.wasserVoll || 56).catch(e => console.log('Wasserstand', e.message));
   if (set.sensFass !== '') await akenza('traenkefass', set.sensFass || '029412d5966ce1d4', 'Tränkefass', set.fassLeer || 83, set.fassVoll || 9.3).catch(e => console.log('Tränkefass', e.message));
