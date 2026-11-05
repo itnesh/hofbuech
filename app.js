@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.17.1';
+const VERSION = '1.18.0';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -1041,7 +1041,7 @@ function sensorKarte(sx) {
   const u = pc ? '%' : 'cm';
   const fi = sx.fehlerInfo, fwarn = sx.fehlerSeit ? `<div class="note" style="margin:8px 0"><b>Seit ${zt(sx.fehlerSeit)} nur Fehlmessungen.</b> Angezeigt wird der letzte gültige Wert. Letzte Messung ${fi ? `${zt(fi.zeit)}: ${fi.wert ?? '-'} cm, SRC ${fi.src ?? '-'}, SRSSI ${fi.srssi ?? '-'}` : ''} (Fehlecho: SRSSI unter 4, SRC 0, oder SRC 1-2 mit SRSSI unter 8; ausserdem Füllstand ausserhalb 0-100 %). Sensor prüfen: Kondenswasser, Reif, Spinnennetz, Gegenstand im Schallweg.</div>` : '';
   const line = (pts, fmtL, ft = zt) => pts.length > 1 ? svgLines([pts.map(p => p[1])], pts.map(p => fmtL(p[0])), ['#2E8B62'], 130, pts.map(p => `${ft(p[0])} · ${nf(Math.round(p[1] * 10) / 10)} ${u}`), pc) : '<div class="empty">Keine Daten.</div>';
-  return `${fwarn}<div class="stats"><div class="stats-row"><span class="stats-h">Aktuell</span><span class="stat ${low ? 'low' : ''}"><b>${v === null ? '-' : nf(Math.round(v))}<small style="font-size:12px"> ${u}</small></b><span>${pc ? 'Füllstand' : 'Abstand (ullage)'}</span></span><span class="stat"><b>${bat === null || bat === undefined ? '-' : nf(bat)}</b><span>Batterie %</span></span><span class="stat"><b class="zeit">${sx.last && sx.last.zeit ? zt(sx.last.zeit) : '-'}</b><span>Messung</span></span></div></div>
+  return `${fwarn}<div class="stats"><div class="stats-row"><span class="stats-h">Aktuell</span><span class="stat ${low ? 'low' : ''}"><b>${v === null ? '-' : nf(Math.round(v))}<small style="font-size:11px"> ${u}</small></b><span>${pc ? 'Füllstand' : 'Abstand (ullage)'}</span></span><span class="stat"><b>${bat === null || bat === undefined ? '-' : nf(bat)}</b><span>Batterie %</span></span><span class="stat"><b class="zeit">${sx.last && sx.last.zeit ? zt(sx.last.zeit) : '-'}</b><span>Messung</span></span></div></div>
   <div class="card" style="margin-top:8px"><div class="small muted">Letzte 48 Stunden</div>${line(pts48, t => new Date(t).getHours() + 'h')}<div class="small muted" style="margin-top:8px">Letzte 30 Tage</div>${line(pts30, t => { const d = new Date(t); return d.getDate() + '.' + (d.getMonth() + 1); })}<div class="small muted" style="margin-top:8px">Letzte 365 Tage (Tagesmittel)</div>${pts365.length > 1 ? line(pts365, t => MON[new Date(t).getMonth()], zd) : '<div class="empty">Jahresverlauf wird beim nächsten Abgleich geladen.</div>'}</div>`;
 }
 function agroKarte(a) {
@@ -1263,7 +1263,7 @@ function fieldHtml(f, v) {
   if (f.t === 'seg') return `<div class="fld"><span>${f.l}</span><div class="seg" role="radiogroup">${f.o.map(([ov, ol]) => `<label><input type="radio" name="${f.k}" value="${esc(ov)}" ${String(val) === ov ? 'checked' : ''}>${esc(ol)}</label>`).join('')}</div></div>`;
   if (f.t === 'tag') {
     const opts = f.list(); if (val && !opts.includes(val) && !f.fixed) opts.push(val);
-    return `<div class="fld"><span>${f.l}</span><div class="chips" data-tag="${f.k}">${opts.map(o => `<button type="button" class="chip ${o === val ? 'on' : ''}" data-v="${esc(o)}">${esc(o)}</button>`).join('')}${f.fixed ? (opts.length ? '' : '<span class="small muted">Zuerst unter Labiola > Parzellen erfassen.</span>') : `<input name="${f.k}__neu" placeholder="${opts.length ? '+ neu' : 'eingeben'}" autocomplete="off" style="flex:1 1 120px;min-height:36px;border:1px dashed #8A918C;border-radius:99px;padding:0 12px;background:transparent;font-size:14px">`}</div></div>`;
+    return `<div class="fld"><span>${f.l}</span><div class="chips" data-tag="${f.k}">${opts.map(o => `<button type="button" class="chip ${o === val ? 'on' : ''}" data-v="${esc(o)}">${esc(o)}</button>`).join('')}${f.fixed ? (opts.length ? '' : '<span class="small muted">Zuerst unter Labiola > Parzellen erfassen.</span>') : `<input name="${f.k}__neu" placeholder="${opts.length ? '+ neu' : 'eingeben'}" autocomplete="off" style="flex:1 1 120px;min-height:36px;border:1px dashed #8A918C;border-radius:99px;padding:0 12px;background:transparent;font-size:12.5px">`}</div></div>`;
   }
   if (f.t === 'bilder') {
     const arr = Array.isArray(val) ? val : [];
@@ -1987,5 +1987,10 @@ async function boot() {
   else initLocal();
   render();
 }
+// Neue Version erkennen (iPhone-App bleibt im Hintergrund offen): beim Zurückkehren index.html prüfen und neu laden
+const MEIN_V = (document.querySelector('script[src*="app.js"]') || {}).src || '';
+async function updateCheck() { try { const t = await (await fetch('index.html', { cache: 'no-store' })).text(); const m = t.match(/app\.js\?v=(\d+)/); if (m && MEIN_V && !MEIN_V.includes('v=' + m[1]) && !document.querySelector('.sheet.show [data-dirty="1"]')) { if (navigator.serviceWorker) { const r = await navigator.serviceWorker.getRegistration(); if (r) await r.update().catch(() => { }); } location.reload(); } } catch (e) { } }
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') updateCheck(); });
+setInterval(updateCheck, 10 * 60e3);
 if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => { }); navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.nav) { const h = e.data.nav.split('#')[1]; if (h !== undefined && location.hash !== '#' + h) location.hash = h; else render(); } }); }
 boot();
