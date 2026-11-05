@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.18.1';
+const VERSION = '1.18.2';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -801,21 +801,13 @@ const LAB_PEND = [
   { vid: 'o1-frueh', objekt: 'Obj. 1', titel: '1. Schnitt gestaffelt: 1/3 bis 1/2 der Fläche schneiden (Teil jährlich wechseln)', art: 'jaehrlich', faelligMT: '05-31', teilwahl: true, notiz: 'Jährlich wechseln: oben / unten. Beim Erledigen angeben, welcher Teil geschnitten wurde.' },
   { vid: 'o1-rest', objekt: 'Obj. 1', titel: 'Restfläche schneiden, frühestens 4 Wochen nach dem 1. Teil (ca. ab 01.07.)', art: 'jaehrlich', abMT: '07-01', faelligMT: '10-31', nurAb: true, nach: { vid: 'o1-frueh', tage: 28 } },
   { vid: 'o2-s1', objekt: 'Obj. 2', titel: '1. Schnitt ab 15.06., Rückzugsstreifen stehen lassen (evtl. mit 2. Staffelung Obj. 1)', art: 'jaehrlich', abMT: '06-15', faelligMT: '10-31', nurAb: true },
-  { vid: 'o2-s2', objekt: 'Obj. 2', titel: '2. Schnitt (zwingend), Rückzugsstreifen stehen lassen', art: 'jaehrlich', abMT: '07-15', faelligMT: '10-31', nurAb: true, nach: { vid: 'o2-s1', tage: 1 } },
+  { vid: 'o2-s2', objekt: 'Obj. 2', titel: '2. Schnitt (zwingend), Rückzugsstreifen stehen lassen', art: 'jaehrlich', abMT: '08-01', faelligMT: '09-30', nurAb: false, nach: { vid: 'o2-s1', tage: 1 } },
   { vid: 'o18-s1', objekt: 'Obj. 18', titel: '1. Schnitt ab 15.06., Rückzugsstreifen (zusammen mit Obj. 2)', art: 'jaehrlich', abMT: '06-15', faelligMT: '10-31', nurAb: true },
-  { vid: 'o18-s2', objekt: 'Obj. 18', titel: '2. Schnitt (zwingend), Rückzugsstreifen', art: 'jaehrlich', abMT: '07-15', faelligMT: '10-31', nurAb: true, nach: { vid: 'o18-s1', tage: 1 } },
-  { vid: 'o12-saum1', objekt: 'Obj. 12', titel: 'Saumschnitt gestaffelt: 1. Teil ab 15.06. (inkl. Saum entlang Waldrand)', art: 'jaehrlich', abMT: '06-15', faelligMT: '10-31', nurAb: true },
+  { vid: 'o18-s2', objekt: 'Obj. 18', titel: '2. Schnitt (zwingend), Rückzugsstreifen', art: 'jaehrlich', abMT: '08-01', faelligMT: '09-30', nurAb: false, nach: { vid: 'o18-s1', tage: 1 } },
+  { vid: 'o12-saum1', objekt: 'Obj. 12', titel: 'Saumschnitt gestaffelt: 1. Teil (inkl. Saum entlang Waldrand), ca. ab 01.07.', art: 'jaehrlich', abMT: '07-01', faelligMT: '10-31', nurAb: true },
   { vid: 'o12-saum2', objekt: 'Obj. 12', titel: 'Saumschnitt 2. Teil, mind. 6 Wochen nach dem 1. Teil', art: 'jaehrlich', abMT: '07-27', faelligMT: '10-31', nurAb: true, nach: { vid: 'o12-saum1', tage: 42 } },
-  { vid: 'o5-s1', objekt: 'Obj. 5', titel: 'Später Schnitt: frühestens ab 15.07.', art: 'jaehrlich', abMT: '07-15', faelligMT: '10-31', nurAb: true },
-  { vid: 'o6-saum', objekt: 'Obj. 6', titel: 'Saum beidseitig (3 m) mähen ab 15.07.', art: 'jaehrlich', abMT: '07-15', faelligMT: '10-31', nurAb: true },
-  { vid: 'o8-s1', objekt: 'Obj. 8', titel: 'Schnitt ab 15.07., Fauna schonend (Balkenmäher / Rapid, nicht zetten)', art: 'jaehrlich', abMT: '07-15', faelligMT: '10-31', nurAb: true },
-  { vid: 'o9-saum', objekt: 'Obj. 9', titel: 'Saum 3 m rundherum mit Obj. 8 mähen, sauber bis an die Hecke', art: 'jaehrlich', abMT: '07-15', faelligMT: '10-31', nurAb: true },
-  { vid: 'o3-nist', objekt: 'Obj. 3', titel: 'Nistkästen (mind. 13) auswischen', art: 'jaehrlich', faelligMT: '01-31' },
-  { vid: 'o6-hasel', objekt: 'Obj. 6', titel: 'Einen Teil der Hasel auf Stock setzen (Winter)', art: 'jaehrlich', faelligMT: '02-28', vonJahr: 2027, notiz: 'Erster Eingriff spätestens im Winter 2026/27.' },
-  { vid: 'o6-totholz', objekt: 'Obj. 6', titel: '2 Stapel Totholz mit Bohrlöchern erstellen (Merkblatt Kleinstrukturen)', art: 'einmalig', faellig: '2025-05-31' },
-  { vid: 'o2-asthaufen', objekt: 'Obj. 2', titel: '3 Asthaufen mit Aufzuchtkammer (Wiesel) an der Grenze zu Obj. 1, ca. 30 m Abstand', art: 'einmalig', faellig: '2026-05-31', notiz: 'Möglichst bis Ende Februar, spätestens Ende Mai 2026.' },
-  { vid: 'o9-pflege', objekt: 'Obj. 9', titel: 'Erste Heckenpflege: Feldahorn ausholzen, Schwarzdorn und Hartriegel zurückschneiden', art: 'einmalig', ab: '2026-11-01', faellig: '2027-02-28' },
-  { vid: 'o12-pflege', objekt: 'Obj. 12', titel: 'Hecke selektiv pflegen: schnellwachsende Gehölze (Esche, Ahorn, Nussbaum) herausholzen', art: 'einmalig', ab: '2026-11-01', faellig: '2033-02-28', notiz: 'Im Laufe der Vertragsperiode.' }
+  { vid: 'o5-s1', objekt: 'Obj. 5', titel: 'Später Schnitt ab 15.07., zusammen mit Saum Alte Strasse Hecke (Obj. 6, beidseitig 3 m)', art: 'jaehrlich', abMT: '07-15', faelligMT: '10-31', nurAb: true },
+  { vid: 'o8-s1', objekt: 'Obj. 8', titel: 'Schnitt ab 15.07., Fauna schonend (Balkenmäher / Rapid, nicht zetten), zusammen mit Saum Linde Hecke (Obj. 9, 3 m rundherum, sauber bis an die Hecke)', art: 'jaehrlich', abMT: '07-15', faelligMT: '10-31', nurAb: true },
 ];
 // Zuordnung Labiola-Objekt -> Parzellen (Wiesen) und Einzelobjekte (eigene Fläche auf dem Plan), Flächen aus Plan Kleinstrukturen (ca.)
 const LAB_MAP = {
@@ -891,7 +883,7 @@ function pzMigration() {
 }
 function labiolaSeed() {
   pzMigration();
-  if (S.loaded.aufgaben && S.loaded.set && S.set.labPend !== 2) { S.set.labPend = 2; W.setSettings({ ...S.set, labPend: 2 }); for (const a of S.aufgaben) if (['klein', 'o3-baeume'].includes(a.vid) && !a.archiv) put('aufgaben', { ...a, archiv: true }); }
+  if (S.loaded.aufgaben && S.loaded.set && S.set.labPend !== 3 && S.set.labSeed === LAB_VERTRAG) { S.set.labPend = 3; W.setSettings({ ...S.set, labPend: 3 }); for (const a of S.aufgaben) { if (!a.vid) continue; const p = LAB_PEND.find(x => x.vid === a.vid); if (!p) { if (!a.archiv) put('aufgaben', { ...a, archiv: true }); } else put('aufgaben', { ...a, ...p, erledigt: a.erledigt || {}, ...(a.teil ? { teil: a.teil } : {}) }); } }
   if (!S.loaded.labiola || !S.loaded.aufgaben || !S.loaded.set || !S.loaded.lprotokoll || S.set.labSeed === LAB_VERTRAG) return;
   S.set.labSeed = LAB_VERTRAG; W.setSettings({ ...S.set, labSeed: LAB_VERTRAG });
   for (const o of LAB_OBJ) { const alt = labObj(o.nr); put('labiola', { ...(alt || {}), ...o, parzelle: alt && alt.parzelle || '', vertrag: LAB_VERTRAG }); }
