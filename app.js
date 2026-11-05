@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.16.2';
+const VERSION = '1.17.0';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -133,7 +133,8 @@ function del(c, id) { W.del(c, id); }
 
 /* ---------- Fachlogik ---------- */
 const istObjekt = z => z && (z.art === 'objekt' || z.nutzung === 'Hecke');
-const parzellen = () => S.parzellen.filter(z => !istObjekt(z)).map(x => x.name).filter(Boolean).sort((a, b) => a.localeCompare(b, 'de', { numeric: true }));
+const istArchiv = z => z && z.art === 'archiv';
+const parzellen = () => S.parzellen.filter(z => !istObjekt(z) && !istArchiv(z)).map(x => x.name).filter(Boolean).sort((a, b) => a.localeCompare(b, 'de', { numeric: true }));
 const gruende = () => [...new Set([...(S.set.gruende || []), ...S.auslauf.map(a => a.grund)].filter(Boolean))];
 const rassen = () => [...new Set(S.tiere.map(t => (t.rasse || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'de'));
 const tierById = id => S.tiere.find(t => t.id === id);
@@ -309,7 +310,7 @@ async function miniKarte(el, zz) {
   await leafletLaden();
   const map = L.map(el, { zoomControl: false, attributionControl: false, dragging: true });
   L.tileLayer('https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissimage/default/current/3857/{z}/{x}/{y}.jpeg', { maxZoom: 20, maxNativeZoom: 19 }).addTo(map);
-  for (const o of S.parzellen) { const ll = o.geo && geoLL(o); if (ll && !zs.includes(o)) L.polygon(ll, { color: '#fff', weight: 1, fillOpacity: 0.05 }).addTo(map); }
+  for (const o of S.parzellen) { const ll = o.geo && !istArchiv(o) && geoLL(o); if (ll && !zs.includes(o)) L.polygon(ll, { color: '#fff', weight: 1, fillOpacity: 0.05 }).addTo(map); }
   const grp = L.featureGroup().addTo(map);
   for (const z of zs) { const ll = geoLL(z); if (ll) L.polygon(ll, { color: '#F2C14E', weight: 3, fillColor: '#F2C14E', fillOpacity: 0.4 }).addTo(grp).bindTooltip(esc(pzKurz(z.name)), { permanent: true, direction: 'center', className: 'pzlabel' }); }
   if (!grp.getLayers().length) return;
@@ -327,7 +328,7 @@ async function karteZeichnen() {
   const filt = !!el.dataset.filter;
   for (const z of [...S.parzellen].sort((a, b) => (istObjekt(a) ? 1 : 0) - (istObjekt(b) ? 1 : 0))) {
     if (!z.geo) continue;
-    if (!filt && istObjekt(z)) continue;
+    if ((!filt && istObjekt(z)) || istArchiv(z)) continue;
     let rings; try { rings = JSON.parse(z.geo); } catch (e) { continue; }
     const lab = z.programm === 'Labiola', hecke = z.nutzung === 'Hecke';
     const col = hecke ? '#7A5A2E' : lab ? '#F2C14E' : '#FFFFFF';
@@ -820,13 +821,19 @@ const LAB_PEND = [
 ];
 // Zuordnung Labiola-Objekt -> Parzellen (Wiesen) und Einzelobjekte (eigene Fläche auf dem Plan), Flächen aus Plan Kleinstrukturen (ca.)
 const LAB_MAP = {
-  '1': { name: 'Höhe', hosts: ['1'] }, '2': { name: 'Höhe oben', hosts: ['2'] }, '18': { name: 'Höhe hinten', hosts: ['18'] },
-  '3': { name: 'Obstgarten', hosts: ['1', 'Untere Rüti'], obj: ['Obstgarten Hof', 'Obstgarten Rüti'] },
-  '5': { name: 'Alte Strasse Wiese', obj: ['Alte Strasse Wiese'] }, '6': { name: 'Alte Strasse Hecke', obj: ['Alte Strasse Hecke'] },
-  '8': { name: 'Linde Wiese', obj: ['Linde Wiese'] }, '9': { name: 'Linde Hecke', obj: ['Linde Hecke'] }, '12': { name: 'Neue Strasse Hecke', obj: ['Neue Strasse Hecke'] },
-  '14': { name: 'Linde', hosts: ['1'] }, '15': { name: 'Nussbaum Rüti', hosts: ['Untere Rüti'], obj: ['Obstgarten Rüti'] },
-  '17': { name: 'Nussbäume Hof', hosts: ['1'], obj: ['Obstgarten Hof'] }, '19': { name: 'Obstgarten Rüti', hosts: ['Untere Rüti'], obj: ['Obstgarten Rüti'] }
+  '1': { name: 'Höhe', hosts: ['Höhe'] }, '2': { name: 'Höhe oben', hosts: ['Höhe oben'] }, '18': { name: 'Höhe hinten', hosts: ['Höhe hinten'] },
+  '5': { name: 'Alte Strasse Wiese', hosts: ['Alte Strasse Wiese'] }, '8': { name: 'Linde Wiese', hosts: ['Linde Wiese'] },
+  '6': { name: 'Alte Strasse Hecke', hosts: [], obj: ['Alte Strasse Hecke'] }, '9': { name: 'Linde Hecke', hosts: [], obj: ['Linde Hecke'] }, '12': { name: 'Neue Strasse Hecke', hosts: [], obj: ['Neue Strasse Hecke'] },
+  '3': { name: 'Obstgarten', hosts: [] }, '14': { name: 'Linde', hosts: [] }, '15': { name: 'Nussbaum Rüti', hosts: [] }, '17': { name: 'Nussbäume Hof', hosts: [] }, '19': { name: 'Obstgarten Rüti', hosts: [] }
 };
+// Soll-Zustand Karte: Wiesen-Parzellen (wählbar in Formularen) und Einzelobjekte (nur Plan)
+const PZ_SOLL = [
+  { name: 'Höhe', nr: '1', art: 'wiese' }, { name: 'Höhe hinten', nr: '18', art: 'wiese' }, { name: 'Höhe oben', nr: '2', art: 'wiese' },
+  { name: 'Obere Rüti', art: 'wiese' }, { name: 'Untere Rüti', art: 'wiese' },
+  { name: 'Alte Strasse Wiese', lnr: '5', art: 'wiese', alt: ['Alte Strasse'] }, { name: 'Linde Wiese', lnr: '8', art: 'wiese', alt: ['Linde Saum', 'LindenWiese'] },
+  { name: 'Alte Strasse Hecke', lnr: '6', art: 'objekt', nutzung: 'Hecke' }, { name: 'Neue Strasse Hecke', lnr: '12', art: 'objekt', nutzung: 'Hecke', alt: ['Hecke neue Strasse'] },
+  { name: 'Linde Hecke', lnr: '9', art: 'objekt', nutzung: 'Hecke', alt: ['LindenHecke'] }
+];
 const LAB_EINZEL = [
   { name: "Alte Strasse Wiese", nutzung: 'Wiese', labiolaNr: '5', geo: "[[[8.1397045, 47.5254184], [8.1396928, 47.5254243], [8.1396286, 47.5255294], [8.1396587, 47.5256762], [8.1395785, 47.525755], [8.1395855, 47.5258099], [8.1395925, 47.5258125], [8.1396065, 47.525805], [8.1396424, 47.5258006], [8.1397248, 47.5257779], [8.1397358, 47.5257799], [8.139745, 47.5257725], [8.1397871, 47.5257669], [8.1397949, 47.5257605], [8.1398369, 47.525755], [8.1398556, 47.5257464], [8.1398883, 47.525743], [8.1400019, 47.5257138], [8.1400587, 47.5258187], [8.1400034, 47.5258301], [8.1400004, 47.5258354], [8.1399879, 47.5258345], [8.1399739, 47.5258419], [8.1399552, 47.5258421], [8.1399459, 47.5258495], [8.1399116, 47.5258529], [8.139893, 47.5258636], [8.1398556, 47.525868], [8.139809, 47.5258842], [8.13977, 47.5258887], [8.1397623, 47.5258961], [8.1397249, 47.5259006], [8.1396814, 47.5259167], [8.1396064, 47.5259129], [8.13958, 47.5259247], [8.1395519, 47.5259281], [8.1395333, 47.5259366], [8.1395177, 47.5259367], [8.1395068, 47.5259431], [8.1394305, 47.5259595], [8.1394259, 47.5259648], [8.1393823, 47.5259714], [8.1393714, 47.5259778], [8.1392951, 47.5259952], [8.1392821, 47.5260085], [8.1392916, 47.5260201], [8.1392968, 47.5260644], [8.1393073, 47.5260882], [8.1393183, 47.5260902], [8.1393618, 47.5260762], [8.1394366, 47.5260662], [8.1394552, 47.5260577], [8.1395565, 47.5260412], [8.1395689, 47.5260337], [8.1396126, 47.5260292], [8.139667, 47.526013], [8.1396764, 47.5260161], [8.1396966, 47.5260065], [8.1397185, 47.5260064], [8.1397215, 47.5260011], [8.1397527, 47.5259977], [8.1397916, 47.5259848], [8.1398259, 47.5259825], [8.1398553, 47.5259664], [8.1398725, 47.5259642], [8.1399253, 47.5259406], [8.1399346, 47.5259416], [8.1400167, 47.5258903], [8.1400747, 47.525845], [8.1400746, 47.5258355], [8.1401254, 47.5257866], [8.1401223, 47.5257823], [8.1401361, 47.5257675], [8.1401345, 47.525759], [8.1401453, 47.5257505], [8.1401421, 47.5257452], [8.1401529, 47.5257335], [8.1401481, 47.5257293], [8.1401589, 47.5257176], [8.1401474, 47.5256733], [8.1401503, 47.5256595], [8.1401234, 47.5256279], [8.1401124, 47.5256238], [8.1400996, 47.5256027], [8.1399761, 47.5255331], [8.1399683, 47.5255342], [8.1399525, 47.5255227], [8.1399275, 47.5255154], [8.1399243, 47.5255091], [8.1399165, 47.5255112], [8.1399023, 47.5254997], [8.1398725, 47.5254935], [8.1398473, 47.5254778], [8.1398113, 47.5254664], [8.1397971, 47.5254549], [8.1397814, 47.5254528], [8.1397437, 47.5254319], [8.1397045, 47.5254184]]]" },
   { name: "Alte Strasse Hecke", nutzung: 'Hecke', labiolaNr: '6', geo: "[[[8.1399942, 47.5257234], [8.1395926, 47.5258168], [8.1395825, 47.5258237], [8.1395843, 47.5258374], [8.1396178, 47.5258901], [8.1396195, 47.5259038], [8.1396469, 47.5259106], [8.1396797, 47.5259104], [8.1400407, 47.5258162], [8.1400413, 47.5257998], [8.1399942, 47.5257234]]]" },
@@ -839,7 +846,7 @@ const LAB_EINZEL = [
 const pzNorm = s => String(s || '').toLowerCase().replace(/ü/g, 'u').replace(/ä/g, 'a').replace(/ö/g, 'o').replace(/[^a-z0-9]/g, '');
 // Parzelle finden: Nummer (Name beginnt mit Nr.) oder Name (unscharf)
 function pzFinde(t, nurWiese = true) {
-  const L = S.parzellen.filter(z => !nurWiese || !istObjekt(z));
+  const L = S.parzellen.filter(z => !istArchiv(z) && (!nurWiese || !istObjekt(z)));
   if (/^\d+$/.test(t)) { const re = new RegExp(`^\\s*(obj\\.?|objekt)?\\s*${t}\\b`, 'i'); return L.find(z => re.test(z.name || '')) || null; }
   const n = pzNorm(t); return L.find(z => pzNorm(z.name) === n) || L.find(z => pzNorm(z.name).includes(n) || (pzNorm(z.name).length > 3 && n.includes(pzNorm(z.name)))) || null;
 }
@@ -851,7 +858,7 @@ function labPzs(o) {
   const m = LAB_MAP[o.nr] || {}, out = [];
   if (o.parzelle) { const z = S.parzellen.find(x => x.name === o.parzelle); if (z) out.push(z); }
   for (const h of (m.hosts || [o.nr])) { const z = pzFinde(h); if (z && !out.includes(z)) out.push(z); }
-  for (const n of (m.obj || [])) { const z = S.parzellen.find(x => istObjekt(x) && pzNorm(x.name) === pzNorm(n)); if (z && !out.includes(z)) out.push(z); }
+  for (const n of (m.obj || [])) { const z = S.parzellen.find(x => istObjekt(x) && !istArchiv(x) && pzNorm(x.name) === pzNorm(n)); if (z && !out.includes(z)) out.push(z); }
   return out;
 }
 const labHosts = o => labPzs(o).filter(z => !istObjekt(z));
@@ -861,14 +868,31 @@ function labName(nr) { const m = LAB_MAP[String(nr)]; if (m) return m.name; cons
 const labAufg = () => S.aufgaben.filter(a => !a.archiv);
 function labTeil(y) { const a = S.aufgaben.find(x => x.vid === 'o1-frueh'); return a && a.teil ? a.teil[String(y)] || '' : ''; }
 // Seed: Objekte und Pendenzen aus dem Vertrag (einmalig), 2025 und 2026 als erledigt
-function labEinzelSeed() {
-  if (!S.loaded.parzellen || !S.loaded.set || S.set.labEinzel === 3) return;
-  S.set.labEinzel = 3; W.setSettings({ ...S.set, labEinzel: 3 });
-  const ALT = { 'Alte Strasse Wiese': 'Alte Strasse', 'Linde Wiese': 'LindenWiese', 'Linde Hecke': 'LindenHecke', 'Neue Strasse Hecke': 'Hecke neue Strasse', 'Obstgarten Rüti': 'Rütti Bäume' };
-  for (const e of LAB_EINZEL) { const alt = S.parzellen.find(z => pzNorm(z.name) === pzNorm(e.name)) || S.parzellen.find(z => ALT[e.name] && z.name === ALT[e.name] && istObjekt(z)); put('parzellen', { ...(alt || {}), ...e, geo: alt && alt.geo ? alt.geo : e.geo, art: 'objekt', programm: 'Labiola' }); }
+// Parzellen abgleichen (einmalig): Namen vereinheitlichen, Duplikate entfernen, Einträge umbenennen, Rest ausblenden
+function pzMigration() {
+  if (!['parzellen', 'feld', 'auslauf', 'set'].every(c => S.loaded[c]) || S.set.pzMig === 4 || !S.parzellen.length) return;
+  S.set.pzMig = 4; W.setSettings({ ...S.set, pzMig: 4 });
+  const seedGeo = n => (LAB_EINZEL.find(e => pzNorm(e.name) === pzNorm(n)) || {}).geo;
+  const used = new Set(), umben = {};
+  for (const w of PZ_SOLL) {
+    const lose = x => pzNorm(x).replace(/(.)\1+/g, '$1'), norms = [w.name, ...(w.alt || [])].map(lose), re = w.nr ? new RegExp(`^\\s*${w.nr}\\b`) : null;
+    const cand = S.parzellen.filter(z => !used.has(z.id) && (norms.includes(lose(z.name)) || (re && re.test(z.name || '')) || (!w.nr && !w.lnr && lose(z.name).includes(norms[0]))));
+    const keep = cand.find(z => !z.labiolaNr && z.geo) || cand.find(z => z.geo) || cand[0];
+    cand.forEach(z => { used.add(z.id); if (z !== keep) { if (z.name !== w.name) umben[z.name] = w.name; del('parzellen', z.id); } });
+    if (keep && keep.name !== w.name) umben[keep.name] = w.name;
+    put('parzellen', { ...(keep || {}), name: w.name, art: w.art, ...(w.nutzung ? { nutzung: w.nutzung } : {}), ...(w.lnr ? { labiolaNr: w.lnr, programm: 'Labiola' } : {}), geo: keep && keep.geo ? keep.geo : seedGeo(w.name) || '' });
+  }
+  const weg = [];
+  const soll = new Set(PZ_SOLL.map(w => w.name));
+  for (const z of [...S.parzellen]) if (!used.has(z.id) && !soll.has(z.name)) { if (/^Obstgarten (Hof|Rüti)$|^Rütti Bäume$/.test(z.name)) del('parzellen', z.id); else if (z.art !== 'archiv') { weg.push(z.name); put('parzellen', { ...z, art: 'archiv' }); } }
+  for (const f of S.feld) if (f.parzelle && umben[f.parzelle]) put('feld', { ...f, parzelle: umben[f.parzelle] });
+  for (const a of S.auslauf) if (a.parzelle && umben[a.parzelle]) put('auslauf', { ...a, parzelle: umben[a.parzelle] });
+  for (const o of S.labiola) if (o.parzelle) put('labiola', { ...o, parzelle: '' });
+  const n = Object.keys(umben).length;
+  setTimeout(() => openSheet('Parzellen abgeglichen', `<p>${n ? 'Umbenannt: ' + esc(Object.entries(umben).map(([a, b]) => a + ' → ' + b).join(', ')) : 'Keine Umbenennung nötig.'}</p>${weg.length ? `<p>Ausgeblendet (nicht in der Liste): ${esc(weg.join(', '))}</p>` : ''}<p class="small muted">Bestehende Einträge in Feldkalender und Auslaufjournal wurden mit umbenannt.</p>`), 800);
 }
 function labiolaSeed() {
-  labEinzelSeed();
+  pzMigration();
   if (!S.loaded.labiola || !S.loaded.aufgaben || !S.loaded.set || !S.loaded.lprotokoll || S.set.labSeed === LAB_VERTRAG) return;
   S.set.labSeed = LAB_VERTRAG; W.setSettings({ ...S.set, labSeed: LAB_VERTRAG });
   for (const o of LAB_OBJ) { const alt = labObj(o.nr); put('labiola', { ...(alt || {}), ...o, parzelle: alt && alt.parzelle || '', vertrag: LAB_VERTRAG }); }
