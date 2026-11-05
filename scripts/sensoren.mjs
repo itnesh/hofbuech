@@ -59,6 +59,17 @@ async function akenza(id, deviceId, name, leer, voll) {
   console.log(name, 'Felder', keys.join(','), '-> Wert', kW, 'Batterie', kB);
   console.log(name, 'Zeitraum', new Date(rows[0].t).toISOString(), 'bis', new Date(rows[rows.length - 1].t).toISOString(), 'letzte Werte', rows.slice(-3).map(x => x.d[kW]).join(', '));
   const pts = rows.filter(x => typeof x.d[kW] === 'number' && echoOk(x.d)).map(x => [x.t, Math.round(x.d[kW] * 10) / 10]);
+  if (process.env.CORS_TEST) {
+    const R = rows.filter(x => typeof x.d[kW] === 'number'), avg = a => a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length * 10) / 10 : null;
+    const st = a => ({ n: a.length, srssi: avg(a.map(x => x.d.srssi)), src: avg(a.map(x => x.d.src)), src10: Math.round(a.filter(x => x.d.src >= 9).length / Math.max(1, a.length) * 100) + '%', bad: a.filter(x => !echoOk(x.d)).length });
+    const bins = {}; R.forEach(x => { const b = Math.floor(x.d[kW] / 10) * 10; (bins[b] = bins[b] || []).push(x); });
+    console.log(name, 'DIAG_BIN', JSON.stringify(Object.fromEntries(Object.keys(bins).sort((a, b) => a - b).map(b => [b + 'cm', st(bins[b])]))));
+    const tr = { fuellt: [], sinkt: [], stabil: [] };
+    R.forEach((x, i) => { if (i < 3) return; const d = x.d[kW] - avg(R.slice(i - 3, i).map(y => y.d[kW])); (d < -2 ? tr.fuellt : d > 2 ? tr.sinkt : tr.stabil).push(x); });
+    console.log(name, 'DIAG_TREND', JSON.stringify(Object.fromEntries(Object.entries(tr).map(([k, v]) => [k, st(v)]))));
+    const tg = {}; R.forEach(x => { const k = new Date(x.t + 3600e3).toISOString().slice(0, 10); (tg[k] = tg[k] || []).push(x); });
+    console.log(name, 'DIAG_TAG', Object.keys(tg).sort().map(k => { const a = tg[k]; return `${k.slice(5)} u${avg(a.map(x => x.d[kW]))} r${avg(a.map(x => x.d.srssi))} c${avg(a.map(x => x.d.src))} t${avg(a.map(x => x.d.temperature))} b${a.filter(x => !echoOk(x.d)).length}`; }).join(' ; '));
+  }
   const echoFehler = rows.length - pts.length; if (echoFehler) console.log(name, 'Fehlecho ignoriert (SRC/SRSSI)', echoFehler);
   const last = rows[rows.length - 1];
   const serie48 = pts.filter(p => p[0] >= now - 48 * 3600e3);
