@@ -320,3 +320,8 @@ html,body{overflow-x:hidden;max-width:100%}
 .ausb-tab span.on{outline:2px solid #2E8B62}
 .ausb-tab small{font-size:11px;color:var(--muted)}
 .ausb-tab b{font-size:14px}
+.lab-mass{font-size:16px;line-height:1.5;white-space:pre-wrap}
+.lab-mass-k{font-size:14px !important;color:var(--ink,#1F2A24) !important;line-height:1.45;margin-top:4px}
+.seg.mini{margin:0}
+.seg.mini button{font-size:13px;padding:0 10px}
+.karte.klein{height:220px;margin-bottom:10px}

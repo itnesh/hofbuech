@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.15.3';
+const VERSION = '1.16.0';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -182,7 +182,7 @@ function verbotSegmente(y) {
 }
 function imVerbot(d) { if (inAlp(d)) return false; for (const y of [+d.slice(0, 4), +d.slice(0, 4) + 1]) { const [a, b] = verbotFenster(y); if (d >= a && d <= b) return true; } return false; }
 
-function aufgabeFaellig(a, y) { return a.art === 'einmalig' ? (a.faellig && a.faellig.startsWith(String(y)) ? a.faellig : null) : (a.faelligMT ? `${y}-${a.faelligMT}` : null); }
+function aufgabeFaellig(a, y) { if (a.archiv || (a.art !== 'einmalig' && ((a.vonJahr && +y < a.vonJahr) || (a.bisJahr && +y > a.bisJahr)))) return null; return a.art === 'einmalig' ? (a.faellig && a.faellig.startsWith(String(y)) ? a.faellig : null) : (a.faelligMT ? `${y}-${a.faelligMT}` : null); }
 function aufgabenOffen(y) { return S.aufgaben.map(a => ({ a, d: aufgabeFaellig(a, y) })).filter(x => x.d && !(x.a.erledigt || {})[String(y)]); }
 function agenda(tage = 150) {
   const d = today(), end = addDays(d, tage), it = [];
@@ -201,7 +201,7 @@ function agenda(tage = 150) {
   for (const y of [+d.slice(0, 4), +d.slice(0, 4) + 1]) { const [a, b] = alpFenster(y); const ist = alpIst()[String(y)]; if (!ist) it.push({ d: a, k: 'Gepl. Alpauffahrt', n: '', c: 'grey', cat: 'auslauf' }); if (!ist || !ist[1]) it.push({ d: b, k: 'Gepl. Alpabfahrt', n: '', c: 'grey', cat: 'auslauf' }); }
   for (const y of [+d.slice(0, 4), +d.slice(0, 4) + 1]) {
     it.push(...pzRegeln(y));
-    for (const { a, d: fd } of aufgabenOffen(y)) it.push({ d: fd, k: a.objekt || 'Labiola', n: a.titel, c: fd < d ? 'red' : 'warn', keep: fd < d, link: '#/labiola', cat: 'labiola' });
+    for (const { a, d: fd } of aufgabenOffen(y)) it.push({ d: fd, k: a.objekt ? `Labiola ${labName(labNr(a.objekt))}` : 'Labiola', n: labTitel(a, y), c: fd < d ? 'red' : 'warn', keep: fd < d, link: '#/labiola', cat: 'labiola' });
   }
   return it.filter(x => (x.keep || x.d >= addDays(d, -2)) && x.d <= end).sort((a, b) => a.d < b.d ? -1 : a.d > b.d ? 1 : 0);
 }
@@ -209,7 +209,7 @@ function mmtt(x) { const t = String(x || '').trim(); let m = t.match(/^(\d{1,2})
 const pzInfo = n => S.parzellen.find(x => x.name === n);
 function pzRegeln(y) {
   const out = [];
-  for (const o of S.labiola) if (o.szp) out.push({ d: `${y}-${o.szp}`, k: 'Schnitt erlaubt', n: `Obj. ${o.nr} ${o.flurname || ''}`, c: 'green', link: '#/labiola', cat: 'labiola' });
+  for (const o of S.labiola) if (o.szp) out.push({ d: `${y}-${o.szp}`, k: 'Schnitt erlaubt', n: `${labName(o.nr)} (Obj. ${o.nr})`, c: 'green', link: '#/labiola', cat: 'labiola' });
   for (const z of S.parzellen) {
     if (z.schnittAb) out.push({ d: `${y}-${z.schnittAb}`, k: 'Schnitt erlaubt', n: z.name, c: 'green', link: '#/labiola', cat: 'labiola' });
     if (z.fruehBis) out.push({ d: `${y}-${z.fruehBis}`, k: 'Frühschnitt bis', n: z.name, c: 'warn', link: '#/labiola', cat: 'labiola' });
@@ -265,11 +265,11 @@ function ortAm(tid, d, list = sortedAuslauf()) { let best = null; for (const a o
 /* ---------- Router ---------- */
 let rq = false;
 function schedule() { if (rq) return; rq = true; requestAnimationFrame(() => { rq = false; render(); }); }
-const UI = { tierFilter: { kat: '', lakt: '', q: '', sort: 'alter', abg: false }, jTab: '', lTab: 'pendenzen', kalMonat: today().slice(0, 7), kalTag: '', fTab: 'austrag', jahr: String(new Date().getFullYear()) };
+const UI = { tierFilter: { kat: '', lakt: '', q: '', sort: 'alter', abg: false }, jTab: '', lTab: 'pendenzen', lPz: '', lAlle: false, lJahr: '', kalMonat: today().slice(0, 7), kalTag: '', fTab: 'austrag', jahr: String(new Date().getFullYear()) };
 
 function render() {
   if (mode === 'firebase' && !USER) return;
-  feldMigration(); auslaufBereinigen(); lagerKorrektur(); behFreiKorr(); if (!SENS.zuletzt) setTimeout(() => sensorenLaden(), 0);
+  feldMigration(); auslaufBereinigen(); lagerKorrektur(); behFreiKorr(); labiolaSeed(); if (!SENS.zuletzt) setTimeout(() => sensorenLaden(), 0);
   if (document.querySelector('.sheet.show [data-dirty="1"]')) return; // Formular offen und bearbeitet: nicht neu zeichnen
   const h = location.hash.replace(/^#\/?/, '') || 'start';
   const p = h.split('/');
@@ -329,6 +329,7 @@ async function karteZeichnen() {
     const poly = L.polygon(rings.map(r => r.map(([x, yy]) => [yy, x])), { color: col, weight: 2, fillColor: col, fillOpacity: lab ? 0.28 : 0.12 }).addTo(grp);
     const f = S.feld.filter(x => x.parzelle === z.name && (x.datum || '').startsWith(y)).sort((a, b) => a.datum < b.datum ? 1 : -1).slice(0, 3);
     const md = v => v ? `${v.slice(3)}.${v.slice(0, 2)}.` : '';
+    if (el.dataset.filter) { const sel = UI.lPz === z.name; poly.setStyle(sel ? { color: '#E08A1E', weight: 4, fillColor: '#E08A1E', fillOpacity: 0.45 } : UI.lPz ? { fillOpacity: 0.08, opacity: 0.6 } : {}); poly.on('click', () => { UI.lPz = sel ? '' : z.name; render(); }); poly.bindTooltip(esc(pzKurz(z.name)), { permanent: !hecke && num(z.ha) > 0.1, direction: 'center', className: 'pzlabel' }); continue; }
     poly.bindPopup(`<b>${esc(z.name)}</b><br>${nf(num(z.ha))} ha${z.programm ? ' · ' + esc(z.programm) : ''}${z.schnittAb ? '<br>Schnitt ab ' + md(z.schnittAb) : ''}${z.fruehBis ? '<br>Frühschnitt bis ' + md(z.fruehBis) : ''}${z.duengen === 'nein' ? '<br>keine Düngung' : ''}${f.length ? '<br><small>' + f.filter(x => FELD[x.typ]).map(x => fmtS(x.datum) + ' ' + fL(x)).join('<br>') + '</small>' : ''}`);
     poly.bindTooltip(esc(z.name.replace(/\s*\(.*\)/, '')), { permanent: !hecke && num(z.ha) > 0.1, direction: 'center', className: 'pzlabel' });
   }
@@ -763,29 +764,140 @@ function anaWetter() {
   return (a ? agroKarte(a) : '<div class="empty">Noch keine Wetterdaten.</div>') + graf;
 }
 
+/* ---------- Labiola: Vertrag GBV 2026-2033 (Liste der Vertragsobjekte vom 24.09.2025) ---------- */
+const LAB_VERTRAG = 'gbv2026';
+const LAB_JAHRE = ['2025', '2026', '2027', '2028', '2029', '2030', '2031', '2032', '2033'];
+const LAB_OBJ = [
+  { nr: '1', flurname: 'Bannhalde Höhe', typ: 'Extensiv genutzte Wiese · Fromentalwiese ungedüngt', aren: 186, einheit: 'a', szp: '', duengen: 'nein', massnahmen: 'B3.2: 1. Schnitt gestaffelt (1 Objekt). 1/3-1/2 der Fläche bis spätestens Ende Mai schneiden, restliche Fläche frühestens 4 Wochen später (ca. ab 1. Juli) - jährlich wechseln. Zurechnungsfläche für Obstgarten Obj. 3.' },
+  { nr: '5', flurname: 'Gemeinde Tal', typ: 'Extensiv genutzte Wiese · Fromentalwiese ungedüngt', aren: 18, einheit: 'a', szp: '07-15', duengen: 'nein', massnahmen: 'B7: Später Schnitt (frühestens 15.07.).' },
+  { nr: '8', flurname: 'Gemeinde Höhe', typ: 'Extensiv genutzte Wiese · Magerwiese mit einem Schnitt', aren: 4, einheit: 'a', szp: '07-15', duengen: 'nein', massnahmen: 'B6.2: Fauna schonende Futterernte (z.B. Balkenmäher / Rapid, kein Mähaufbereiter, nicht zetten).' },
+  { nr: '2', flurname: 'Bannhalde', typ: 'Extensiv genutzte Wiese · Magerwiese mit zwei Schnitten', aren: 71, einheit: 'a', szp: '06-15', duengen: 'nein', massnahmen: 'B13: Zweiter Schnitt (zwingend). B1: Rückzugsstreifen. 3 Asthaufen mit Aufzuchtkammer erstellen (Wieselförderung im Jurapark), an der Grenze zum Obj. 1, über die Länge verteilt (ca. 30 m Abstand zwischen den Haufen), möglichst bis Ende Februar, spätestens bis Ende Mai 2026 (3 Kleinstrukturen).' },
+  { nr: '18', flurname: 'Bannhalde', typ: 'Extensiv genutzte Wiese · Magerwiese mit zwei Schnitten', aren: 17, einheit: 'a', szp: '06-15', duengen: 'nein', massnahmen: 'B13: Zweiter Schnitt (zwingend). B1: Rückzugsstreifen. Bewirtschaftung zusammen mit Obj. 2.' },
+  { nr: '9', flurname: 'Gemeinde Höhe', typ: 'Hecke mit Krautsaum · Qualitätsstufe II', aren: 2, einheit: 'a', szp: '07-15', duengen: 'nein', massnahmen: 'L3: Kombi-Lebensraum Hecke - artenreiche Wiese. KLP-Hecke, 3 m Saum rundherum. Der Saum wird mit Obj. 8 gemäht (sauber bis an die Hecke mähen). Erste Pflege der Hecke spätestens im Winter 2026/27: Feldahorn ausholzen, Schwarzdorn und Hartriegel zurückschneiden.' },
+  { nr: '6', flurname: 'Gemeinde Tal', typ: 'Hecke mit Krautsaum · Qualitätsstufe I', aren: 4, einheit: 'a', szp: '07-15', duengen: 'nein', massnahmen: 'S2.2: Kleinstrukturen. KLP-Hecke, 33 m lang mit 3 m Saum beidseitig. Angrenzend auf Obj. 1 zwei Stapel Totholz mit Bohrlöchern erstellen (gemäss Merkblatt "Kleinstrukturen") bis Ende Mai 2025 (2 Kleinstrukturen). Jährlich einen Teil der Hasel auf Stock setzen. Erster Eingriff spätestens im Winter 2026/27.' },
+  { nr: '12', flurname: 'Bannhalde Höhe', typ: 'Hecke mit Krautsaum · Qualitätsstufe I', aren: 4, einheit: 'a', szp: '06-15', duengen: 'nein', massnahmen: 'B9: Saumschnitt gestaffelt. KLP-Hecke mit einseitigem Saum 3 m. Diesen auch entlang des Waldrandes stehen lassen und als Ganzes gestaffelt nutzen (2. Teil mind. 6 Wochen später). Hecke im Laufe der Vertragsperiode selektiv pflegen, dabei schnellwachsende Gehölze v.a. Eschen, Ahorn, Nussbaum herausholzen.' },
+  { nr: '3', flurname: 'Bannhalde Höhe', typ: 'Hochstamm-Feldobstbäume · Qualitätsstufe II', aren: 94, einheit: 'Bäume', szp: '', duengen: '', massnahmen: 'S5: Nistgelegenheit. Bäume pflegen und bei Abgang ersetzen. Mindestens 13 Nistkästen erhalten, diese jeweils im Winter bis Ende Januar auswischen. Strukturen sind mind. 3 verschiedene Obstarten, Zurechnungsfläche im Unternutzen, 2 Linden, 2 Bäume mit Efeu und 1 Baum mit Totholz. Zurechnungsfläche ist Obj. 1.' },
+  { nr: '19', flurname: 'Rütti', typ: 'Hochstamm-Feldobstbäume · Qualitätsstufe II', aren: 26, einheit: 'Bäume', szp: '', duengen: '', massnahmen: 'S5: Nistgelegenheit. Bestandteil von Obj. 3.' },
+  { nr: '15', flurname: 'Rütti', typ: 'Nussbäume · Qualitätsstufe II', aren: 1, einheit: 'Baum', szp: '', duengen: '', massnahmen: 'S5: Nistgelegenheit. Zählt zum Obj. 3.' },
+  { nr: '17', flurname: 'Bannhalde Höhe', typ: 'Nussbäume · Qualitätsstufe II', aren: 3, einheit: 'Bäume', szp: '', duengen: '', massnahmen: 'S5: Nistgelegenheit. Zählt zum Obj. 3.' },
+  { nr: '14', flurname: 'Bannhalde', typ: 'Einzelbaum (Linde)', aren: 1, einheit: 'Baum', szp: '', duengen: '', massnahmen: 'L5: Verbindungsstruktur. Linde erhalten.' }
+];
+// j = jährlich (vonJahr-bisJahr), e = einmalig. ab/faellig als MM-TT bzw. Datum. nurAb = kein Enddatum im Vertrag (Saisonende 31.10.)
+const LAB_PEND = [
+  { vid: 'o1-frueh', objekt: 'Obj. 1', titel: '1. Schnitt gestaffelt: 1/3 bis 1/2 der Fläche schneiden (Teil jährlich wechseln)', art: 'jaehrlich', faelligMT: '05-31', teilwahl: true, notiz: 'Jährlich wechseln: oben / unten. Beim Erledigen angeben, welcher Teil geschnitten wurde.' },
+  { vid: 'o1-rest', objekt: 'Obj. 1', titel: 'Restfläche schneiden, frühestens 4 Wochen nach dem 1. Teil (ca. ab 01.07.)', art: 'jaehrlich', abMT: '07-01', faelligMT: '10-31', nurAb: true, nach: { vid: 'o1-frueh', tage: 28 } },
+  { vid: 'o2-s1', objekt: 'Obj. 2', titel: '1. Schnitt ab 15.06., Rückzugsstreifen stehen lassen (evtl. mit 2. Staffelung Obj. 1)', art: 'jaehrlich', abMT: '06-15', faelligMT: '10-31', nurAb: true },
+  { vid: 'o2-s2', objekt: 'Obj. 2', titel: '2. Schnitt (zwingend), Rückzugsstreifen stehen lassen', art: 'jaehrlich', abMT: '07-15', faelligMT: '10-31', nurAb: true, nach: { vid: 'o2-s1', tage: 1 } },
+  { vid: 'o18-s1', objekt: 'Obj. 18', titel: '1. Schnitt ab 15.06., Rückzugsstreifen (zusammen mit Obj. 2)', art: 'jaehrlich', abMT: '06-15', faelligMT: '10-31', nurAb: true },
+  { vid: 'o18-s2', objekt: 'Obj. 18', titel: '2. Schnitt (zwingend), Rückzugsstreifen', art: 'jaehrlich', abMT: '07-15', faelligMT: '10-31', nurAb: true, nach: { vid: 'o18-s1', tage: 1 } },
+  { vid: 'o12-saum1', objekt: 'Obj. 12', titel: 'Saumschnitt gestaffelt: 1. Teil ab 15.06. (inkl. Saum entlang Waldrand)', art: 'jaehrlich', abMT: '06-15', faelligMT: '10-31', nurAb: true },
+  { vid: 'o12-saum2', objekt: 'Obj. 12', titel: 'Saumschnitt 2. Teil, mind. 6 Wochen nach dem 1. Teil', art: 'jaehrlich', abMT: '07-27', faelligMT: '10-31', nurAb: true, nach: { vid: 'o12-saum1', tage: 42 } },
+  { vid: 'o5-s1', objekt: 'Obj. 5', titel: 'Später Schnitt: frühestens ab 15.07.', art: 'jaehrlich', abMT: '07-15', faelligMT: '10-31', nurAb: true },
+  { vid: 'o6-saum', objekt: 'Obj. 6', titel: 'Saum beidseitig (3 m) mähen ab 15.07.', art: 'jaehrlich', abMT: '07-15', faelligMT: '10-31', nurAb: true },
+  { vid: 'o8-s1', objekt: 'Obj. 8', titel: 'Schnitt ab 15.07., Fauna schonend (Balkenmäher / Rapid, nicht zetten)', art: 'jaehrlich', abMT: '07-15', faelligMT: '10-31', nurAb: true },
+  { vid: 'o9-saum', objekt: 'Obj. 9', titel: 'Saum 3 m rundherum mit Obj. 8 mähen, sauber bis an die Hecke', art: 'jaehrlich', abMT: '07-15', faelligMT: '10-31', nurAb: true },
+  { vid: 'o3-nist', objekt: 'Obj. 3', titel: 'Nistkästen (mind. 13) auswischen', art: 'jaehrlich', faelligMT: '01-31' },
+  { vid: 'o3-baeume', objekt: 'Obj. 3', titel: 'Hochstamm- und Nussbäume pflegen, Abgänge ersetzen (Obj. 3, 15, 17, 19); Strukturen erhalten', art: 'jaehrlich', faelligMT: '12-31', notiz: 'Mind. 3 Obstarten, 2 Linden, 2 Bäume mit Efeu, 1 Baum mit Totholz.' },
+  { vid: 'klein', objekt: 'Obj. 2', titel: 'Kleinstrukturen erhalten: 3 Asthaufen (Obj. 2) und 2 Totholzstapel (Obj. 6)', art: 'jaehrlich', faelligMT: '12-31', notiz: 'Vertrag: mind. 3 Kleinstrukturen.' },
+  { vid: 'o6-hasel', objekt: 'Obj. 6', titel: 'Einen Teil der Hasel auf Stock setzen (Winter)', art: 'jaehrlich', faelligMT: '02-28', vonJahr: 2027, notiz: 'Erster Eingriff spätestens im Winter 2026/27.' },
+  { vid: 'o6-totholz', objekt: 'Obj. 6', titel: '2 Stapel Totholz mit Bohrlöchern erstellen (Merkblatt Kleinstrukturen)', art: 'einmalig', faellig: '2025-05-31' },
+  { vid: 'o2-asthaufen', objekt: 'Obj. 2', titel: '3 Asthaufen mit Aufzuchtkammer (Wiesel) an der Grenze zu Obj. 1, ca. 30 m Abstand', art: 'einmalig', faellig: '2026-05-31', notiz: 'Möglichst bis Ende Februar, spätestens Ende Mai 2026.' },
+  { vid: 'o9-pflege', objekt: 'Obj. 9', titel: 'Erste Heckenpflege: Feldahorn ausholzen, Schwarzdorn und Hartriegel zurückschneiden', art: 'einmalig', ab: '2026-11-01', faellig: '2027-02-28' },
+  { vid: 'o12-pflege', objekt: 'Obj. 12', titel: 'Hecke selektiv pflegen: schnellwachsende Gehölze (Esche, Ahorn, Nussbaum) herausholzen', art: 'einmalig', ab: '2026-11-01', faellig: '2033-02-28', notiz: 'Im Laufe der Vertragsperiode.' }
+];
+const labNr = s => { const m = String(s || '').match(/(\d+)/); return m ? m[1] : ''; };
+const labObj = nr => S.labiola.find(o => String(o.nr) === String(nr));
+function labPz(o) {
+  if (!o) return null;
+  if (o.parzelle) { const z = S.parzellen.find(x => x.name === o.parzelle); if (z) return z; }
+  const re = new RegExp(`^\\s*(obj\\.?|objekt)?\\s*${o.nr}\\b`, 'i');
+  return S.parzellen.find(z => re.test(z.name || '')) || null;
+}
+const pzKurz = n => String(n || '').replace(/^\s*(obj\.?|objekt)?\s*\d+\s*[-–:.]?\s*/i, '').replace(/\s*\(.*\)\s*$/, '').trim() || n;
+function labName(nr) { const o = labObj(nr), z = labPz(o); return z ? pzKurz(z.name) : o ? (o.flurname || `Obj. ${nr}`) : `Obj. ${nr}`; }
+const labAufg = () => S.aufgaben.filter(a => !a.archiv);
+function labTeil(y) { const a = S.aufgaben.find(x => x.vid === 'o1-frueh'); return a && a.teil ? a.teil[String(y)] || '' : ''; }
+// Seed: Objekte und Pendenzen aus dem Vertrag (einmalig), 2025 und 2026 als erledigt
+function labiolaSeed() {
+  if (!S.loaded.labiola || !S.loaded.aufgaben || !S.loaded.set || !S.loaded.lprotokoll || S.set.labSeed === LAB_VERTRAG) return;
+  S.set.labSeed = LAB_VERTRAG; W.setSettings({ ...S.set, labSeed: LAB_VERTRAG });
+  for (const o of LAB_OBJ) { const alt = labObj(o.nr); put('labiola', { ...(alt || {}), ...o, parzelle: alt && alt.parzelle || '', vertrag: LAB_VERTRAG }); }
+  for (const a of S.aufgaben) if (!a.vid && !a.archiv) put('aufgaben', { ...a, archiv: true });
+  // Teil oben/unten Obj. 1 aus dem bisherigen Protokoll
+  const teil = {}; for (const p of S.lprotokoll) if (labNr(p.objekt) === '1' && (p.datum || '').slice(5) <= '05-31') { const t = /ober/i.test(p.teil || '') ? 'oben' : /unter/i.test(p.teil || '') ? 'unten' : ''; if (t) teil[p.datum.slice(0, 4)] = t; }
+  const T = today();
+  for (const p of LAB_PEND) {
+    if (S.aufgaben.some(a => a.vid === p.vid)) continue;
+    const er = {};
+    if (p.art === 'einmalig') { const y = p.faellig.slice(0, 4); if (y <= '2026') er[y] = p.faellig < T ? p.faellig : T; }
+    else for (const y of ['2025', '2026']) { if (+y < (p.vonJahr || 2026)) continue; const d = `${y}-${p.faelligMT}`; er[y] = d < T ? d : T; }
+    put('aufgaben', { ...p, vonJahr: p.vonJahr || 2026, bisJahr: 2033, erledigt: er, ...(p.teilwahl ? { teil } : {}), vertrag: LAB_VERTRAG });
+  }
+}
+// Frühestens-Datum einer Pendenz im Jahr y (abhängig von einer vorherigen Pendenz)
+function labAb(a, y) {
+  let ab = a.art === 'einmalig' ? a.ab || '' : a.abMT ? `${y}-${a.abMT}` : '';
+  if (a.nach) { const v = S.aufgaben.find(x => x.vid === a.nach.vid), d = v && (v.erledigt || {})[String(y)]; if (d) { const n = addDays(d, a.nach.tage); if (n > ab) ab = n; } }
+  return ab;
+}
+function labTitel(a, y) {
+  if (!a.teilwahl) return a.titel;
+  const t = labTeil(y), v = labTeil(+y - 1);
+  return `1. Schnitt gestaffelt: 1/3 bis 1/2 der Fläche${t ? ` - geschnitten: ${t === 'oben' ? 'oberer' : 'unterer'} Teil` : v ? ` - dieses Jahr: ${v === 'oben' ? 'unterer' : 'oberer'} Teil (${+y - 1}: ${v})` : ' (Teil jährlich wechseln)'}`;
+}
+// Jahreskalender (Monate als Spalten, Pendenzen als Balken)
+function labGantt(items, y) {
+  if (!items.length) return '';
+  const W = chartW(), lw = Math.min(150, Math.round(W * 0.34)), rh = 18, top = 18, H = top + items.length * rh + 6, cw = (W - lw - 4) / 12;
+  const x = d => { const dt = pd(d), m = dt.getMonth(), dim = new Date(dt.getFullYear(), m + 1, 0).getDate(); return lw + (m + (dt.getDate() - 1) / dim) * cw; };
+  const y0 = `${y}-01-01`, y1 = `${y}-12-31`, T = today();
+  let g = '';
+  for (let m = 0; m < 12; m++) g += `<rect x="${lw + m * cw}" y="0" width="${cw}" height="${H}" fill="${m % 2 ? '#F4F6F2' : '#FFFFFF'}"/><text x="${lw + m * cw + cw / 2}" y="12" font-size="9" text-anchor="middle" fill="#6B726D">${MON[m].slice(0, 3)}</text>`;
+  items.forEach(({ a, d, done }, i) => {
+    const yy = top + i * rh; let ab = labAb(a, y) || addDays(d, a.faelligMT && a.faelligMT <= '03-31' && !a.abMT ? -40 : -21);
+    const s = ab < y0 ? y0 : ab > y1 ? y1 : ab, e = d > y1 ? y1 : d < y0 ? y0 : d;
+    const col = done ? '#2E8B62' : d < T ? '#C0392B' : '#E08A1E';
+    g += `<text x="4" y="${yy + 12}" font-size="9.5" fill="#1F2A24">${esc(labName(labNr(a.objekt)).slice(0, 18))}</text>`;
+    g += `<rect x="${x(s)}" y="${yy + 4}" width="${Math.max(3, x(e) - x(s) + cw / 30)}" height="${rh - 8}" rx="4" fill="${col}" opacity="${done ? 0.55 : 0.85}"><title>${esc(labTitel(a, y))}: ${ab ? 'ab ' + fmt(ab) + ' ' : ''}bis ${fmt(d)}</title></rect>`;
+  });
+  if (T.startsWith(String(y))) g += `<line x1="${x(T)}" x2="${x(T)}" y1="14" y2="${H}" stroke="#1F4D36" stroke-width="1.5"/>`;
+  return `<div class="card" style="padding:8px 6px"><svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Jahreskalender Pendenzen">${g}</svg><div class="small muted" style="display:flex;gap:12px;flex-wrap:wrap;margin:4px 4px 0"><span><i class="sw" style="background:#E08A1E"></i>offen</span><span><i class="sw" style="background:#C0392B"></i>überfällig</span><span><i class="sw" style="background:#2E8B62;opacity:.55"></i>erledigt</span></div></div>`;
+}
+function labKarte() { return S.parzellen.some(z => z.geo) ? `<div id="karte" class="karte" data-filter="1"></div>${UI.lPz ? `<div class="toolbar"><span class="chip on">${esc(pzKurz(UI.lPz))}</span><button class="btn" data-act="lpz" data-v="">Filter aufheben</button></div>` : '<p class="small muted" style="margin:2px 4px 8px">Parzelle antippen zum Filtern.</p>'}` : ''; }
+const labPzOk = nr => !UI.lPz || (labPz(labObj(nr)) || {}).name === UI.lPz;
+function labInfo(nr, extra = '') {
+  const o = labObj(nr); if (!o) return;
+  const z = labPz(o);
+  const zuord = z ? '' : `<div class="fld"><span>Parzelle zuordnen</span><select class="sel" data-act="lzuord" data-id="${o.id}"><option value="">-</option>${parzellen().map(p => `<option>${esc(p)}</option>`).join('')}</select></div>`;
+  openSheet(`${labName(nr)} · Obj. ${o.nr}`, `${z && z.geo ? '<div class="karte klein" id="lmini"></div>' : ''}${zuord}${extra}
+    <div class="list"><div class="row"><div class="main"><span class="t">${esc(o.typ || '')}</span><span class="s">${nf(num(o.aren))} ${esc(o.einheit || 'a')}${o.szp ? ' · Schnitt ab ' + o.szp.slice(3) + '.' + o.szp.slice(0, 2) + '.' : ''}${o.duengen === 'nein' ? ' · keine Düngung' : ''}</span></div></div></div>
+    <div class="sec-t">Massnahmen / Bemerkungen</div><div class="card lab-mass">${esc(o.massnahmen || '-')}</div>`);
+  const sh = $('.sheet'); if (sh) sh.classList.add('mittel');
+  const el = $('#lmini'); if (el && z) miniKarte(el, z);
+}
+function labTeilSheet(a, y) {
+  openSheet('Welcher Teil wurde geschnitten?', `<p class="small muted">Obj. 1, ${y}: 1/3 bis 1/2 der Fläche bis Ende Mai. Nächstes Jahr ist der andere Teil dran.</p><div class="btns" style="margin-top:10px"><button class="btn pri" data-act="lteil" data-id="${a.id}" data-y="${y}" data-v="oben">Oberer Teil</button><button class="btn pri" data-act="lteil" data-id="${a.id}" data-y="${y}" data-v="unten">Unterer Teil</button></div>`);
+}
 function vLabiola() {
-  const y = UI.jahr, T = today();
-  const tabs = `<div class="seg" style="margin:8px 0 12px">${[['pendenzen', 'Pendenzen'], ['protokoll', 'Protokoll'], ['objekte', 'Objekte'], ['parzellen', 'Parzellen']].map(([v, l]) => `<button type="button" class="${UI.lTab === v ? 'on' : ''}" data-act="ltab" data-v="${v}">${l}</button>`).join('')}</div>`;
-  const aren = S.labiola.reduce((a, o) => a + num(o.aren), 0), chf = S.labiola.reduce((a, o) => a + num(o.beitrag), 0);
-  const kp = `<div class="stats"><div class="stats-row"><span class="stats-h">Vertrag</span><span class="stat"><b>${S.labiola.length}</b><span>Objekte</span></span><span class="stat"><b>${nf(aren)}</b><span>Aren</span></span><span class="stat"><b>${Math.round(chf).toLocaleString('de-CH')}</b><span>CHF/Jahr</span></span></div></div>`;
-  if (UI.lTab === 'parzellen') return tabs + vParzellen();
-  if (UI.lTab === 'protokoll') {
-    const list = [...S.lprotokoll].sort((a, b) => a.datum < b.datum ? 1 : -1);
-    const frueh = list.filter(x => x.objekt === 'Obj. 1' && x.datum.slice(5) <= '05-31' && /ober|unter|mittl/i.test(x.teil || ''));
-    const last = frueh[0], next = last ? (/ober/i.test(last.teil) ? 'unterer Teil' : /unter/i.test(last.teil) ? 'oberer Teil' : '') : '';
-    return `${tabs}${next ? `<div class="band green"><b>Frühschnitt Obj. 1 ${+T.slice(0, 4) + (T.slice(5) > '05-31' ? 1 : 0)}: ${next}</b><span>Zuletzt ${esc(last.teil)} am ${fmt(last.datum)} (jährlich wechseln)</span></div>` : ''}
-    <div class="toolbar"><button class="btn pri" data-act="form" data-f="lschnitt">+ Schnitt protokollieren</button></div>
-    <div class="list">${list.length ? list.map(x => `<button type="button" class="row one" data-act="edit" data-c="lprotokoll" data-id="${x.id}"><i class="bar green"></i><div class="main"><span class="t1"><b>${esc(x.objekt)}: ${esc(x.teil || '')}</b> <span class="ex">${esc([x.art, x.notiz].filter(Boolean).join(' · '))}</span></span></div><small class="rt">${fmt(x.datum)}</small></button>`).join('') : '<div class="empty">Noch keine Schnitte protokolliert.</div>'}</div>`;
-  }
+  const y = LAB_JAHRE.includes(UI.lJahr) ? UI.lJahr : (LAB_JAHRE.includes(String(new Date().getFullYear())) ? String(new Date().getFullYear()) : '2026'), T = today();
+  UI.lJahr = y;
+  const tabs = `<div class="seg" style="margin:8px 0 12px">${[['pendenzen', 'Pendenzen'], ['objekte', 'Objekte']].map(([v, l]) => `<button type="button" class="${UI.lTab === v ? 'on' : ''}" data-act="ltab" data-v="${v}">${l}</button>`).join('')}</div>`;
   if (UI.lTab === 'objekte') {
-    const g = {}; [...S.labiola].sort((a, b) => num(a.nr) - num(b.nr)).forEach(o => (g[o.typ || 'Ohne Typ'] = g[o.typ || 'Ohne Typ'] || []).push(o));
-    return `${tabs}${kp}<div class="toolbar"><button class="btn pri" data-act="form" data-f="lobjekt">+ Objekt</button></div>
-    ${Object.keys(g).length ? Object.entries(g).map(([typ, os]) => `<div class="sec-t">${esc(typ)}</div><div class="list">${os.map(o => `<button type="button" class="row" data-act="edit" data-c="labiola" data-id="${o.id}"><span class="av weide">${esc(o.nr)}</span><div class="main"><span class="t">${esc(o.flurname || '')} <span class="om">${nf(num(o.aren))} a</span></span><span class="s wrap">${esc([o.szp ? 'SZP ' + o.szp.slice(3) + '.' + o.szp.slice(0, 2) + '.' : '', o.duengen === 'ja' ? '' : 'keine Düngung', o.parzelle ? 'Parzelle ' + o.parzelle : ''].filter(Boolean).join(' · '))}</span>${o.massnahmen ? `<span class="s wrap">${esc(o.massnahmen)}</span>` : ''}</div></button>`).join('')}</div>`).join('') : '<div class="empty">Noch keine Objekte.</div>'}`;
+    const g = {};
+    [...S.labiola].filter(o => labPzOk(o.nr)).sort((a, b) => num(a.nr) - num(b.nr)).forEach(o => { const k = labName(o.nr); (g[k] = g[k] || []).push(o); });
+    return `${tabs}${labKarte()}${Object.keys(g).length ? Object.entries(g).map(([pz, os]) => `<div class="sec-t">${esc(pz)}</div><div class="list">${os.map(o => `<button type="button" class="row" data-act="linfo" data-v="${esc(o.nr)}"><span class="av weide">${esc(o.nr)}</span><div class="main"><span class="t">${esc(o.typ || '')}</span><span class="s">${nf(num(o.aren))} ${esc(o.einheit || 'a')}${o.szp ? ' · Schnitt ab ' + o.szp.slice(3) + '.' + o.szp.slice(0, 2) + '.' : ''}${o.duengen === 'nein' ? ' · keine Düngung' : ''}</span>${o.massnahmen ? `<span class="s wrap lab-mass-k">${esc(o.massnahmen)}</span>` : ''}</div></button>`).join('')}</div>`).join('') : '<div class="empty">Keine Objekte.</div>'}`;
   }
-  const items = S.aufgaben.map(a => ({ a, d: aufgabeFaellig(a, y) })).filter(x => x.d).sort((a, b) => a.d < b.d ? -1 : 1);
-  const ohne = S.aufgaben.filter(a => !aufgabeFaellig(a, y) && a.art !== 'einmalig');
-  return `${tabs}${kp}<div class="toolbar">${jahrSel()}<button class="btn pri" data-act="form" data-f="aufgabe">+ Pendenz</button></div>
-  <div class="list">${items.length ? items.map(({ a, d }) => { const done = (a.erledigt || {})[y]; const late = !done && d < T; return `<div class="row"><button type="button" class="chk ${done ? 'on' : ''}" data-act="aufgabe" data-id="${a.id}" data-y="${y}" aria-label="erledigt">${done ? '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg>' : ''}</button><button type="button" class="main" data-act="edit" data-c="aufgaben" data-id="${a.id}" style="border:0;background:none;text-align:left;padding:0;cursor:pointer"><span class="t wrap" style="${done ? 'text-decoration:line-through;color:var(--muted)' : ''}">${esc(a.titel)}</span><span class="s wrap">${esc([a.objekt, a.art === 'einmalig' ? 'einmalig' : 'jährlich', a.abMT ? 'ab ' + a.abMT.slice(3) + '.' + a.abMT.slice(0, 2) + '.' : '', done ? 'erledigt ' + fmt(done) : ''].filter(Boolean).join(' · '))}</span></button><span class="pill ${done ? '' : late ? 'red' : 'warn'}">${done ? 'erledigt' : 'bis ' + fmtS(d)}</span></div>`; }).join('') : '<div class="empty">Keine Pendenzen für dieses Jahr.</div>'}</div>`;
+  const alle = labAufg().filter(a => labPzOk(labNr(a.objekt)) && (a.art === 'einmalig' || ((a.vonJahr || 0) <= +y && +y <= (a.bisJahr || 9999))))
+    .map(a => ({ a, d: aufgabeFaellig(a, y), done: (a.erledigt || {})[y] })).filter(x => x.d).sort((p, q) => (labAb(p.a, y) || p.d) < (labAb(q.a, y) || q.d) ? -1 : 1);
+  const items = UI.lAlle ? alle : alle.filter(x => !x.done);
+  const nOff = alle.filter(x => !x.done).length;
+  const chk = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg>';
+  return `${tabs}${labKarte()}
+  <div class="toolbar"><select class="sel" data-act="ljahr" aria-label="Jahr">${LAB_JAHRE.map(j => `<option ${j === y ? 'selected' : ''}>${j}</option>`).join('')}</select><div class="seg mini">${[['', `Offen (${nOff})`], ['1', `Alle (${alle.length})`]].map(([v, l]) => `<button type="button" class="${(UI.lAlle ? '1' : '') === v ? 'on' : ''}" data-act="lalle" data-v="${v}">${l}</button>`).join('')}</div></div>
+  <div class="sec-t">Jahreskalender ${y}</div>${labGantt(alle, y) || '<div class="empty">Keine Pendenzen.</div>'}
+  <div class="sec-t">Pendenzen ${y}</div>
+  <div class="list">${items.length ? items.map(({ a, d, done }) => { const ab = labAb(a, y), late = !done && d < T, vorAb = !done && ab && ab > T; return `<div class="row"><button type="button" class="chk ${done ? 'on' : ''}" data-act="aufgabe" data-id="${a.id}" data-y="${y}" aria-label="erledigt">${done ? chk : ''}</button><button type="button" class="main" data-act="lpend" data-id="${a.id}" style="border:0;background:none;text-align:left;padding:0;cursor:pointer"><span class="t wrap" style="${done ? 'text-decoration:line-through;color:var(--muted)' : ''}">${esc(labTitel(a, y))}</span><span class="s wrap">${esc([labName(labNr(a.objekt)) + ' (' + a.objekt + ')', a.art === 'einmalig' ? 'einmalig' : 'jährlich', ab ? 'ab ' + fmtS(ab) : '', done ? 'erledigt ' + fmt(done) : ''].filter(Boolean).join(' · '))}</span></button><span class="pill ${done ? '' : late ? 'red' : vorAb ? 'grey' : 'warn'}">${done ? 'erledigt' : vorAb ? 'ab ' + fmtS(ab) : a.nurAb ? 'offen' : 'bis ' + fmtS(d)}</span></div>`; }).join('') : `<div class="empty">${UI.lAlle ? 'Keine Pendenzen.' : 'Alles erledigt.'}</div>`}</div>
+`;
 }
 
 const WMO = c => c === 0 ? 'sun' : c <= 2 ? 'part' : c === 3 ? 'cloud' : c <= 48 ? 'fog' : c <= 67 || (c >= 80 && c <= 82) ? 'rain' : c <= 77 || c === 85 || c === 86 ? 'snow' : 'storm';
@@ -1065,7 +1177,8 @@ function plusMenu() {
   const tt = tid ? tierById(tid) : null;
   openSheet('Neuer Eintrag', `<div class="sec-t" style="margin-top:0">Tiere${tt ? ' · ' + esc(tt.name || tt.ohrmarke) : ''}</div><div class="actgrid">${a('geburt', 'Geburt')}${a('brunst', 'Brunst')}${a('besamung', 'Besamung')}${a('behandlung', 'Behandlung')}${a('auslauf', 'Weide / Stall')}${a('zugang', 'Zugang')}${a('abgang', 'Abgang')}</div>
   <div class="sec-t">Feldkalender</div><div class="actgrid">${a('duengung', 'Düngung')}${a('ernte', 'Ernte')}</div>
-  <div class="sec-t">Lager</div><div class="actgrid">${a('verbrauch', 'Verbrauch')}${a('kauf', 'Kauf')}</div>`);
+  <div class="sec-t">Lager</div><div class="actgrid">${a('verbrauch', 'Verbrauch')}${a('kauf', 'Kauf')}</div>
+  <div class="sec-t">Labiola</div><div class="actgrid">${a('aufgabe', 'Pendenz')}</div>`);
 }
 function fieldHtml(f, v) {
   const val = v[f.k] ?? '';
@@ -1699,7 +1812,7 @@ document.addEventListener('click', e => {
   else if (a === 'jtab') { UI.jTab = el.dataset.v; if (el.tagName === 'BUTTON') render(); }
   else if (a === 'ftab') { UI.fTab = el.dataset.v; if (el.tagName === 'BUTTON') render(); }
   else if (a === 'ltab') { UI.lTab = el.dataset.v; render(); }
-  else if (a === 'aufgabe') { e.preventDefault(); const r = S.aufgaben.find(x => x.id === el.dataset.id); if (r) { const er = { ...(r.erledigt || {}) }; if (er[el.dataset.y]) delete er[el.dataset.y]; else er[el.dataset.y] = today(); put('aufgaben', { ...r, erledigt: er }); } }
+  else if (a === 'aufgabe') { e.preventDefault(); const r = S.aufgaben.find(x => x.id === el.dataset.id); if (r && r.teilwahl && !(r.erledigt || {})[el.dataset.y]) { labTeilSheet(r, el.dataset.y); return; } if (r) { const er = { ...(r.erledigt || {}) }; if (er[el.dataset.y]) delete er[el.dataset.y]; else er[el.dataset.y] = today(); put('aufgaben', { ...r, erledigt: er }); } }
   else if (a === 'kaltag') { e.preventDefault(); UI.kalTag = UI.kalTag === el.dataset.v ? '' : el.dataset.v; render(); }
   else if (a === 'notizkat') { UI.notizKat = el.dataset.v; render(); }
   else if (a === 'meldung') { const m = S.meldungen.find(x => x.id === el.dataset.id); if (m) meldungSheet(m); }
@@ -1710,6 +1823,11 @@ document.addEventListener('click', e => {
   else if (a === 'pdf') { el.disabled = true; pdf(el.dataset.p, el.dataset.id).catch(showErr).finally(() => el.disabled = false); }
   else if (a === 'backup') { const d = { version: VERSION, exportiert: new Date().toISOString(), set: S.set }; COLLS.forEach(c => d[c] = S[c]); const b = new Blob([JSON.stringify(d, null, 1)], { type: 'application/json' }); const u = URL.createObjectURL(b); const l = document.createElement('a'); l.href = u; l.download = `hofbuech_backup_${today()}.json`; l.click(); setTimeout(() => URL.revokeObjectURL(u), 2000); }
   else if (a === 'ausbchart') ausbChart(el.dataset.id);
+  else if (a === 'lpz') { UI.lPz = el.dataset.v; render(); }
+  else if (a === 'lalle') { UI.lAlle = !!el.dataset.v; render(); }
+  else if (a === 'linfo') labInfo(el.dataset.v);
+  else if (a === 'lpend') { const r = S.aufgaben.find(x => x.id === el.dataset.id); if (r) { const y = UI.lJahr, done = (r.erledigt || {})[y], ab = labAb(r, y); labInfo(labNr(r.objekt), `<div class="card" style="margin-bottom:8px"><b>${esc(labTitel(r, y))}</b><div class="small muted" style="margin-top:4px">${esc([r.art === 'einmalig' ? 'einmalig' : 'jährlich', ab ? 'ab ' + fmt(ab) : '', r.nurAb ? '' : 'bis ' + fmt(aufgabeFaellig(r, y)), done ? 'erledigt ' + fmt(done) : 'offen'].filter(Boolean).join(' · '))}</div>${r.notiz ? `<div class="small" style="margin-top:6px">${esc(r.notiz)}</div>` : ''}<div class="btns" style="margin-top:10px">${r.teilwahl && done ? `<button class="btn" data-act="lteil" data-id="${r.id}" data-y="${y}" data-v="oben">Teil: oben</button><button class="btn" data-act="lteil" data-id="${r.id}" data-y="${y}" data-v="unten">Teil: unten</button>` : ''}${r.vid ? '' : `<button class="btn" data-act="edit" data-c="aufgaben" data-id="${r.id}">Bearbeiten</button>`}</div></div>`); } }
+  else if (a === 'lteil') { const r = S.aufgaben.find(x => x.id === el.dataset.id); if (r) { const y = el.dataset.y, er = { ...(r.erledigt || {}) }; if (!er[y]) er[y] = today(); put('aufgaben', { ...r, erledigt: er, teil: { ...(r.teil || {}), [y]: el.dataset.v } }); closeSheet(); toast(`Obj. 1 ${y}: ${el.dataset.v === 'oben' ? 'oberer' : 'unterer'} Teil`); } }
   else if (a === 'push') { pushAktivieren().catch(showErr); }
   else if (a === 'logout') { if (AUTH) AUTH.A.signOut(AUTH.auth).then(() => location.reload()); }
 });
@@ -1721,6 +1839,8 @@ document.addEventListener('change', e => {
   const a = e.target.dataset && e.target.dataset.act;
   if (a === 'sort') { UI.tierFilter.sort = e.target.value; render(); }
   if (a === 'jahr') { UI.jahr = e.target.value; render(); }
+  if (a === 'ljahr') { UI.lJahr = e.target.value; render(); }
+  if (a === 'lzuord') { const o = S.labiola.find(x => x.id === e.target.dataset.id); if (o && e.target.value) { put('labiola', { ...o, parzelle: e.target.value }); closeSheet(); toast('Parzelle zugeordnet'); } }
   if (a === 'behimport') { const f = e.target.files[0]; e.target.value = ''; if (f) behImport(f).catch(showErr); }
   if (a === 'tvdimport') { const f = e.target.files[0]; e.target.value = ''; if (f) tvdImport(f).catch(showErr); }
   if (a === 'restore') {
@@ -1760,7 +1880,7 @@ document.addEventListener('submit', e => {
 $('#tabbar').addEventListener('click', e => {
   const l = e.target.closest('a[data-tab]'); if (!l) return;
   const t = l.dataset.tab;
-  if (t === 'journale') UI.jTab = ''; if (t === 'labiola') UI.lTab = 'pendenzen'; if (t === 'kalender') { UI.kalMonat = today().slice(0, 7); UI.kalTag = ''; }
+  if (t === 'journale') UI.jTab = ''; if (t === 'labiola') { UI.lTab = 'pendenzen'; UI.lPz = ''; } if (t === 'kalender') { UI.kalMonat = today().slice(0, 7); UI.kalTag = ''; }
   if (location.hash === l.getAttribute('href')) { e.preventDefault(); closeSheet(true); render(); window.scrollTo(0, 0); }
 });
 $('#plus').addEventListener('click', () => sheetOpen ? closeSheet() : plusMenu());
