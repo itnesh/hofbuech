@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.15.0';
+const VERSION = '1.15.1';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -1479,11 +1479,11 @@ function ausbDaten() {
   return w;
 }
 // Status je Kriterium: 'nein' = Verbot, 'pruefen' = selbst kontrollieren, 'ja' = ok
-function ausbBewertung() {
+function ausbBewertung(off = 0) {
   const w = ausbDaten(); if (!w || !w.d) return null;
-  const D = w.d, H = w.h || {}, t0 = today(), iT = D.time.indexOf(t0);
+  const D = w.d, H = w.h || {}, t0 = addDays(today(), off), iT = D.time.indexOf(t0);
   if (iT < 0) return null;
-  const nowH = new Date(), hNow = H.time ? H.time.findIndex(t => new Date(t) > nowH) - 1 : -1;
+  const nowH = new Date(), hNow = !H.time ? -1 : off === 0 ? H.time.findIndex(t => new Date(t) > nowH) - 1 : H.time.indexOf(t0 + 'T23:00');
   const last24 = k => H[k] && hNow >= 0 ? H[k].slice(Math.max(0, hNow - 23), hNow + 1).filter(v => v !== null) : [];
   const K = [];
   // 1. Niederschlag > 20 mm/24 h: vor 1-2 Tagen, heute oder in den nächsten 3 Tagen
@@ -1509,7 +1509,7 @@ function ausbBewertung() {
   const fenster = tm.every(v => v !== null && v !== undefined && v > 5), unter = tm.filter(v => !(v > 5)).length;
   K.push({ k: 'Nährstoffbedarf (Düngefenster)', s: fenster ? 'ja' : 'nein', w: `Tagesmittel letzte 7 Tage: ${tm.map(v => v === null || v === undefined ? '-' : nf(v)).join(' / ')} °C`, e: fenster ? 'Tagesmittel 7 Tage in Folge über 5 °C: Pflanzen nehmen Nährstoffe auf.' : `Vegetationsruhe (${unter} von 7 Tagen nicht über 5 °C). Ausbringen nur bei speziellen Bedürfnissen des Pflanzenbaus, siehe unten.` });
   const res = typ => { const k = K.filter(x => typ === 'guelle' || !x.nurGuelle); return k.some(x => x.s === 'nein') ? 'nein' : k.some(x => x.s === 'pruefen') ? 'pruefen' : 'ja'; };
-  return { K, guelle: res('guelle'), mist: res('mist'), stand: w.t };
+  return { K, guelle: res('guelle'), mist: res('mist'), stand: w.t, tag: t0 };
 }
 const AUSB_L = { ja: 'Ja', nein: 'Nein', pruefen: 'Prüfen' }, AUSB_C = { ja: 'ok', nein: 'red', pruefen: 'warn' };
 function ausbKpi() {
@@ -1523,7 +1523,9 @@ function anaAusbringen() {
   const pill = s => `<span class="pill ${s === 'ja' ? 'green' : s === 'nein' ? 'red' : 'warn'}">${AUSB_L[s]}</span>`;
   const z = new Date(b.stand);
   return `<div class="stats"><div class="stats-row two"><span class="stats-h">Heute</span><span class="stat ausb ${AUSB_C[b.guelle]}"><b>${AUSB_L[b.guelle]}</b><span>Gülle</span></span><span class="stat ausb ${AUSB_C[b.mist]}"><b>${AUSB_L[b.mist]}</b><span>Mist</span></span></div></div>
-  <div class="sec-t">Kriterien</div>
+  <div class="sec-t">Prognose</div>
+  <div class="list">${[1, 2, 3].map(o => ausbBewertung(o)).filter(Boolean).map(p => `<div class="row"><div class="main"><span class="t">${['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'][pd(p.tag).getDay()]} ${fmt(p.tag)}</span><span class="s wrap">${esc(p.K.filter(x => x.s !== 'ja').map(x => x.k + (x.s === 'pruefen' ? ' (prüfen)' : '')).join(', ') || 'keine Einschränkung')}</span></div><span class="r">Gülle ${pill(p.guelle)}<br>Mist ${pill(p.mist)}</span></div>`).join('')}</div>
+  <div class="sec-t">Kriterien heute</div>
   <div class="list">${b.K.map(x => `<div class="row"><div class="main"><span class="t">${esc(x.k)}${x.nurGuelle ? ' <span class="small muted">(nur Gülle)</span>' : ''}</span><span class="s wrap">${esc(x.w)}<br>${esc(x.e)}</span></div><span class="r">${pill(x.s)}</span></div>`).join('')}</div>
   <div class="sec-t">Vor Ort prüfen</div>
   <div class="card small">Die Werte stammen aus dem Wettermodell (Open-Meteo) für den Hof, nicht von einer Messung auf der Parzelle. Massgebend ist der Zustand vor Ort. Ein einziges Nein bei Boden oder Witterung = Ausbringen verboten. Ein "Ja" der App entbindet nicht von der eigenen Beurteilung.</div>
