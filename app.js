@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.15.1';
+const VERSION = '1.15.2';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -1759,5 +1759,5 @@ async function boot() {
   else initLocal();
   render();
 }
-if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').catch(() => { }); navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.nav) { const h = e.data.nav.split('#')[1]; if (h !== undefined && location.hash !== '#' + h) location.hash = h; else render(); } }); }
+if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => { }); navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.nav) { const h = e.data.nav.split('#')[1]; if (h !== undefined && location.hash !== '#' + h) location.hash = h; else render(); } }); }
 boot();
