@@ -18,6 +18,8 @@ async function push(title, body, url = './#/kalender') {
 }
 
 // ---------- akenza ----------
+// Tekelek: SRC < 8 oder SRSSI < 4 = unzuverlässiges Echo (Messfehler)
+const echoOk = d => (typeof d.src !== 'number' || d.src >= 8) && (typeof d.srssi !== 'number' || d.srssi >= 4);
 const pickKey = (keys, re, not) => keys.find(k => re.test(k) && !(not && not.test(k)));
 async function batterie(deviceId) {
   for (const topic of ['lifecycle', 'default', 'battery']) {
@@ -56,7 +58,8 @@ async function akenza(id, deviceId, name, leer, voll) {
   const kB = pickKey(keys, /batt/i);
   console.log(name, 'Felder', keys.join(','), '-> Wert', kW, 'Batterie', kB);
   console.log(name, 'Zeitraum', new Date(rows[0].t).toISOString(), 'bis', new Date(rows[rows.length - 1].t).toISOString(), 'letzte Werte', rows.slice(-3).map(x => x.d[kW]).join(', '));
-  const pts = rows.filter(x => typeof x.d[kW] === 'number').map(x => [x.t, Math.round(x.d[kW] * 10) / 10]);
+  const pts = rows.filter(x => typeof x.d[kW] === 'number' && echoOk(x.d)).map(x => [x.t, Math.round(x.d[kW] * 10) / 10]);
+  const echoFehler = rows.length - pts.length; if (echoFehler) console.log(name, 'Fehlecho ignoriert (SRC/SRSSI)', echoFehler);
   const last = rows[rows.length - 1];
   const serie48 = pts.filter(p => p[0] >= now - 48 * 3600e3);
   const serie30 = []; let lastT = 0;
@@ -80,13 +83,19 @@ async function akenza(id, deviceId, name, leer, voll) {
   const hm = {}; for (const p of (prev.serie365 || [])) if (p[0] >= now - 365 * 864e5) hm[p[0]] = p[1]; for (const p of serie365x) hm[p[0]] = p[1];
   const hist = Object.keys(hm).map(Number).sort((a, b) => a - b).map(t => ({ 0: t, 1: hm[t] }));
   const fehler = ok ? pts.filter(p => !gut(pct(p[1]))).length : 0; if (fehler) console.log(name, 'Messfehler ignoriert', fehler);
+  const gT = lastOk ? lastOk[0] : pts.length ? pts[pts.length - 1][0] : 0, fr = rows.find(x => x.t > gT);
+  const fehlerSeit = fr ? fr.t : null, fehlerInfo = fr ? { wert: last.d[kW] ?? null, src: last.d.src ?? null, srssi: last.d.srssi ?? null, zeit: last.t } : null;
+  let fehlerPush = prev.fehlerPush || null;
+  if (fehlerSeit && now - fehlerSeit > 6 * 3600e3 && fehlerPush !== fehlerSeit) { await push(`${name}: Sensor liefert Fehlmessungen`, `Seit ${new Date(fehlerSeit).toLocaleString('de-CH', { timeZone: 'Europe/Zurich' })} keine gültige Messung (SRC ${fehlerInfo.src}, SRSSI ${fehlerInfo.srssi}). Sensor prüfen.`, './#/journale/' + id); fehlerPush = fehlerSeit; }
+  if (!fehlerSeit) fehlerPush = null;
+  console.log(name, 'Fehlmessungen seit', fehlerSeit ? new Date(fehlerSeit).toISOString() : '-', JSON.stringify(fehlerInfo));
   let alarm = prev.alarm ?? 100;
   if (prozent !== null) {
     const stufe = Math.ceil(prozent / 10) * 10; // 28 -> 30
     if (stufe < alarm && stufe <= 50) { await push(`${name}: unter ${stufe}%`, `Aktuell ${Math.round(prozent)}% (${new Date(lastOk[0]).toLocaleString('de-CH', { timeZone: 'Europe/Zurich' })})`, './#/journale/' + id); alarm = stufe; }
     if (stufe > alarm) alarm = stufe; // wieder gefüllt -> Alarmstufe zurücksetzen
   }
-  await ref.set({ id, name, typ: 'fuellstand', einheit: prozent === null ? 'cm' : '%', keyWert: kW, keyBatterie: kB || null, last: { zeit: lastOk ? lastOk[0] : last.t, wert: lastOk ? lastOk[1] : wert, prozent, batterie: bat ?? null }, serie48: filt(serie48).map(conv), serie30: filt(serie30).map(conv), serie365: hist, alarm, aktualisiert: now });
+  await ref.set({ id, name, typ: 'fuellstand', einheit: prozent === null ? 'cm' : '%', keyWert: kW, keyBatterie: kB || null, last: { zeit: lastOk ? lastOk[0] : last.t, wert: lastOk ? lastOk[1] : wert, prozent, batterie: bat ?? null }, serie48: filt(serie48).map(conv), serie30: filt(serie30).map(conv), serie365: hist, alarm, fehlerSeit, fehlerInfo, fehlerPush, aktualisiert: now, quelle: 'job' });
   console.log(name, 'ok', wert, 'Punkte', pts.length, 'Tage', hist.length);
 }
 
