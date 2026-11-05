@@ -18,8 +18,8 @@ async function push(title, body, url = './#/kalender') {
 }
 
 // ---------- akenza ----------
-// Tekelek: SRC < 8 oder SRSSI < 4 = unzuverlässiges Echo (Messfehler)
-const echoOk = d => (typeof d.src !== 'number' || d.src >= 8) && (typeof d.srssi !== 'number' || d.srssi >= 4);
+// Tekelek: Fehlecho = SRSSI < 4, SRC 0 (kein Echo) oder SRC 1-2 mit schwachem Echo (SRSSI < 8)
+const echoOk = d => { const c = typeof d.src === 'number' ? d.src : 10, r = typeof d.srssi === 'number' ? d.srssi : 10; return r >= 4 && c !== 0 && !(c <= 2 && r < 8); };
 const pickKey = (keys, re, not) => keys.find(k => re.test(k) && !(not && not.test(k)));
 async function batterie(deviceId) {
   for (const topic of ['lifecycle', 'default', 'battery']) {
@@ -59,7 +59,6 @@ async function akenza(id, deviceId, name, leer, voll) {
   console.log(name, 'Felder', keys.join(','), '-> Wert', kW, 'Batterie', kB);
   console.log(name, 'Zeitraum', new Date(rows[0].t).toISOString(), 'bis', new Date(rows[rows.length - 1].t).toISOString(), 'letzte Werte', rows.slice(-3).map(x => x.d[kW]).join(', '));
   const pts = rows.filter(x => typeof x.d[kW] === 'number' && echoOk(x.d)).map(x => [x.t, Math.round(x.d[kW] * 10) / 10]);
-  if (process.env.CORS_TEST) { const h = {}; rows.filter(x => x.t > now - 30 * 864e5).forEach(x => { const k = `src${x.d.src}/rssi${x.d.srssi}`; h[k] = h[k] || { n: 0, w: [] }; h[k].n++; h[k].w.push(x.d[kW]); }); console.log(name, 'HIST', JSON.stringify(Object.fromEntries(Object.entries(h).map(([k, v]) => [k, v.n + 'x ' + Math.min(...v.w) + '-' + Math.max(...v.w) + 'cm'])))); }
   const echoFehler = rows.length - pts.length; if (echoFehler) console.log(name, 'Fehlecho ignoriert (SRC/SRSSI)', echoFehler);
   const last = rows[rows.length - 1];
   const serie48 = pts.filter(p => p[0] >= now - 48 * 3600e3);

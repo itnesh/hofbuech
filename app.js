@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.14.2';
+const VERSION = '1.14.3';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -849,7 +849,7 @@ function sensorKarte(sx) {
   const zt = t => { const d = new Date(t); return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}. ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
   const zd = t => { const d = new Date(t); return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`; };
   const u = pc ? '%' : 'cm';
-  const fi = sx.fehlerInfo, fwarn = sx.fehlerSeit ? `<div class="note" style="margin:8px 0"><b>Seit ${zt(sx.fehlerSeit)} nur Fehlmessungen.</b> Angezeigt wird der letzte gültige Wert. Letzte Messung ${fi ? `${zt(fi.zeit)}: ${fi.wert ?? '-'} cm, SRC ${fi.src ?? '-'}, SRSSI ${fi.srssi ?? '-'}` : ''} (gültig: SRC ab 8, SRSSI ab 4, Füllstand 0-100 %). Sensor prüfen: Kondenswasser, Reif, Spinnennetz, Gegenstand im Schallweg.</div>` : '';
+  const fi = sx.fehlerInfo, fwarn = sx.fehlerSeit ? `<div class="note" style="margin:8px 0"><b>Seit ${zt(sx.fehlerSeit)} nur Fehlmessungen.</b> Angezeigt wird der letzte gültige Wert. Letzte Messung ${fi ? `${zt(fi.zeit)}: ${fi.wert ?? '-'} cm, SRC ${fi.src ?? '-'}, SRSSI ${fi.srssi ?? '-'}` : ''} (Fehlecho: SRSSI unter 4, SRC 0, oder SRC 1-2 mit SRSSI unter 8; ausserdem Füllstand ausserhalb 0-100 %). Sensor prüfen: Kondenswasser, Reif, Spinnennetz, Gegenstand im Schallweg.</div>` : '';
   const line = (pts, fmtL, ft = zt) => pts.length > 1 ? svgLines([pts.map(p => p[1])], pts.map(p => fmtL(p[0])), ['#2E8B62'], 130, pts.map(p => `${ft(p[0])} · ${nf(Math.round(p[1] * 10) / 10)} ${u}`), pc) : '<div class="empty">Keine Daten.</div>';
   return `${fwarn}<div class="stats"><div class="stats-row"><span class="stats-h">Aktuell</span><span class="stat ${low ? 'low' : ''}"><b>${v === null ? '-' : nf(Math.round(v))}<small style="font-size:12px"> ${u}</small></b><span>${pc ? 'Füllstand' : 'Abstand (ullage)'}</span></span><span class="stat"><b>${bat === null || bat === undefined ? '-' : nf(bat)}</b><span>Batterie %</span></span><span class="stat"><b class="zeit">${sx.last && sx.last.zeit ? zt(sx.last.zeit) : '-'}</b><span>Messung</span></span></div></div>
   <div class="card" style="margin-top:8px"><div class="small muted">Letzte 48 Stunden</div>${line(pts48, t => new Date(t).getHours() + 'h')}<div class="small muted" style="margin-top:8px">Letzte 30 Tage</div>${line(pts30, t => { const d = new Date(t); return d.getDate() + '.' + (d.getMonth() + 1); })}<div class="small muted" style="margin-top:8px">Letzte 365 Tage (Tagesmittel)</div>${pts365.length > 1 ? line(pts365, t => MON[new Date(t).getMonth()], zd) : '<div class="empty">Jahresverlauf wird beim nächsten Abgleich geladen.</div>'}</div>`;
@@ -1464,8 +1464,8 @@ async function tvdImport(file) {
 
 /* ---------- Sensoren direkt aus der App (akenza bei jedem Öffnen, Agrometeo 1x pro Tag) ---------- */
 const SENS = { laedt: false, fehler: '', zuletzt: 0 };
-// Tekelek: SRC < 8 oder SRSSI < 4 = unzuverlässiges Echo (Messfehler)
-const echoOk = d => (typeof d.src !== 'number' || d.src >= 8) && (typeof d.srssi !== 'number' || d.srssi >= 4);
+// Tekelek: Fehlecho = SRSSI < 4, SRC 0 (kein Echo) oder SRC 1-2 mit schwachem Echo (SRSSI < 8)
+const echoOk = d => { const c = typeof d.src === 'number' ? d.src : 10, r = typeof d.srssi === 'number' ? d.srssi : 10; return r >= 4 && c !== 0 && !(c <= 2 && r < 8); };
 async function akenzaWeb(id, deviceId, leer, voll) {
   const now = Date.now(), von = now - 31 * 864e5, H = { 'x-api-key': S.set.akenzaKey, accept: 'application/json' };
   let ende = now + 3600e3, arr = [];
