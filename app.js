@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.14.4';
+const VERSION = '1.15.0';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -347,7 +347,7 @@ function kpiBlock(k, link = false, L = null) {
     : `<a class="stat" href="#/tiere" data-act="filtlink" data-v="${key}"><b>${k[key]}</b><span>${label}</span></a>`;
   const ls = (v, l) => `<a class="stat ${v <= 5 ? 'low' : ''}" href="#/journale/lager"><b>${nf(v)}</b><span>${l}</span></a>`;
   const sw = id => { const x = S.sensoren.find(s => s.id === id), p = x && x.last ? x.last.prozent : null; return `<a class="stat ${p !== null && p !== undefined && p < 30 ? 'low' : ''} ${SENS.laedt ? 'laedt' : ''}" href="#/journale/${id}"><b>${SENS.laedt ? '<i class="ld"></i>' : p === null || p === undefined ? '-' : Math.round(p) + '%'}${!SENS.laedt && x && x.fehlerSeit ? '<i class="fx" title="Sensor liefert Fehlmessungen">!</i>' : ''}</b><span>${id === 'wasserstand' ? 'Wasserstand' : 'Tränkefass'}</span></a>`; };
-  const lg = L ? `<div class="stats-row"><span class="stats-h">Lager</span>${ls(L.heu, 'Heu')}${ls(L.silo, 'Silage')}${ls(L.stroh, 'Stroh')}</div><div class="stats-row two"><span class="stats-h">Wasser</span>${sw('wasserstand')}${sw('traenkefass')}</div>` : '';
+  const lg = L ? `<div class="stats-row"><span class="stats-h">Lager</span>${ls(L.heu, 'Heu')}${ls(L.silo, 'Silage')}${ls(L.stroh, 'Stroh')}</div><div class="stats-row two"><span class="stats-h">Wasser</span>${sw('wasserstand')}${sw('traenkefass')}</div>${ausbKpi()}` : '';
   const lk = '';
   return `<div class="stats"><div class="stats-row"><span class="stats-h">Bestand</span>${c('Kalb', 'Kälber')}${c('Rind', 'Rinder')}${c('Kuh', 'Kühe')}</div>${lk}${lg}</div>`;
 }
@@ -523,7 +523,7 @@ function jahre(listen) { const s = new Set([String(new Date().getFullYear())]); 
 function jahrSel() { return `<select class="sel" data-act="jahr" aria-label="Jahr">${jahre([S.behandlungen, S.auslauf, S.feld]).map(j => `<option ${j === UI.jahr ? 'selected' : ''}>${j}</option>`).join('')}</select>`; }
 
 function vJournale() {
-  const SECT = { lager: 'Lager', auslauf: 'Auslaufjournal', behandlung: 'Behandlungsjournal', feld: 'Feldkalender', zucht: 'Zucht', traenkefass: 'Tränkefass', wasserstand: 'Wasserstand', wetter: 'Agrometeo Analyse' };
+  const SECT = { lager: 'Lager', auslauf: 'Auslaufjournal', behandlung: 'Behandlungsjournal', feld: 'Feldkalender', zucht: 'Zucht', traenkefass: 'Tränkefass', wasserstand: 'Wasserstand', ausbringen: 'Gülle / Mist ausbringen', wetter: 'Agrometeo Analyse' };
   if (!SECT[UI.jTab]) return anaKacheln();
   const tabs = `<div class="anah"><a class="back" href="#/journale/">‹ Übersicht</a><b>${SECT[UI.jTab]}</b></div>`;
   if (UI.jTab === 'auslauf') return tabs + vAuslauf();
@@ -532,6 +532,7 @@ function vJournale() {
   if (UI.jTab === 'zucht') return tabs + anaZucht();
   if (UI.jTab === 'traenkefass' || UI.jTab === 'wasserstand') return tabs + anaSensor(UI.jTab);
   if (UI.jTab === 'wetter') return tabs + anaWetter();
+  if (UI.jTab === 'ausbringen') return tabs + anaAusbringen();
   const list = S.behandlungen.filter(b => (b.datum || '').startsWith(UI.jahr)).sort((a, b) => a.datum < b.datum ? 1 : -1);
   const offen = S.behandlungen.filter(b => b.freiAb && b.freiAb > today());
   return `${tabs}
@@ -716,6 +717,7 @@ function anaKacheln() {
     ${gb('lager', 'Lager', 'Heu, Silage, Stroh · Ernte, Kauf, Verbrauch', IC.verbrauch)}
     ${gb('feld', 'Feldkalender', 'Düngung, Ernte · PDF', IC.ernte)}
     ${gb('behandlung', 'Behandlungsjournal', 'Behandlungen, Absetzfristen · PDF', IC.behandlung)}
+    ${gb('ausbringen', 'Gülle / Mist ausbringen', 'Darf ich heute? Boden, Niederschlag, Vegetationsruhe', IC.duengung || IC.ernte)}
     ${gb('wetter', 'Agrometeo Analyse', 'Niederschlag und Temperatur', I('<path d="M7 18a4 4 0 0 1-.5-8 6 6 0 0 1 11.5 1.5A3.5 3.5 0 0 1 17.5 18z"/>'))}
   </div>`;
 }
@@ -1463,6 +1465,73 @@ async function tvdImport(file) {
         toast(`${neu.length} neu, ${upd.length} aktualisiert`); closeSheet();
       }
     });
+}
+
+/* ---------- Gülle / Mist ausbringen (Checkliste Strickhof/ALN ZH "Ausbringen von Gülle und Mist im Winter") ---------- */
+let ausbLaden = false;
+function ausbDaten() {
+  let w = null; try { w = JSON.parse(localStorage.getItem('hb-ausb') || 'null'); } catch (e) { }
+  if ((!w || Date.now() - w.t > 3600e3) && !ausbLaden && navigator.onLine !== false) {
+    ausbLaden = true;
+    fetch(`https://api.open-meteo.com/v1/forecast?latitude=${S.set.lat}&longitude=${S.set.lon}&daily=precipitation_sum,temperature_2m_mean&hourly=snow_depth,soil_temperature_6cm,soil_moisture_3_to_9cm&past_days=14&forecast_days=4&timezone=Europe%2FZurich`)
+      .then(r => r.json()).then(j => { if (j.daily) localStorage.setItem('hb-ausb', JSON.stringify({ t: Date.now(), d: j.daily, h: j.hourly })); ausbLaden = false; schedule(); }).catch(() => { ausbLaden = false; });
+  }
+  return w;
+}
+// Status je Kriterium: 'nein' = Verbot, 'pruefen' = selbst kontrollieren, 'ja' = ok
+function ausbBewertung() {
+  const w = ausbDaten(); if (!w || !w.d) return null;
+  const D = w.d, H = w.h || {}, t0 = today(), iT = D.time.indexOf(t0);
+  if (iT < 0) return null;
+  const nowH = new Date(), hNow = H.time ? H.time.findIndex(t => new Date(t) > nowH) - 1 : -1;
+  const last24 = k => H[k] && hNow >= 0 ? H[k].slice(Math.max(0, hNow - 23), hNow + 1).filter(v => v !== null) : [];
+  const K = [];
+  // 1. Niederschlag > 20 mm/24 h: vor 1-2 Tagen, heute oder in den nächsten 3 Tagen
+  const rr = []; for (let i = iT - 2; i <= iT + 3; i++) if (D.precipitation_sum[i] !== undefined && D.precipitation_sum[i] !== null) rr.push([D.time[i], D.precipitation_sum[i]]);
+  const stark = rr.filter(([, v]) => v > 20), rMax = rr.reduce((a, b) => b[1] > a[1] ? b : a, ['', 0]);
+  K.push({ k: 'Starke / anhaltende Niederschläge', s: stark.length ? 'nein' : rMax[1] > 12 ? 'pruefen' : 'ja', w: stark.length ? stark.map(([d, v]) => `${fmtS(d)} ${nf(v)} mm`).join(', ') : `max. ${nf(rMax[1])} mm/Tag (${rMax[0] ? fmtS(rMax[0]) : '-'})`, e: 'Verbot bei über 20 mm in 24 h vor 1-2 Tagen, heute oder in den nächsten 3 Tagen.' });
+  // 2. Schneebedeckt: Schneedecke, die länger als einen Tag liegen bleibt
+  const sn = last24('snow_depth'), snNow = sn.length ? sn[sn.length - 1] : 0, snMin = sn.length ? Math.min(...sn) : 0;
+  K.push({ k: 'Schneebedeckt', s: snMin >= 0.01 ? 'nein' : snNow >= 0.01 ? 'pruefen' : 'ja', w: `Schnee aktuell ${Math.round(snNow * 100)} cm`, e: 'Verbot bei geschlossener Schneedecke, die länger als einen Tag liegen bleibt.' });
+  // 3. Gefroren: Bodentemperatur 6 cm
+  const bt = last24('soil_temperature_6cm'), btMin = bt.length ? Math.min(...bt) : null;
+  K.push({ k: 'Boden gefroren', s: btMin === null ? 'pruefen' : btMin < 0 ? 'nein' : btMin < 1.5 ? 'pruefen' : 'ja', w: btMin === null ? 'keine Daten' : `Boden 6 cm: min. ${nf(btMin)} °C (24 h)`, e: 'Test: Schraubenzieher Nr. 3/4 lässt sich an mehreren Stellen mit der flachen Hand nicht in den Boden drücken = gefroren.' });
+  // 4. Wassergesättigt: Bodenfeuchte + Regen der letzten 3 Tage
+  const bf = last24('soil_moisture_3_to_9cm'), bfNow = bf.length ? bf[bf.length - 1] : null;
+  const r3 = [iT - 3, iT - 2, iT - 1].reduce((a, i) => a + (D.precipitation_sum[i] || 0), 0);
+  const nass = (bfNow !== null && bfNow >= 0.42) || r3 > 40, feucht = (bfNow !== null && bfNow >= 0.38) || r3 > 25;
+  K.push({ k: 'Boden wassergesättigt', s: nass ? 'nein' : feucht ? 'pruefen' : 'ja', w: `Bodenfeuchte ${bfNow === null ? '-' : Math.round(bfNow * 100) + ' Vol-%'}, Regen 3 Tage ${nf(r3)} mm`, e: 'Wassergesättigt: Wasserlachen bleiben liegen, Boden leicht knetbar oder breiig. Modellwert, vor Ort prüfen.' });
+  // 5. Ausgetrocknet (nur Gülle)
+  const trocken = bfNow !== null && bfNow < 0.12;
+  K.push({ k: 'Boden ausgetrocknet', nurGuelle: true, s: trocken ? 'pruefen' : 'ja', w: `Bodenfeuchte ${bfNow === null ? '-' : Math.round(bfNow * 100) + ' Vol-%'}`, e: 'Gülle nicht auf ausgetrockneten Boden (Schwundrisse sichtbar).' });
+  // 6. Nährstoffbedarf: Tagesmittel > 5 °C an 7 aufeinanderfolgenden Tagen (Düngefenster)
+  const tm = []; for (let i = iT - 6; i <= iT; i++) tm.push(D.temperature_2m_mean[i]);
+  const fenster = tm.every(v => v !== null && v !== undefined && v > 5), unter = tm.filter(v => !(v > 5)).length;
+  K.push({ k: 'Nährstoffbedarf (Düngefenster)', s: fenster ? 'ja' : 'nein', w: `Tagesmittel letzte 7 Tage: ${tm.map(v => v === null || v === undefined ? '-' : nf(v)).join(' / ')} °C`, e: fenster ? 'Tagesmittel 7 Tage in Folge über 5 °C: Pflanzen nehmen Nährstoffe auf.' : `Vegetationsruhe (${unter} von 7 Tagen nicht über 5 °C). Ausbringen nur bei speziellen Bedürfnissen des Pflanzenbaus, siehe unten.` });
+  const res = typ => { const k = K.filter(x => typ === 'guelle' || !x.nurGuelle); return k.some(x => x.s === 'nein') ? 'nein' : k.some(x => x.s === 'pruefen') ? 'pruefen' : 'ja'; };
+  return { K, guelle: res('guelle'), mist: res('mist'), stand: w.t };
+}
+const AUSB_L = { ja: 'Ja', nein: 'Nein', pruefen: 'Prüfen' }, AUSB_C = { ja: 'ok', nein: 'red', pruefen: 'warn' };
+function ausbKpi() {
+  const b = ausbBewertung();
+  const c = (typ, l) => `<a class="stat ausb ${b ? AUSB_C[b[typ]] : ''}" href="#/journale/ausbringen"><b>${b ? AUSB_L[b[typ]] : '<i class="ld"></i>'}</b><span>${l}</span></a>`;
+  return `<div class="stats-row two"><span class="stats-h">Düngen</span>${c('guelle', 'Gülle')}${c('mist', 'Mist')}</div>`;
+}
+function anaAusbringen() {
+  const b = ausbBewertung();
+  if (!b) return '<div class="empty"><i class="ld"></i> Wetter- und Bodendaten werden geladen …</div>';
+  const pill = s => `<span class="pill ${s === 'ja' ? 'green' : s === 'nein' ? 'red' : 'warn'}">${AUSB_L[s]}</span>`;
+  const z = new Date(b.stand);
+  return `<div class="stats"><div class="stats-row two"><span class="stats-h">Heute</span><span class="stat ausb ${AUSB_C[b.guelle]}"><b>${AUSB_L[b.guelle]}</b><span>Gülle</span></span><span class="stat ausb ${AUSB_C[b.mist]}"><b>${AUSB_L[b.mist]}</b><span>Mist</span></span></div></div>
+  <div class="sec-t">Kriterien</div>
+  <div class="list">${b.K.map(x => `<div class="row"><div class="main"><span class="t">${esc(x.k)}${x.nurGuelle ? ' <span class="small muted">(nur Gülle)</span>' : ''}</span><span class="s wrap">${esc(x.w)}<br>${esc(x.e)}</span></div><span class="r">${pill(x.s)}</span></div>`).join('')}</div>
+  <div class="sec-t">Vor Ort prüfen</div>
+  <div class="card small">Die Werte stammen aus dem Wettermodell (Open-Meteo) für den Hof, nicht von einer Messung auf der Parzelle. Massgebend ist der Zustand vor Ort. Ein einziges Nein bei Boden oder Witterung = Ausbringen verboten. Ein "Ja" der App entbindet nicht von der eigenen Beurteilung.</div>
+  <div class="sec-t">Spezielle Bedürfnisse (Vegetationsruhe)</div>
+  <div class="card small">Vor Ende der Vegetationsruhe kann Ausbringen sinnvoll sein: Grasland, Raps, Wintergetreide (rasche N-Umwandlung, weniger Ammoniakverluste), Vermeidung von Bodenverdichtung bei befahrbarem Boden in der 2. Winterhälfte, Hygiene vor dem Weidegang, N-Düngung unter Folien. Mist zusätzlich: vor dem Pflügen.</div>
+  <div class="sec-t">Bedingungen, wenn ausgebracht wird</div>
+  <div class="card small"><b>Gülle:</b> nur ebene, tiefgründige Parzellen · nur bewachsener Boden (Grünland, Raps, gut entwickeltes Wintergetreide) · nicht an Hängen oder in Mulden · max. 20 m³/ha · Vorsicht bei Drainagen und Schächten · nicht in Grundwasser- und Naturschutzzonen, nicht nahe Gewässern · bodenschonend (Breitreifen, Schleppschlauch).<br><br><b>Mist / Kompost:</b> nur bewachsener Boden, auf unbewachsenem nur unmittelbar vor dem Einpflügen · nicht an Hängen oder in Mulden · kein Abschwemmrisiko durch späteres Tauwetter · Vorsicht bei Drainagen · nicht in Schutzzonen, nicht nahe Gewässern · bodenschonend.<br><br><b>Güllelager voll:</b> Nachbarn / viehlose Betriebe, Güllebörse anfragen, höchstens 14 Tage zusätzlichen Lagerraum schaffen. Notausträge sieht das Gesetz nicht vor.</div>
+  <p class="small muted" style="margin:8px 4px">Grundlage: Checkliste "Ausbringen von Gülle und Mist im Winter", ALN Kanton Zürich / Strickhof. Wetterdaten Open-Meteo, Stand ${String(z.getHours()).padStart(2, '0')}:${String(z.getMinutes()).padStart(2, '0')} Uhr.</p>`;
 }
 
 /* ---------- Sensoren direkt aus der App (akenza bei jedem Öffnen, Agrometeo 1x pro Tag) ---------- */

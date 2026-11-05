@@ -310,3 +310,7 @@ html,body{overflow-x:hidden;max-width:100%}
 .seg label,.seg button{flex:1 1 auto;min-width:0;padding:0 8px}
 @media (max-width:420px){.seg label,.seg button{font-size:13px;padding:0 6px}}
 .fx{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;margin-left:4px;border-radius:50%;background:#E08A1E;color:#fff;font-style:normal;font-size:11px;font-weight:800;vertical-align:3px}
+.stat.ausb b{font-size:20px}
+.stat.ausb.ok b{color:#2E8B62}
+.stat.ausb.red b{color:#C0392B}
+.stat.ausb.warn b{color:#E08A1E}
