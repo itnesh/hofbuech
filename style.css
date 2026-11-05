@@ -314,3 +314,9 @@ html,body{overflow-x:hidden;max-width:100%}
 .stat.ausb.ok b{color:#2E8B62}
 .stat.ausb.red b{color:#C0392B}
 .stat.ausb.warn b{color:#E08A1E}
+.sheet.mittel{max-height:70vh}
+.ausb-tab{display:flex;gap:4px;overflow-x:auto;margin-top:10px;padding-bottom:2px}
+.ausb-tab span{flex:1 0 46px;display:flex;flex-direction:column;align-items:center;background:#fff;border-radius:10px;padding:6px 2px;box-shadow:var(--shadow)}
+.ausb-tab span.on{outline:2px solid #2E8B62}
+.ausb-tab small{font-size:11px;color:var(--muted)}
+.ausb-tab b{font-size:14px}

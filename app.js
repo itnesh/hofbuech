@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.15.2';
+const VERSION = '1.15.3';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -1040,7 +1040,7 @@ function lockScroll(on) {
 function openSheet(title, body, { onSave, saveLabel = 'Sichern', onDelete } = {}) {
   closeSheet(true);
   const wrap = $('#sheets');
-  wrap.innerHTML = `<div class="backdrop"></div><div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="sheet-h"><button type="button" data-x>Abbrechen</button><b>${esc(title)}</b>${onSave ? `<button type="button" class="save" data-s>${saveLabel}</button>` : '<span style="width:70px"></span>'}</div><div class="sheet-b">${body}${onDelete ? '<button type="button" class="btn danger block" data-d style="margin-top:18px">Löschen</button>' : ''}</div></div>`;
+  wrap.innerHTML = `<div class="backdrop"></div><div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="sheet-h"><button type="button" data-x>${onSave ? 'Abbrechen' : 'Schliessen'}</button><b>${esc(title)}</b>${onSave ? `<button type="button" class="save" data-s>${saveLabel}</button>` : '<span style="width:70px"></span>'}</div><div class="sheet-b">${body}${onDelete ? '<button type="button" class="btn danger block" data-d style="margin-top:18px">Löschen</button>' : ''}</div></div>`;
   const sh = $('.sheet', wrap), bd = $('.backdrop', wrap);
   requestAnimationFrame(() => { sh.classList.add('show'); bd.classList.add('show'); });
   bd.onclick = () => closeSheet(); $('[data-x]', sh).onclick = () => closeSheet();
@@ -1489,27 +1489,62 @@ function ausbBewertung(off = 0) {
   // 1. Niederschlag > 20 mm/24 h: vor 1-2 Tagen, heute oder in den nächsten 3 Tagen
   const rr = []; for (let i = iT - 2; i <= iT + 3; i++) if (D.precipitation_sum[i] !== undefined && D.precipitation_sum[i] !== null) rr.push([D.time[i], D.precipitation_sum[i]]);
   const stark = rr.filter(([, v]) => v > 20), rMax = rr.reduce((a, b) => b[1] > a[1] ? b : a, ['', 0]);
-  K.push({ k: 'Starke / anhaltende Niederschläge', s: stark.length ? 'nein' : rMax[1] > 12 ? 'pruefen' : 'ja', w: stark.length ? stark.map(([d, v]) => `${fmtS(d)} ${nf(v)} mm`).join(', ') : `max. ${nf(rMax[1])} mm/Tag (${rMax[0] ? fmtS(rMax[0]) : '-'})`, e: 'Verbot bei über 20 mm in 24 h vor 1-2 Tagen, heute oder in den nächsten 3 Tagen.' });
+  K.push({ id: 'regen', k: 'Starke / anhaltende Niederschläge', s: stark.length ? 'nein' : rMax[1] > 12 ? 'pruefen' : 'ja', w: stark.length ? stark.map(([d, v]) => `${fmtS(d)} ${nf(v)} mm`).join(', ') : `max. ${nf(rMax[1])} mm/Tag (${rMax[0] ? fmtS(rMax[0]) : '-'})`, e: 'Verbot bei über 20 mm in 24 h vor 1-2 Tagen, heute oder in den nächsten 3 Tagen.' });
   // 2. Schneebedeckt: Schneedecke, die länger als einen Tag liegen bleibt
   const sn = last24('snow_depth'), snNow = sn.length ? sn[sn.length - 1] : 0, snMin = sn.length ? Math.min(...sn) : 0;
-  K.push({ k: 'Schneebedeckt', s: snMin >= 0.01 ? 'nein' : snNow >= 0.01 ? 'pruefen' : 'ja', w: `Schnee aktuell ${Math.round(snNow * 100)} cm`, e: 'Verbot bei geschlossener Schneedecke, die länger als einen Tag liegen bleibt.' });
+  K.push({ id: 'schnee', k: 'Schneebedeckt', s: snMin >= 0.01 ? 'nein' : snNow >= 0.01 ? 'pruefen' : 'ja', w: `Schnee aktuell ${Math.round(snNow * 100)} cm`, e: 'Verbot bei geschlossener Schneedecke, die länger als einen Tag liegen bleibt.' });
   // 3. Gefroren: Bodentemperatur 6 cm
   const bt = last24('soil_temperature_6cm'), btMin = bt.length ? Math.min(...bt) : null;
-  K.push({ k: 'Boden gefroren', s: btMin === null ? 'pruefen' : btMin < 0 ? 'nein' : btMin < 1.5 ? 'pruefen' : 'ja', w: btMin === null ? 'keine Daten' : `Boden 6 cm: min. ${nf(btMin)} °C (24 h)`, e: 'Test: Schraubenzieher Nr. 3/4 lässt sich an mehreren Stellen mit der flachen Hand nicht in den Boden drücken = gefroren.' });
+  K.push({ id: 'frost', k: 'Boden gefroren', s: btMin === null ? 'pruefen' : btMin < 0 ? 'nein' : btMin < 1.5 ? 'pruefen' : 'ja', w: btMin === null ? 'keine Daten' : `Boden 6 cm: min. ${nf(btMin)} °C (24 h)`, e: 'Test: Schraubenzieher Nr. 3/4 lässt sich an mehreren Stellen mit der flachen Hand nicht in den Boden drücken = gefroren.' });
   // 4. Wassergesättigt: Bodenfeuchte + Regen der letzten 3 Tage
   const bf = last24('soil_moisture_3_to_9cm'), bfNow = bf.length ? bf[bf.length - 1] : null;
   const r3 = [iT - 3, iT - 2, iT - 1].reduce((a, i) => a + (D.precipitation_sum[i] || 0), 0);
   const nass = (bfNow !== null && bfNow >= 0.42) || r3 > 40, feucht = (bfNow !== null && bfNow >= 0.38) || r3 > 25;
-  K.push({ k: 'Boden wassergesättigt', s: nass ? 'nein' : feucht ? 'pruefen' : 'ja', w: `Bodenfeuchte ${bfNow === null ? '-' : Math.round(bfNow * 100) + ' Vol-%'}, Regen 3 Tage ${nf(r3)} mm`, e: 'Wassergesättigt: Wasserlachen bleiben liegen, Boden leicht knetbar oder breiig. Modellwert, vor Ort prüfen.' });
+  K.push({ id: 'nass', k: 'Boden wassergesättigt', s: nass ? 'nein' : feucht ? 'pruefen' : 'ja', w: `Bodenfeuchte ${bfNow === null ? '-' : Math.round(bfNow * 100) + ' Vol-%'}, Regen 3 Tage ${nf(r3)} mm`, e: 'Wassergesättigt: Wasserlachen bleiben liegen, Boden leicht knetbar oder breiig. Modellwert, vor Ort prüfen.' });
   // 5. Ausgetrocknet (nur Gülle)
   const trocken = bfNow !== null && bfNow < 0.12;
-  K.push({ k: 'Boden ausgetrocknet', nurGuelle: true, s: trocken ? 'pruefen' : 'ja', w: `Bodenfeuchte ${bfNow === null ? '-' : Math.round(bfNow * 100) + ' Vol-%'}`, e: 'Gülle nicht auf ausgetrockneten Boden (Schwundrisse sichtbar).' });
+  K.push({ id: 'trocken', k: 'Boden ausgetrocknet', nurGuelle: true, s: trocken ? 'pruefen' : 'ja', w: `Bodenfeuchte ${bfNow === null ? '-' : Math.round(bfNow * 100) + ' Vol-%'}`, e: 'Gülle nicht auf ausgetrockneten Boden (Schwundrisse sichtbar).' });
   // 6. Nährstoffbedarf: Tagesmittel > 5 °C an 7 aufeinanderfolgenden Tagen (Düngefenster)
   const tm = []; for (let i = iT - 6; i <= iT; i++) tm.push(D.temperature_2m_mean[i]);
   const fenster = tm.every(v => v !== null && v !== undefined && v > 5), unter = tm.filter(v => !(v > 5)).length;
-  K.push({ k: 'Nährstoffbedarf (Düngefenster)', s: fenster ? 'ja' : 'nein', w: `Tagesmittel letzte 7 Tage: ${tm.map(v => v === null || v === undefined ? '-' : nf(v)).join(' / ')} °C`, e: fenster ? 'Tagesmittel 7 Tage in Folge über 5 °C: Pflanzen nehmen Nährstoffe auf.' : `Vegetationsruhe (${unter} von 7 Tagen nicht über 5 °C). Ausbringen nur bei speziellen Bedürfnissen des Pflanzenbaus, siehe unten.` });
+  K.push({ id: 'temp', k: 'Nährstoffbedarf (Düngefenster)', s: fenster ? 'ja' : 'nein', w: `Tagesmittel letzte 7 Tage: ${tm.map(v => v === null || v === undefined ? '-' : nf(v)).join(' / ')} °C`, e: fenster ? 'Tagesmittel 7 Tage in Folge über 5 °C: Pflanzen nehmen Nährstoffe auf.' : `Vegetationsruhe (${unter} von 7 Tagen nicht über 5 °C). Ausbringen nur bei speziellen Bedürfnissen des Pflanzenbaus, siehe unten.` });
   const res = typ => { const k = K.filter(x => typ === 'guelle' || !x.nurGuelle); return k.some(x => x.s === 'nein') ? 'nein' : k.some(x => x.s === 'pruefen') ? 'pruefen' : 'ja'; };
   return { K, guelle: res('guelle'), mist: res('mist'), stand: w.t, tag: t0 };
+}
+function ausbChart(id) {
+  const w = ausbDaten(); if (!w || !w.d) return;
+  const D = w.d, H = w.h || {}, t0 = today(), hi = D.time.indexOf(t0);
+  const tagH = (k, f) => D.time.map(d => { const a = (H.time || []).map((t, i) => t.startsWith(d) ? H[k] && H[k][i] : null).filter(v => v !== null && v !== undefined); return a.length ? f(a) : null; });
+  const avg = a => a.reduce((x, y) => x + y, 0) / a.length;
+  const C = {
+    regen: { t: 'Niederschlag pro Tag', v: D.precipitation_sum, u: 'mm', g: 20, gl: 'Verbot über 20 mm', bar: true },
+    schnee: { t: 'Schneehöhe (max. pro Tag)', v: tagH('snow_depth', a => Math.max(...a) * 100), u: 'cm', g: 1, gl: 'Schneedecke ab 1 cm', bar: true },
+    frost: { t: 'Bodentemperatur 6 cm (min. pro Tag)', v: tagH('soil_temperature_6cm', a => Math.min(...a)), u: '°C', g: 0, gl: 'gefroren unter 0 °C' },
+    nass: { t: 'Bodenfeuchte 3-9 cm (Ø pro Tag)', v: tagH('soil_moisture_3_to_9cm', a => avg(a) * 100), u: 'Vol-%', g: 42, gl: 'wassergesättigt ab ca. 42 %' },
+    trocken: { t: 'Bodenfeuchte 3-9 cm (Ø pro Tag)', v: tagH('soil_moisture_3_to_9cm', a => avg(a) * 100), u: 'Vol-%', g: 12, gl: 'ausgetrocknet unter ca. 12 %' },
+    temp: { t: 'Tagesmitteltemperatur', v: D.temperature_2m_mean, u: '°C', g: 5, gl: 'Düngefenster: 7 Tage über 5 °C' }
+  }[id];
+  if (!C) return;
+  const vals = C.v.map(v => v === null || v === undefined ? null : Math.round(v * 10) / 10), n = vals.length;
+  const W = 340, H0 = 190, pl = 30, pr = 8, pt = 12, pb = 26, cw = (W - pl - pr) / n;
+  const fin = vals.filter(v => v !== null);
+  let mn = Math.min(C.g, ...fin, C.bar ? 0 : Infinity), mx = Math.max(C.g, ...fin);
+  if (!C.bar) { const p = Math.max(1, (mx - mn) * 0.15); mn = Math.floor(mn - p); mx = Math.ceil(mx + p); } else { mn = 0; mx = Math.max(mx * 1.15, C.g * 1.3, 1); }
+  const y = v => pt + (H0 - pt - pb) * (1 - (v - mn) / (mx - mn || 1)), x = i => pl + i * cw + cw / 2;
+  const ticks = [mn, (mn + mx) / 2, mx].map(v => Math.round(v * 10) / 10);
+  let g = `<rect x="${pl + hi * cw}" y="${pt}" width="${(n - hi) * cw}" height="${H0 - pt - pb}" fill="#EEF3F0"/>`;
+  g += ticks.map(v => `<line x1="${pl}" x2="${W - pr}" y1="${y(v)}" y2="${y(v)}" stroke="#E2E4DF" stroke-width="1"/><text x="${pl - 4}" y="${y(v) + 3}" font-size="9" text-anchor="end" fill="#6B726D">${nf(v)}</text>`).join('');
+  if (C.bar) g += vals.map((v, i) => v === null ? '' : `<rect x="${x(i) - cw * 0.32}" y="${y(Math.max(v, 0))}" width="${cw * 0.64}" height="${Math.max(0.5, y(0) - y(Math.max(v, 0)))}" rx="2" fill="${v > C.g || (id === 'schnee' && v >= C.g) ? '#C0392B' : i >= hi ? '#7FB89A' : '#2E8B62'}"><title>${fmt(D.time[i])}: ${nf(v)} ${C.u}</title></rect>`).join('');
+  else { const pts = vals.map((v, i) => v === null ? null : [x(i), y(v)]); let d = '', on = false; pts.forEach(p => { if (!p) { on = false; return; } d += (on ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1); on = true; });
+    g += `<path d="${d}" fill="none" stroke="#2E8B62" stroke-width="2"/>` + vals.map((v, i) => v === null ? '' : `<circle cx="${x(i)}" cy="${y(v)}" r="2.6" fill="${(id === 'frost' && v < C.g) || (id === 'nass' && v >= C.g) || (id === 'trocken' && v < C.g) || (id === 'temp' && v <= C.g) ? '#C0392B' : '#2E8B62'}"><title>${fmt(D.time[i])}: ${nf(v)} ${C.u}</title></circle>`).join(''); }
+  g += `<line x1="${pl}" x2="${W - pr}" y1="${y(C.g)}" y2="${y(C.g)}" stroke="#E08A1E" stroke-width="1.5" stroke-dasharray="4 3"/>`;
+  g += `<line x1="${pl + hi * cw}" x2="${pl + hi * cw}" y1="${pt}" y2="${H0 - pb}" stroke="#1F4D36" stroke-width="1"/><text x="${pl + hi * cw + 3}" y="${pt + 9}" font-size="9" fill="#1F4D36">heute</text>`;
+  g += D.time.map((d, i) => i % 2 === hi % 2 ? `<text x="${x(i)}" y="${H0 - 10}" font-size="8.5" text-anchor="middle" fill="${i === hi ? '#1F4D36' : '#6B726D'}"${i === hi ? ' font-weight="700"' : ''}>${+d.slice(8)}.${+d.slice(5, 7)}.</text>` : '').join('');
+  const svg = `<svg viewBox="0 0 ${W} ${H0}" width="100%" style="display:block">${g}</svg>`;
+  const tab = vals.map((v, i) => ({ d: D.time[i], v })).filter(r => r.d >= addDays(t0, -3)).map(r => `<span class="${r.d === t0 ? 'on' : ''}"><small>${['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'][pd(r.d).getDay()]} ${+r.d.slice(8)}.</small><b>${r.v === null ? '-' : nf(r.v)}</b></span>`).join('');
+  openSheet(C.t, `<div class="card">${svg}<div class="small muted" style="margin-top:6px;display:flex;gap:12px;flex-wrap:wrap"><span><i class="sw" style="background:#E08A1E"></i>${esc(C.gl)}</span><span><i class="sw" style="background:#EEF3F0;border:1px solid #CFDDD5"></i>Prognose</span></div></div>
+    <div class="ausb-tab">${tab}</div><p class="small muted" style="margin:8px 2px">Einheit: ${C.u} · letzte 14 Tage und Prognose 3 Tage · Open-Meteo, Modellwerte für den Hof</p>`);
+  const sh = $('.sheet'); if (sh) sh.classList.add('mittel');
 }
 const AUSB_L = { ja: 'Ja', nein: 'Nein', pruefen: 'Prüfen' }, AUSB_C = { ja: 'ok', nein: 'red', pruefen: 'warn' };
 function ausbKpi() {
@@ -1525,14 +1560,8 @@ function anaAusbringen() {
   return `<div class="stats"><div class="stats-row two"><span class="stats-h">Heute</span><span class="stat ausb ${AUSB_C[b.guelle]}"><b>${AUSB_L[b.guelle]}</b><span>Gülle</span></span><span class="stat ausb ${AUSB_C[b.mist]}"><b>${AUSB_L[b.mist]}</b><span>Mist</span></span></div></div>
   <div class="sec-t">Prognose</div>
   <div class="list">${[1, 2, 3].map(o => ausbBewertung(o)).filter(Boolean).map(p => `<div class="row"><div class="main"><span class="t">${['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'][pd(p.tag).getDay()]} ${fmt(p.tag)}</span><span class="s wrap">${esc(p.K.filter(x => x.s !== 'ja').map(x => x.k + (x.s === 'pruefen' ? ' (prüfen)' : '')).join(', ') || 'keine Einschränkung')}</span></div><span class="r">Gülle ${pill(p.guelle)}<br>Mist ${pill(p.mist)}</span></div>`).join('')}</div>
-  <div class="sec-t">Kriterien heute</div>
-  <div class="list">${b.K.map(x => `<div class="row"><div class="main"><span class="t">${esc(x.k)}${x.nurGuelle ? ' <span class="small muted">(nur Gülle)</span>' : ''}</span><span class="s wrap">${esc(x.w)}<br>${esc(x.e)}</span></div><span class="r">${pill(x.s)}</span></div>`).join('')}</div>
-  <div class="sec-t">Vor Ort prüfen</div>
-  <div class="card small">Die Werte stammen aus dem Wettermodell (Open-Meteo) für den Hof, nicht von einer Messung auf der Parzelle. Massgebend ist der Zustand vor Ort. Ein einziges Nein bei Boden oder Witterung = Ausbringen verboten. Ein "Ja" der App entbindet nicht von der eigenen Beurteilung.</div>
-  <div class="sec-t">Spezielle Bedürfnisse (Vegetationsruhe)</div>
-  <div class="card small">Vor Ende der Vegetationsruhe kann Ausbringen sinnvoll sein: Grasland, Raps, Wintergetreide (rasche N-Umwandlung, weniger Ammoniakverluste), Vermeidung von Bodenverdichtung bei befahrbarem Boden in der 2. Winterhälfte, Hygiene vor dem Weidegang, N-Düngung unter Folien. Mist zusätzlich: vor dem Pflügen.</div>
-  <div class="sec-t">Bedingungen, wenn ausgebracht wird</div>
-  <div class="card small"><b>Gülle:</b> nur ebene, tiefgründige Parzellen · nur bewachsener Boden (Grünland, Raps, gut entwickeltes Wintergetreide) · nicht an Hängen oder in Mulden · max. 20 m³/ha · Vorsicht bei Drainagen und Schächten · nicht in Grundwasser- und Naturschutzzonen, nicht nahe Gewässern · bodenschonend (Breitreifen, Schleppschlauch).<br><br><b>Mist / Kompost:</b> nur bewachsener Boden, auf unbewachsenem nur unmittelbar vor dem Einpflügen · nicht an Hängen oder in Mulden · kein Abschwemmrisiko durch späteres Tauwetter · Vorsicht bei Drainagen · nicht in Schutzzonen, nicht nahe Gewässern · bodenschonend.<br><br><b>Güllelager voll:</b> Nachbarn / viehlose Betriebe, Güllebörse anfragen, höchstens 14 Tage zusätzlichen Lagerraum schaffen. Notausträge sieht das Gesetz nicht vor.</div>
+  <div class="sec-t">Kriterien heute <span class="small muted" style="text-transform:none;letter-spacing:0;font-weight:400">· antippen für Verlauf</span></div>
+  <div class="list">${b.K.map(x => `<button type="button" class="row" data-act="ausbchart" data-id="${x.id}"><div class="main"><span class="t">${esc(x.k)}${x.nurGuelle ? ' <span class="small muted">(nur Gülle)</span>' : ''}</span><span class="s wrap">${esc(x.w)}<br>${esc(x.e)}</span></div><span class="r">${pill(x.s)}</span></button>`).join('')}</div>
   <p class="small muted" style="margin:8px 4px">Grundlage: Checkliste "Ausbringen von Gülle und Mist im Winter", ALN Kanton Zürich / Strickhof. Wetterdaten Open-Meteo, Stand ${String(z.getHours()).padStart(2, '0')}:${String(z.getMinutes()).padStart(2, '0')} Uhr.</p>`;
 }
 
@@ -1680,6 +1709,7 @@ document.addEventListener('click', e => {
   else if (a === 'kalmon') { const [y, m] = UI.kalMonat.split('-').map(Number); const d = new Date(y, m - 1 + Number(el.dataset.v), 1); UI.kalMonat = iso(d).slice(0, 7); UI.kalTag = ''; render(); }
   else if (a === 'pdf') { el.disabled = true; pdf(el.dataset.p, el.dataset.id).catch(showErr).finally(() => el.disabled = false); }
   else if (a === 'backup') { const d = { version: VERSION, exportiert: new Date().toISOString(), set: S.set }; COLLS.forEach(c => d[c] = S[c]); const b = new Blob([JSON.stringify(d, null, 1)], { type: 'application/json' }); const u = URL.createObjectURL(b); const l = document.createElement('a'); l.href = u; l.download = `hofbuech_backup_${today()}.json`; l.click(); setTimeout(() => URL.revokeObjectURL(u), 2000); }
+  else if (a === 'ausbchart') ausbChart(el.dataset.id);
   else if (a === 'push') { pushAktivieren().catch(showErr); }
   else if (a === 'logout') { if (AUTH) AUTH.A.signOut(AUTH.auth).then(() => location.reload()); }
 });
