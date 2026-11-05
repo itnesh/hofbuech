@@ -325,3 +325,4 @@ html,body{overflow-x:hidden;max-width:100%}
 .seg.mini{margin:0}
 .seg.mini button{font-size:13px;padding:0 10px}
 .karte.klein{height:220px;margin-bottom:10px}
+.pzlabel.obj{font-size:10px;padding:1px 4px;opacity:.9}

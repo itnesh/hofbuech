@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.16.0';
+const VERSION = '1.16.1';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -132,7 +132,8 @@ function put(c, o) { o.id = o.id || uid(); o.geaendert = Date.now(); W.put(c, o)
 function del(c, id) { W.del(c, id); }
 
 /* ---------- Fachlogik ---------- */
-const parzellen = () => S.parzellen.map(x => x.name).filter(Boolean).sort((a, b) => a.localeCompare(b, 'de', { numeric: true }));
+const istObjekt = z => z && (z.art === 'objekt' || z.nutzung === 'Hecke');
+const parzellen = () => S.parzellen.filter(z => !istObjekt(z)).map(x => x.name).filter(Boolean).sort((a, b) => a.localeCompare(b, 'de', { numeric: true }));
 const gruende = () => [...new Set([...(S.set.gruende || []), ...S.auslauf.map(a => a.grund)].filter(Boolean))];
 const rassen = () => [...new Set(S.tiere.map(t => (t.rasse || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'de'));
 const tierById = id => S.tiere.find(t => t.id === id);
@@ -303,14 +304,16 @@ function render() {
 let leafletP = null, karteMap = null;
 function leafletLaden() { if (!leafletP) leafletP = (async () => { const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'vendor/leaflet/leaflet.css'; document.head.appendChild(l); await loadScript('vendor/leaflet/leaflet.js'); })(); return leafletP; }
 const geoLL = z => { try { return JSON.parse(z.geo).map(r => r.map(([x, y]) => [y, x])); } catch (e) { return null; } };
-async function miniKarte(el, z) {
+async function miniKarte(el, zz) {
+  const zs = (Array.isArray(zz) ? zz : [zz]).filter(z => z && z.geo);
   await leafletLaden();
   const map = L.map(el, { zoomControl: false, attributionControl: false, dragging: true });
   L.tileLayer('https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissimage/default/current/3857/{z}/{x}/{y}.jpeg', { maxZoom: 20, maxNativeZoom: 19 }).addTo(map);
-  for (const o of S.parzellen) { const ll = o.geo && geoLL(o); if (ll && o.id !== z.id) L.polygon(ll, { color: '#fff', weight: 1, fillOpacity: 0.05 }).addTo(map); }
-  const ll = geoLL(z); if (!ll) return;
-  const pg = L.polygon(ll, { color: '#F2C14E', weight: 3, fillColor: '#F2C14E', fillOpacity: 0.4 }).addTo(map);
-  setTimeout(() => { map.invalidateSize(); map.fitBounds(pg.getBounds(), { padding: [30, 30], maxZoom: 18 }); }, 250);
+  for (const o of S.parzellen) { const ll = o.geo && geoLL(o); if (ll && !zs.includes(o)) L.polygon(ll, { color: '#fff', weight: 1, fillOpacity: 0.05 }).addTo(map); }
+  const grp = L.featureGroup().addTo(map);
+  for (const z of zs) { const ll = geoLL(z); if (ll) L.polygon(ll, { color: '#F2C14E', weight: 3, fillColor: '#F2C14E', fillOpacity: 0.4 }).addTo(grp).bindTooltip(esc(pzKurz(z.name)), { permanent: true, direction: 'center', className: 'pzlabel' }); }
+  if (!grp.getLayers().length) return;
+  setTimeout(() => { map.invalidateSize(); map.fitBounds(grp.getBounds(), { padding: [30, 30], maxZoom: 18 }); }, 250);
 }
 async function karteZeichnen() {
   const el = $('#karte'); if (!el) return;
@@ -321,15 +324,25 @@ async function karteZeichnen() {
   L.tileLayer('https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissimage/default/current/3857/{z}/{x}/{y}.jpeg', { maxZoom: 20, maxNativeZoom: 19, attribution: '© swisstopo' }).addTo(map);
   const grp = L.featureGroup().addTo(map);
   const y = String(new Date().getFullYear());
-  for (const z of S.parzellen) {
+  const filt = !!el.dataset.filter;
+  for (const z of [...S.parzellen].sort((a, b) => (istObjekt(a) ? 1 : 0) - (istObjekt(b) ? 1 : 0))) {
     if (!z.geo) continue;
+    if (!filt && istObjekt(z)) continue;
     let rings; try { rings = JSON.parse(z.geo); } catch (e) { continue; }
     const lab = z.programm === 'Labiola', hecke = z.nutzung === 'Hecke';
     const col = hecke ? '#7A5A2E' : lab ? '#F2C14E' : '#FFFFFF';
     const poly = L.polygon(rings.map(r => r.map(([x, yy]) => [yy, x])), { color: col, weight: 2, fillColor: col, fillOpacity: lab ? 0.28 : 0.12 }).addTo(grp);
     const f = S.feld.filter(x => x.parzelle === z.name && (x.datum || '').startsWith(y)).sort((a, b) => a.datum < b.datum ? 1 : -1).slice(0, 3);
     const md = v => v ? `${v.slice(3)}.${v.slice(0, 2)}.` : '';
-    if (el.dataset.filter) { const sel = UI.lPz === z.name; poly.setStyle(sel ? { color: '#E08A1E', weight: 4, fillColor: '#E08A1E', fillOpacity: 0.45 } : UI.lPz ? { fillOpacity: 0.08, opacity: 0.6 } : {}); poly.on('click', () => { UI.lPz = sel ? '' : z.name; render(); }); poly.bindTooltip(esc(pzKurz(z.name)), { permanent: !hecke && num(z.ha) > 0.1, direction: 'center', className: 'pzlabel' }); continue; }
+    if (filt) {
+      const sel = UI.lPz === z.name, obj = istObjekt(z), oc = z.nutzung === 'Hecke' ? '#8B5A2B' : z.nutzung === 'Bäume' ? '#3E7D3A' : '#D9822B';
+      poly.setStyle(obj ? { color: oc, weight: 2, fillColor: oc, fillOpacity: 0.35, dashArray: z.nutzung === 'Bäume' ? '5 4' : null } : { color: '#FFFFFF', weight: 2, fillColor: '#FFFFFF', fillOpacity: 0.12 });
+      if (sel) poly.setStyle({ color: '#E08A1E', weight: 4, fillColor: '#E08A1E', fillOpacity: 0.5 }); else if (UI.lPz) poly.setStyle({ fillOpacity: 0.06, opacity: 0.5 });
+      if (obj) poly.bringToFront();
+      poly.on('click', e => { L.DomEvent.stopPropagation(e); UI.lPz = sel ? '' : z.name; render(); });
+      poly.bindTooltip(esc(pzKurz(z.name)), { permanent: !obj || sel, direction: 'center', className: obj ? 'pzlabel obj' : 'pzlabel' });
+      continue;
+    }
     poly.bindPopup(`<b>${esc(z.name)}</b><br>${nf(num(z.ha))} ha${z.programm ? ' · ' + esc(z.programm) : ''}${z.schnittAb ? '<br>Schnitt ab ' + md(z.schnittAb) : ''}${z.fruehBis ? '<br>Frühschnitt bis ' + md(z.fruehBis) : ''}${z.duengen === 'nein' ? '<br>keine Düngung' : ''}${f.length ? '<br><small>' + f.filter(x => FELD[x.typ]).map(x => fmtS(x.datum) + ' ' + fL(x)).join('<br>') + '</small>' : ''}`);
     poly.bindTooltip(esc(z.name.replace(/\s*\(.*\)/, '')), { permanent: !hecke && num(z.ha) > 0.1, direction: 'center', className: 'pzlabel' });
   }
@@ -805,20 +818,56 @@ const LAB_PEND = [
   { vid: 'o9-pflege', objekt: 'Obj. 9', titel: 'Erste Heckenpflege: Feldahorn ausholzen, Schwarzdorn und Hartriegel zurückschneiden', art: 'einmalig', ab: '2026-11-01', faellig: '2027-02-28' },
   { vid: 'o12-pflege', objekt: 'Obj. 12', titel: 'Hecke selektiv pflegen: schnellwachsende Gehölze (Esche, Ahorn, Nussbaum) herausholzen', art: 'einmalig', ab: '2026-11-01', faellig: '2033-02-28', notiz: 'Im Laufe der Vertragsperiode.' }
 ];
+// Zuordnung Labiola-Objekt -> Parzellen (Wiesen) und Einzelobjekte (eigene Fläche auf dem Plan), Flächen aus Plan Kleinstrukturen (ca.)
+const LAB_MAP = {
+  '1': { name: 'Höhe', hosts: ['1'] }, '2': { name: 'Höhe oben', hosts: ['2'] }, '18': { name: 'Höhe hinten', hosts: ['18'] },
+  '3': { name: 'Hochstamm-Obstgarten', hosts: ['1', 'Untere Rüti'], obj: ['Obstgarten Hof', 'Rütti Bäume'] },
+  '5': { name: 'Alte Strasse', obj: ['Alte Strasse'] }, '6': { name: 'Alte Strasse Hecke', obj: ['Alte Strasse Hecke'] },
+  '8': { name: 'LindenWiese', obj: ['LindenWiese'] }, '9': { name: 'LindenHecke', obj: ['LindenHecke'] }, '12': { name: 'Hecke neue Strasse', obj: ['Hecke neue Strasse'] },
+  '14': { name: 'Linde', hosts: ['1'] }, '15': { name: 'Nussbaum Rüti', hosts: ['Untere Rüti'], obj: ['Rütti Bäume'] },
+  '17': { name: '3 Nussbäume', hosts: ['1'], obj: ['Obstgarten Hof'] }, '19': { name: 'Rütti Bäume', hosts: ['Untere Rüti'], obj: ['Rütti Bäume'] }
+};
+const LAB_EINZEL = [
+  { name: "Alte Strasse", nutzung: 'Wiese', labiolaNr: '5', geo: "[[[8.1397045, 47.5254184], [8.1396928, 47.5254243], [8.1396286, 47.5255294], [8.1396587, 47.5256762], [8.1395785, 47.525755], [8.1395855, 47.5258099], [8.1395925, 47.5258125], [8.1396065, 47.525805], [8.1396424, 47.5258006], [8.1397248, 47.5257779], [8.1397358, 47.5257799], [8.139745, 47.5257725], [8.1397871, 47.5257669], [8.1397949, 47.5257605], [8.1398369, 47.525755], [8.1398556, 47.5257464], [8.1398883, 47.525743], [8.1400019, 47.5257138], [8.1400587, 47.5258187], [8.1400034, 47.5258301], [8.1400004, 47.5258354], [8.1399879, 47.5258345], [8.1399739, 47.5258419], [8.1399552, 47.5258421], [8.1399459, 47.5258495], [8.1399116, 47.5258529], [8.139893, 47.5258636], [8.1398556, 47.525868], [8.139809, 47.5258842], [8.13977, 47.5258887], [8.1397623, 47.5258961], [8.1397249, 47.5259006], [8.1396814, 47.5259167], [8.1396064, 47.5259129], [8.13958, 47.5259247], [8.1395519, 47.5259281], [8.1395333, 47.5259366], [8.1395177, 47.5259367], [8.1395068, 47.5259431], [8.1394305, 47.5259595], [8.1394259, 47.5259648], [8.1393823, 47.5259714], [8.1393714, 47.5259778], [8.1392951, 47.5259952], [8.1392821, 47.5260085], [8.1392916, 47.5260201], [8.1392968, 47.5260644], [8.1393073, 47.5260882], [8.1393183, 47.5260902], [8.1393618, 47.5260762], [8.1394366, 47.5260662], [8.1394552, 47.5260577], [8.1395565, 47.5260412], [8.1395689, 47.5260337], [8.1396126, 47.5260292], [8.139667, 47.526013], [8.1396764, 47.5260161], [8.1396966, 47.5260065], [8.1397185, 47.5260064], [8.1397215, 47.5260011], [8.1397527, 47.5259977], [8.1397916, 47.5259848], [8.1398259, 47.5259825], [8.1398553, 47.5259664], [8.1398725, 47.5259642], [8.1399253, 47.5259406], [8.1399346, 47.5259416], [8.1400167, 47.5258903], [8.1400747, 47.525845], [8.1400746, 47.5258355], [8.1401254, 47.5257866], [8.1401223, 47.5257823], [8.1401361, 47.5257675], [8.1401345, 47.525759], [8.1401453, 47.5257505], [8.1401421, 47.5257452], [8.1401529, 47.5257335], [8.1401481, 47.5257293], [8.1401589, 47.5257176], [8.1401474, 47.5256733], [8.1401503, 47.5256595], [8.1401234, 47.5256279], [8.1401124, 47.5256238], [8.1400996, 47.5256027], [8.1399761, 47.5255331], [8.1399683, 47.5255342], [8.1399525, 47.5255227], [8.1399275, 47.5255154], [8.1399243, 47.5255091], [8.1399165, 47.5255112], [8.1399023, 47.5254997], [8.1398725, 47.5254935], [8.1398473, 47.5254778], [8.1398113, 47.5254664], [8.1397971, 47.5254549], [8.1397814, 47.5254528], [8.1397437, 47.5254319], [8.1397045, 47.5254184]]]" },
+  { name: "Alte Strasse Hecke", nutzung: 'Hecke', labiolaNr: '6', geo: "[[[8.1399942, 47.5257234], [8.1395926, 47.5258168], [8.1395825, 47.5258237], [8.1395843, 47.5258374], [8.1396178, 47.5258901], [8.1396195, 47.5259038], [8.1396469, 47.5259106], [8.1396797, 47.5259104], [8.1400407, 47.5258162], [8.1400413, 47.5257998], [8.1399942, 47.5257234]]]" },
+  { name: "LindenWiese", nutzung: 'Wiese', labiolaNr: '8', geo: "[[[8.1423497, 47.5262548], [8.1423428, 47.5262618], [8.1423538, 47.5262712], [8.1423607, 47.5263177], [8.1423686, 47.5263219], [8.1423721, 47.5263546], [8.1423784, 47.5263578], [8.1423819, 47.5263884], [8.1423899, 47.5263968], [8.1423825, 47.5264297], [8.1423806, 47.5265249], [8.1424062, 47.5265713], [8.1424463, 47.5265948], [8.1424808, 47.5266062], [8.1425464, 47.5266069], [8.1426071, 47.5265885], [8.1426381, 47.5265704], [8.1426475, 47.5265714], [8.1426816, 47.5265521], [8.1426909, 47.5265531], [8.1427188, 47.526536], [8.1427406, 47.5265306], [8.1427476, 47.5265248], [8.1427374, 47.5265211], [8.1427172, 47.5265297], [8.1427039, 47.5265261], [8.142691, 47.5265008], [8.1426768, 47.5264882], [8.1426783, 47.5264797], [8.1426672, 47.5264724], [8.1426703, 47.526466], [8.1426386, 47.5264313], [8.1426432, 47.526427], [8.1425369, 47.5263563], [8.1424662, 47.5263229], [8.1424614, 47.5263155], [8.1424457, 47.5263114], [8.1423497, 47.5262548]]]" },
+  { name: "LindenHecke", nutzung: 'Hecke', labiolaNr: '9', geo: "[[[8.1425437, 47.5264017], [8.1424814, 47.5264085], [8.1424426, 47.5264309], [8.1424169, 47.5264337], [8.1424171, 47.5264485], [8.1424063, 47.5264581], [8.1424111, 47.5264665], [8.1424004, 47.5264867], [8.1424179, 47.5265067], [8.1424148, 47.526512], [8.1424314, 47.5265262], [8.1424736, 47.5265333], [8.1425094, 47.5265215], [8.1425421, 47.5265181], [8.1426126, 47.5264769], [8.1426058, 47.5264336], [8.1425719, 47.526409], [8.1425437, 47.5264017]]]" },
+  { name: "Hecke neue Strasse", nutzung: 'Hecke', labiolaNr: '12', geo: "[[[8.1398404, 47.5260183], [8.1397704, 47.5260378], [8.1397626, 47.5260357], [8.1397439, 47.5260443], [8.1397377, 47.5260412], [8.1397237, 47.5260497], [8.1396614, 47.5260596], [8.1396428, 47.5260682], [8.1396349, 47.5260661], [8.139596, 47.526078], [8.1395897, 47.5260738], [8.1395727, 47.5260823], [8.1395415, 47.5260846], [8.1395244, 47.5260922], [8.1393515, 47.5261239], [8.1393476, 47.5261276], [8.1393563, 47.5261334], [8.1393641, 47.5261312], [8.1394252, 47.5261467], [8.1394531, 47.5261883], [8.1393989, 47.5262288], [8.13942, 47.5262292], [8.1395165, 47.5262064], [8.1398585, 47.5260901], [8.1398655, 47.5260853], [8.1398621, 47.526061], [8.139849, 47.526022], [8.1398404, 47.5260183]]]" },
+  { name: "Obstgarten Hof", nutzung: 'Bäume', labiolaNr: '3', geo: "[[[8.1404504, 47.5258581], [8.140417, 47.5258747], [8.1404227, 47.5258868], [8.1404148, 47.5258826], [8.1403369, 47.5258947], [8.1402806, 47.5258887], [8.1402628, 47.525901], [8.1402809, 47.5259131], [8.140295, 47.5259172], [8.1403246, 47.5259107], [8.1403536, 47.5259206], [8.1399022, 47.5260846], [8.1398866, 47.5260878], [8.1398725, 47.5260805], [8.1398539, 47.5260944], [8.1397419, 47.5261279], [8.1397257, 47.5261391], [8.1397383, 47.5261527], [8.1396843, 47.5262594], [8.1393685, 47.5263448], [8.1393367, 47.5263656], [8.1392496, 47.5265079], [8.139205, 47.5265632], [8.139365, 47.5267304], [8.1394004, 47.5267571], [8.1397568, 47.5266672], [8.1397927, 47.5266638], [8.1398954, 47.5268107], [8.1399143, 47.5268265], [8.139932, 47.5268676], [8.1399749, 47.5269255], [8.1399915, 47.5269365], [8.1400507, 47.5269298], [8.1400758, 47.5269392], [8.1401011, 47.5269602], [8.140115, 47.5269506], [8.1401245, 47.5269558], [8.1401322, 47.5269505], [8.1401286, 47.526969], [8.1401451, 47.52698], [8.1405762, 47.5268748], [8.1406142, 47.5268539], [8.1406024, 47.526844], [8.140626, 47.5268555], [8.1408528, 47.5267705], [8.1408872, 47.5267724], [8.1410553, 47.5268486], [8.1416417, 47.5266748], [8.1416603, 47.5266641], [8.141721, 47.526651], [8.14192, 47.5265874], [8.1421833, 47.5263621], [8.1421102, 47.526325], [8.14206, 47.5263105], [8.1419069, 47.5262454], [8.1420159, 47.526103], [8.1419554, 47.5260721], [8.1419298, 47.5260897], [8.141857, 47.526188], [8.1417574, 47.5262151], [8.1417322, 47.5261983], [8.1416609, 47.52624], [8.1416234, 47.526236], [8.1413653, 47.5263222], [8.1412204, 47.5263421], [8.1411948, 47.5263586], [8.1412155, 47.5263913], [8.1412102, 47.5264003], [8.1408275, 47.5265073], [8.140764, 47.5265479], [8.1405151, 47.5266203], [8.1404989, 47.5266315], [8.1405029, 47.5266404], [8.1403986, 47.5266665], [8.1403152, 47.5265607], [8.1403369, 47.5265478], [8.1402432, 47.5264834], [8.1402277, 47.526493], [8.1402073, 47.5264857], [8.1401089, 47.5264863], [8.140088, 47.5265007], [8.1400935, 47.5265054], [8.140078, 47.5265076], [8.1400685, 47.5265024], [8.1400608, 47.5265077], [8.1400342, 47.5265026], [8.1400249, 47.5265069], [8.140017, 47.5265017], [8.1400077, 47.526507], [8.1400146, 47.5265001], [8.1399989, 47.5264886], [8.1400074, 47.5264827], [8.1400152, 47.5264879], [8.1400417, 47.5264825], [8.140059, 47.5264929], [8.1400815, 47.5264775], [8.1400516, 47.5264639], [8.1400443, 47.5264433], [8.1401393, 47.5264216], [8.1401672, 47.5264066], [8.1403477, 47.5263611], [8.140371, 47.5263493], [8.1406698, 47.5262735], [8.14071, 47.5262426], [8.1407225, 47.5262425], [8.1407398, 47.526254], [8.1407637, 47.5262333], [8.1407864, 47.526176], [8.1408003, 47.5261653], [8.1407982, 47.5261252], [8.1407518, 47.5260985], [8.1407433, 47.5261012], [8.1407525, 47.5260948], [8.1407413, 47.5260737], [8.140624, 47.5259358], [8.1406051, 47.5259233], [8.1406416, 47.5259077], [8.140662, 47.5259182], [8.1406822, 47.5259085], [8.1407057, 47.5259137], [8.1407375, 47.5258981], [8.1407193, 47.5258861], [8.1406944, 47.5258915], [8.1406335, 47.5258877], [8.1406117, 47.5258952], [8.1405741, 47.5258859], [8.1405548, 47.5259014], [8.1405549, 47.5259109], [8.1405707, 47.5259224], [8.1405231, 47.5259232], [8.140516, 47.5259196], [8.1405268, 47.5259121], [8.140519, 47.5259058], [8.1405339, 47.5259147], [8.1405517, 47.5259024], [8.1405469, 47.5258972], [8.1405717, 47.5258833], [8.1405521, 47.5258702], [8.1404504, 47.5258581]]]" },
+  { name: "Rütti Bäume", nutzung: 'Bäume', labiolaNr: '19', geo: "[[[8.140892, 47.5256016], [8.1408766, 47.5256123], [8.1408593, 47.525605], [8.1408469, 47.5256114], [8.1408265, 47.5256083], [8.1407964, 47.5256312], [8.140912, 47.5256977], [8.1410786, 47.5257781], [8.1410896, 47.5257823], [8.1411089, 47.525769], [8.1411042, 47.5257616], [8.1411128, 47.5257663], [8.1411205, 47.525761], [8.1411231, 47.5257742], [8.141106, 47.5257859], [8.1412673, 47.5258785], [8.1412877, 47.5258826], [8.1413177, 47.5258534], [8.1413153, 47.5258455], [8.1413574, 47.5258389], [8.1413832, 47.5258466], [8.1413803, 47.5258646], [8.141393, 47.5258762], [8.14137, 47.5259059], [8.141349, 47.5259161], [8.1413427, 47.5259119], [8.1413203, 47.5259274], [8.141319, 47.5259517], [8.1413044, 47.525964], [8.1409431, 47.5259207], [8.1409253, 47.525934], [8.1409228, 47.5259827], [8.1409015, 47.5260219], [8.1409157, 47.5260314], [8.1409079, 47.5260367], [8.1409915, 47.5261018], [8.1410406, 47.5261523], [8.1409311, 47.5261936], [8.1408735, 47.5262077], [8.1408262, 47.5261763], [8.1408084, 47.5261896], [8.1407597, 47.5262788], [8.1407647, 47.5263083], [8.1407953, 47.5263203], [8.1408843, 47.5263166], [8.1409082, 47.5262927], [8.1408814, 47.5262727], [8.14087, 47.5262421], [8.1408988, 47.5262298], [8.1409254, 47.5262402], [8.1409425, 47.5262295], [8.1409675, 47.5262357], [8.1409753, 47.5262304], [8.140984, 47.5262372], [8.1409625, 47.5262648], [8.1409783, 47.5262785], [8.140977, 47.5263007], [8.1410108, 47.5263201], [8.1410426, 47.5263014], [8.1410237, 47.5262888], [8.1410235, 47.5262782], [8.1410483, 47.5262601], [8.1410443, 47.5262532], [8.1410608, 47.5262653], [8.1410612, 47.5262896], [8.1410534, 47.526295], [8.1410615, 47.5263118], [8.1410537, 47.5263182], [8.1410844, 47.5263344], [8.1411156, 47.5263311], [8.141128, 47.5263225], [8.1411406, 47.5263309], [8.1411568, 47.5263197], [8.1411371, 47.5263066], [8.1411278, 47.526313], [8.1410939, 47.5262884], [8.1411117, 47.5262761], [8.1411606, 47.5263086], [8.1411699, 47.5263043], [8.141203, 47.5263253], [8.1412201, 47.5263251], [8.1413479, 47.5263064], [8.1416123, 47.5262212], [8.1416285, 47.5262079], [8.1416123, 47.5261689], [8.1415926, 47.5261537], [8.1415414, 47.5261794], [8.1415139, 47.526161], [8.1415316, 47.5261456], [8.1415817, 47.5261569], [8.1416026, 47.5261425], [8.1415798, 47.5260728], [8.1415554, 47.5260576], [8.1414364, 47.5260298], [8.1414199, 47.5260188], [8.141416, 47.5259607], [8.1414266, 47.5259416], [8.1414328, 47.5258157], [8.141377, 47.5257858], [8.1412985, 47.5257588], [8.1412892, 47.5257642], [8.1412915, 47.5257573], [8.1412576, 47.5257369], [8.1409796, 47.5256127], [8.1409405, 47.5256034], [8.1409141, 47.5256173], [8.140892, 47.5256016]]]" }
+];
+const pzNorm = s => String(s || '').toLowerCase().replace(/ü/g, 'u').replace(/ä/g, 'a').replace(/ö/g, 'o').replace(/[^a-z0-9]/g, '');
+// Parzelle finden: Nummer (Name beginnt mit Nr.) oder Name (unscharf)
+function pzFinde(t, nurWiese = true) {
+  const L = S.parzellen.filter(z => !nurWiese || !istObjekt(z));
+  if (/^\d+$/.test(t)) { const re = new RegExp(`^\\s*(obj\\.?|objekt)?\\s*${t}\\b`, 'i'); return L.find(z => re.test(z.name || '')) || null; }
+  const n = pzNorm(t); return L.find(z => pzNorm(z.name) === n) || L.find(z => pzNorm(z.name).includes(n) || (pzNorm(z.name).length > 3 && n.includes(pzNorm(z.name)))) || null;
+}
 const labNr = s => { const m = String(s || '').match(/(\d+)/); return m ? m[1] : ''; };
 const labObj = nr => S.labiola.find(o => String(o.nr) === String(nr));
-function labPz(o) {
-  if (!o) return null;
-  if (o.parzelle) { const z = S.parzellen.find(x => x.name === o.parzelle); if (z) return z; }
-  const re = new RegExp(`^\\s*(obj\\.?|objekt)?\\s*${o.nr}\\b`, 'i');
-  return S.parzellen.find(z => re.test(z.name || '')) || null;
+// alle Flächen eines Objekts: Wiesen-Parzellen (hosts) + Einzelobjekte
+function labPzs(o) {
+  if (!o) return [];
+  const m = LAB_MAP[o.nr] || {}, out = [];
+  if (o.parzelle) { const z = S.parzellen.find(x => x.name === o.parzelle); if (z) out.push(z); }
+  for (const h of (m.hosts || [o.nr])) { const z = pzFinde(h); if (z && !out.includes(z)) out.push(z); }
+  for (const n of (m.obj || [])) { const z = S.parzellen.find(x => istObjekt(x) && pzNorm(x.name) === pzNorm(n)); if (z && !out.includes(z)) out.push(z); }
+  return out;
 }
+const labHosts = o => labPzs(o).filter(z => !istObjekt(z));
+function labPz(o) { return labPzs(o)[0] || null; }
 const pzKurz = n => String(n || '').replace(/^\s*(obj\.?|objekt)?\s*\d+\s*[-–:.]?\s*/i, '').replace(/\s*\(.*\)\s*$/, '').trim() || n;
-function labName(nr) { const o = labObj(nr), z = labPz(o); return z ? pzKurz(z.name) : o ? (o.flurname || `Obj. ${nr}`) : `Obj. ${nr}`; }
+function labName(nr) { const m = LAB_MAP[String(nr)]; if (m) return m.name; const o = labObj(nr), z = labPz(o); return z ? pzKurz(z.name) : o ? (o.flurname || `Obj. ${nr}`) : `Obj. ${nr}`; }
 const labAufg = () => S.aufgaben.filter(a => !a.archiv);
 function labTeil(y) { const a = S.aufgaben.find(x => x.vid === 'o1-frueh'); return a && a.teil ? a.teil[String(y)] || '' : ''; }
 // Seed: Objekte und Pendenzen aus dem Vertrag (einmalig), 2025 und 2026 als erledigt
+function labEinzelSeed() {
+  if (!S.loaded.parzellen || !S.loaded.set || S.set.labEinzel === 2) return;
+  S.set.labEinzel = 2; W.setSettings({ ...S.set, labEinzel: 2 });
+  for (const e of LAB_EINZEL) { const alt = S.parzellen.find(z => pzNorm(z.name) === pzNorm(e.name)); put('parzellen', { ...(alt || {}), ...e, geo: alt && alt.geo ? alt.geo : e.geo, art: 'objekt', programm: 'Labiola' }); }
+}
 function labiolaSeed() {
+  labEinzelSeed();
   if (!S.loaded.labiola || !S.loaded.aufgaben || !S.loaded.set || !S.loaded.lprotokoll || S.set.labSeed === LAB_VERTRAG) return;
   S.set.labSeed = LAB_VERTRAG; W.setSettings({ ...S.set, labSeed: LAB_VERTRAG });
   for (const o of LAB_OBJ) { const alt = labObj(o.nr); put('labiola', { ...(alt || {}), ...o, parzelle: alt && alt.parzelle || '', vertrag: LAB_VERTRAG }); }
@@ -864,16 +913,16 @@ function labGantt(items, y) {
   return `<div class="card" style="padding:8px 6px"><svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Jahreskalender Pendenzen">${g}</svg><div class="small muted" style="display:flex;gap:12px;flex-wrap:wrap;margin:4px 4px 0"><span><i class="sw" style="background:#E08A1E"></i>offen</span><span><i class="sw" style="background:#C0392B"></i>überfällig</span><span><i class="sw" style="background:#2E8B62;opacity:.55"></i>erledigt</span></div></div>`;
 }
 function labKarte() { return S.parzellen.some(z => z.geo) ? `<div id="karte" class="karte" data-filter="1"></div>${UI.lPz ? `<div class="toolbar"><span class="chip on">${esc(pzKurz(UI.lPz))}</span><button class="btn" data-act="lpz" data-v="">Filter aufheben</button></div>` : '<p class="small muted" style="margin:2px 4px 8px">Parzelle antippen zum Filtern.</p>'}` : ''; }
-const labPzOk = nr => !UI.lPz || (labPz(labObj(nr)) || {}).name === UI.lPz;
+const labPzOk = nr => !UI.lPz || labPzs(labObj(nr)).some(z => z.name === UI.lPz);
 function labInfo(nr, extra = '') {
   const o = labObj(nr); if (!o) return;
-  const z = labPz(o);
+  const zs = labPzs(o), z = zs[0];
   const zuord = z ? '' : `<div class="fld"><span>Parzelle zuordnen</span><select class="sel" data-act="lzuord" data-id="${o.id}"><option value="">-</option>${parzellen().map(p => `<option>${esc(p)}</option>`).join('')}</select></div>`;
-  openSheet(`${labName(nr)} · Obj. ${o.nr}`, `${z && z.geo ? '<div class="karte klein" id="lmini"></div>' : ''}${zuord}${extra}
+  openSheet(`${labName(nr)} · Obj. ${o.nr}`, `${zs.some(x => x.geo) ? '<div class="karte klein" id="lmini"></div>' : ''}${zuord}${extra}
     <div class="list"><div class="row"><div class="main"><span class="t wrap">${esc(o.typ || '')}</span><span class="s">${nf(num(o.aren))} ${esc(o.einheit || 'a')}${o.szp ? ' · Schnitt ab ' + o.szp.slice(3) + '.' + o.szp.slice(0, 2) + '.' : ''}${o.duengen === 'nein' ? ' · keine Düngung' : ''}</span></div></div></div>
     <div class="sec-t">Massnahmen / Bemerkungen</div><div class="card lab-mass">${esc(o.massnahmen || '-')}</div>`);
   const sh = $('.sheet'); if (sh) sh.classList.add('mittel');
-  const el = $('#lmini'); if (el && z) miniKarte(el, z);
+  const el = $('#lmini'); if (el && zs.length) miniKarte(el, zs);
 }
 function labTeilSheet(a, y) {
   openSheet('Welcher Teil wurde geschnitten?', `<p class="small muted">Obj. 1, ${y}: 1/3 bis 1/2 der Fläche bis Ende Mai. Nächstes Jahr ist der andere Teil dran.</p><div class="btns" style="margin-top:10px"><button class="btn pri" data-act="lteil" data-id="${a.id}" data-y="${y}" data-v="oben">Oberer Teil</button><button class="btn pri" data-act="lteil" data-id="${a.id}" data-y="${y}" data-v="unten">Unterer Teil</button></div>`);
@@ -884,8 +933,9 @@ function vLabiola() {
   const tabs = `<div class="seg" style="margin:8px 0 12px">${[['pendenzen', 'Pendenzen'], ['objekte', 'Objekte']].map(([v, l]) => `<button type="button" class="${UI.lTab === v ? 'on' : ''}" data-act="ltab" data-v="${v}">${l}</button>`).join('')}</div>`;
   if (UI.lTab === 'objekte') {
     const g = {};
-    [...S.labiola].filter(o => labPzOk(o.nr)).sort((a, b) => num(a.nr) - num(b.nr)).forEach(o => { const k = labName(o.nr); (g[k] = g[k] || []).push(o); });
-    return `${tabs}${labKarte()}${Object.keys(g).length ? Object.entries(g).map(([pz, os]) => `<div class="sec-t">${esc(pz)}</div><div class="list">${os.map(o => `<button type="button" class="row" data-act="linfo" data-v="${esc(o.nr)}"><span class="av weide">${esc(o.nr)}</span><div class="main"><span class="t wrap">${esc(o.typ || '')}</span><span class="s">${nf(num(o.aren))} ${esc(o.einheit || 'a')}${o.szp ? ' · Schnitt ab ' + o.szp.slice(3) + '.' + o.szp.slice(0, 2) + '.' : ''}${o.duengen === 'nein' ? ' · keine Düngung' : ''}</span>${o.massnahmen ? `<span class="s wrap lab-mass-k">${esc(o.massnahmen)}</span>` : ''}</div></button>`).join('')}</div>`).join('') : '<div class="empty">Keine Objekte.</div>'}`;
+    [...S.labiola].filter(o => labPzOk(o.nr)).sort((a, b) => num(a.nr) - num(b.nr)).forEach(o => { const hs = labHosts(o).map(z => pzKurz(z.name)); (hs.length ? hs : ['Einzelobjekte']).forEach(k => (g[k] = g[k] || []).push(o)); });
+    const keys = Object.keys(g).sort((a, b) => a === 'Einzelobjekte' ? 1 : b === 'Einzelobjekte' ? -1 : a.localeCompare(b, 'de', { numeric: true }));
+    return `${tabs}${labKarte()}${keys.length ? keys.map(pz => [pz, g[pz]]).map(([pz, os]) => `<div class="sec-t">${esc(pz)}</div><div class="list">${os.map(o => `<button type="button" class="row" data-act="linfo" data-v="${esc(o.nr)}"><span class="av weide">${esc(o.nr)}</span><div class="main"><span class="t wrap"><b>${esc(labName(o.nr))}</b> · ${esc(o.typ || '')}</span><span class="s">${nf(num(o.aren))} ${esc(o.einheit || 'a')}${o.szp ? ' · Schnitt ab ' + o.szp.slice(3) + '.' + o.szp.slice(0, 2) + '.' : ''}${o.duengen === 'nein' ? ' · keine Düngung' : ''}</span>${o.massnahmen ? `<span class="s wrap lab-mass-k">${esc(o.massnahmen)}</span>` : ''}</div></button>`).join('')}</div>`).join('') : '<div class="empty">Keine Objekte.</div>'}`;
   }
   const alle = labAufg().filter(a => labPzOk(labNr(a.objekt)) && (a.art === 'einmalig' || ((a.vonJahr || 0) <= +y && +y <= (a.bisJahr || 9999))))
     .map(a => ({ a, d: aufgabeFaellig(a, y), done: (a.erledigt || {})[y] })).filter(x => x.d).sort((p, q) => (labAb(p.a, y) || p.d) < (labAb(q.a, y) || q.d) ? -1 : 1);
