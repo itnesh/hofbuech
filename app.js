@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.14.3';
+const VERSION = '1.14.4';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -346,7 +346,7 @@ function kpiBlock(k, link = false, L = null) {
     ? `<button type="button" class="stat ${UI.tierFilter.kat === key || UI.tierFilter.lakt === key ? 'sel' : ''}" data-act="filt" data-v="${key}"><b>${k[key]}</b><span>${label}</span></button>`
     : `<a class="stat" href="#/tiere" data-act="filtlink" data-v="${key}"><b>${k[key]}</b><span>${label}</span></a>`;
   const ls = (v, l) => `<a class="stat ${v <= 5 ? 'low' : ''}" href="#/journale/lager"><b>${nf(v)}</b><span>${l}</span></a>`;
-  const sw = id => { const x = S.sensoren.find(s => s.id === id), p = x && x.last ? x.last.prozent : null; return `<a class="stat ${p !== null && p !== undefined && p < 30 ? 'low' : ''} ${SENS.laedt ? 'laedt' : ''}" href="#/journale/${id}"><b>${SENS.laedt ? '<i class="ld"></i>' : p === null || p === undefined ? '-' : Math.round(p) + '%'}</b><span>${id === 'wasserstand' ? 'Wasserstand' : 'Tränkefass'}</span></a>`; };
+  const sw = id => { const x = S.sensoren.find(s => s.id === id), p = x && x.last ? x.last.prozent : null; return `<a class="stat ${p !== null && p !== undefined && p < 30 ? 'low' : ''} ${SENS.laedt ? 'laedt' : ''}" href="#/journale/${id}"><b>${SENS.laedt ? '<i class="ld"></i>' : p === null || p === undefined ? '-' : Math.round(p) + '%'}${!SENS.laedt && x && x.fehlerSeit ? '<i class="fx" title="Sensor liefert Fehlmessungen">!</i>' : ''}</b><span>${id === 'wasserstand' ? 'Wasserstand' : 'Tränkefass'}</span></a>`; };
   const lg = L ? `<div class="stats-row"><span class="stats-h">Lager</span>${ls(L.heu, 'Heu')}${ls(L.silo, 'Silage')}${ls(L.stroh, 'Stroh')}</div><div class="stats-row two"><span class="stats-h">Wasser</span>${sw('wasserstand')}${sw('traenkefass')}</div>` : '';
   const lk = '';
   return `<div class="stats"><div class="stats-row"><span class="stats-h">Bestand</span>${c('Kalb', 'Kälber')}${c('Rind', 'Rinder')}${c('Kuh', 'Kühe')}</div>${lk}${lg}</div>`;
@@ -488,7 +488,7 @@ function vTier(t) {
   <p class="small muted" style="margin:10px 4px">Neue Einträge für ${esc(t.name || 'dieses Tier')}: unten auf + tippen, das Tier ist vorausgewählt.</p>`;
 }
 function evLabel(e) {
-  if (e.typ === 'abkalbung') { const k = e.kalbId ? tierById(e.kalbId) : null; const kn = k ? (k.geschlecht === 'm' ? '♂ ' : '♀ ') + (k.name || k.ohrmarke) : e.kalbName ? (e.kalbGeschlecht === 'm' ? '♂ ' : '♀ ') + e.kalbName : ''; return ['Abkalbung', [kn, e.verlauf, e.lage, e.groesse ? 'Kalb ' + e.groesse : '', e.notiz].filter(Boolean).join(' · ')]; }
+  if (e.typ === 'abkalbung') { const k = e.kalbId ? tierById(e.kalbId) : null; const kn = k ? (k.geschlecht === 'm' ? '♂ ' : '♀ ') + (k.name || k.ohrmarke) : e.kalbName ? (e.kalbGeschlecht === 'm' ? '♂ ' : '♀ ') + e.kalbName : ''; return [e.totgeburt ? 'Abkalbung (Totgeburt)' : 'Abkalbung', [kn, e.verlauf, e.lage, e.groesse ? 'Kalb ' + e.groesse : '', e.notiz].filter(Boolean).join(' · ')]; }
   if (e.typ === 'besamung') return ['Besamung', [e.stier, e.notiz].filter(Boolean).join(' · ')];
   if (e.typ === 'brunst') return ['Brunst', [e.sicherheit, e.notiz].filter(Boolean).join(' · ')];
   return [e.typ, ''];
@@ -508,7 +508,7 @@ function vLaktation(t) {
 function vNachkommen(t) {
   const k = S.tiere.filter(x => x.mutterId === t.id).sort((a, b) => (a.geburt || '') < (b.geburt || '') ? 1 : -1);
   const ext = evOf(t.id, 'abkalbung').filter(e => !e.kalbId || !tierById(e.kalbId)).reverse();
-  return `<div class="sec-t">Nachkommen von ${esc(t.name || t.ohrmarke)}</div><div class="list">${k.map(x => tierRow(x)).join('')}${ext.map(e => `<button type="button" class="row" data-act="edit" data-c="ereignisse" data-id="${e.id}"><span class="av kalb">${TIC.Kalb}</span><div class="main"><span class="t">${esc(e.kalbName || 'Kalb')}${e.kalbOhrmarke ? ` <span class="om">${kurzOM(e.kalbOhrmarke)}</span>` : ''}${e.kalbGeschlecht === 'm' ? ' <span class="om">♂</span>' : ''}</span><span class="s wrap">geb. ${fmt(e.datum)} · nicht mehr im Bestand${e.notiz ? ' · ' + esc(e.notiz) : ''}</span></div></button>`).join('')}${!k.length && !ext.length ? '<div class="empty">Keine Nachkommen erfasst.</div>' : ''}</div>`;
+  return `<div class="sec-t">Nachkommen von ${esc(t.name || t.ohrmarke)}</div><div class="list">${k.map(x => tierRow(x)).join('')}${ext.map(e => `<button type="button" class="row" data-act="edit" data-c="ereignisse" data-id="${e.id}"><span class="av kalb">${TIC.Kalb}</span><div class="main"><span class="t">${esc(e.kalbName || 'Kalb')}${e.kalbOhrmarke ? ` <span class="om">${kurzOM(e.kalbOhrmarke)}</span>` : ''}${e.kalbGeschlecht === 'm' ? ' <span class="om">♂</span>' : ''}</span><span class="s wrap">geb. ${fmt(e.datum)} · ${e.totgeburt ? 'Totgeburt' : 'nicht mehr im Bestand'}${e.notiz ? ' · ' + esc(e.notiz) : ''}</span></div></button>`).join('')}${!k.length && !ext.length ? '<div class="empty">Keine Nachkommen erfasst.</div>' : ''}</div>`;
 }
 function behRows(list) {
   return list.length ? list.map(b => `<button type="button" class="row" data-act="edit" data-c="behandlungen" data-id="${b.id}"><div class="main"><span class="t">${esc(b.medikament || '-')}${b.grund ? ' · ' + esc(b.grund) : ''}</span><span class="s">${esc(tierListe(b.tierIds, b.datum))} · ${esc([b.menge, b.durch].filter(Boolean).join(' · '))}</span></div><div class="r">${fmt(b.datum)}${b.bis && b.bis !== b.datum ? '<br><span class="small muted">bis ' + fmt(b.bis) + '</span>' : ''}<br>${b.freiAb && b.freiAb > today() ? `<span class="pill warn">frei ab ${fmtS(b.freiAb)}</span>` : `<span class="pill">frei</span>`}</div></button>`).join('') : '<div class="empty">Keine Behandlungen.</div>';
@@ -918,13 +918,15 @@ const FORMS = {
     { k: 'verlauf', l: 'Verlauf', t: 'seg', o: VERLAUF, def: 'leicht' },
     { k: 'lage', l: 'Lage', t: 'seg', o: LAGE, def: 'Vorderendlage' },
     { k: 'groesse', l: 'Grösse Kalb', t: 'seg', o: GROESSE, def: 'mittel' },
+    { k: 'totgeburt', l: 'Kalb', t: 'seg', o: [['', 'lebend'], ['true', 'Totgeburt']], def: '' },
     { k: 'kalbName', l: 'Name Kalb', t: 'text' }, { k: 'kalbOhrmarke', l: 'Ohrmarke Kalb', t: 'text' },
     { k: 'kalbGeschlecht', l: 'Geschlecht Kalb', t: 'seg', o: [['w', 'weiblich'], ['m', 'männlich']], def: 'w' },
     { k: 'kalbRasse', l: 'Rasse Kalb (von Mutter)', t: 'tag', list: rassen },
     { k: 'notiz', l: 'Notiz', t: 'textarea', rows: 5 }],
-    hint: 'Legt das Kalb als neues Tier an und erstellt den Abkalbe-Eintrag bei der Mutter (mit Verlauf, Lage, Grösse und Notiz). TVD-Meldung nicht vergessen.',
+    hint: 'Legt das Kalb als neues Tier an und erstellt den Abkalbe-Eintrag bei der Mutter. Bei Totgeburt wird nur die Abkalbung gespeichert und das Kalb unter Nachkommen gelistet, nicht in der Tierliste. TVD-Meldung nicht vergessen.',
     onTier(form, t) { if (!t || !t.rasse) return; const box = $('[data-tag="kalbRasse"]', form); let c = $$('.chip', box).find(x => x.dataset.v === t.rasse); $$('.chip', box).forEach(x => x.classList.remove('on')); if (c) c.classList.add('on'); else { const n = box.querySelector('input'); if (n) n.value = t.rasse; } },
     save(v) {
+      if (v.totgeburt) return put('ereignisse', { typ: 'abkalbung', tierId: v.tierId, datum: v.datum, verlauf: v.verlauf, lage: v.lage, groesse: v.groesse, totgeburt: true, kalbName: v.kalbName, kalbOhrmarke: v.kalbOhrmarke, kalbGeschlecht: v.kalbGeschlecht, notiz: v.notiz });
       const k = put('tiere', { name: v.kalbName, ohrmarke: v.kalbOhrmarke, geschlecht: v.kalbGeschlecht, geburt: v.datum, zugang: v.datum, mutterId: v.tierId, rasse: v.kalbRasse });
       put('ereignisse', { typ: 'abkalbung', tierId: v.tierId, datum: v.datum, verlauf: v.verlauf, lage: v.lage, groesse: v.groesse, kalbId: k.id, notiz: v.notiz });
     } },
@@ -933,7 +935,8 @@ const FORMS = {
     { k: 'verlauf', l: 'Verlauf', t: 'seg', o: VERLAUF },
     { k: 'lage', l: 'Lage', t: 'seg', o: LAGE },
     { k: 'groesse', l: 'Grösse Kalb', t: 'seg', o: GROESSE },
-    { k: 'notiz', l: 'Notiz', t: 'textarea', rows: 7 }] },
+    { k: 'totgeburt', l: 'Kalb', t: 'seg', o: [['', 'lebend'], ['true', 'Totgeburt']], def: '' },
+    { k: 'notiz', l: 'Notiz', t: 'textarea', rows: 7 }], prep: v => { v.totgeburt = !!v.totgeburt; } },
   brunst: { t: 'Brunst', coll: 'ereignisse', fields: [
     { k: 'tierId', l: 'Tier', t: 'tier', filter: t => t.geschlecht === 'w' && kategorie(t) !== 'Kalb' },
     { k: 'datum', l: 'Datum', t: 'date' },

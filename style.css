@@ -301,3 +301,12 @@ html,body{overflow-x:hidden;max-width:100%}
 .note .ld{width:12px;height:12px;border-width:2px;margin-right:4px}
 .laedt{opacity:.8}
 @keyframes ldspin{to{transform:rotate(360deg)}}
+/* Formulare: kein seitliches Verschieben */
+.sheet,.sheet-b{overflow-x:hidden;overscroll-behavior-x:none}
+.sheet-b{overflow-y:auto}
+.sheet-b>*,.fld{min-width:0;max-width:100%}
+.fld input[type=date],.fld input[type=time]{-webkit-appearance:none;appearance:none;display:block;min-width:0;max-width:100%;box-sizing:border-box}
+.seg{max-width:100%}
+.seg label,.seg button{flex:1 1 auto;min-width:0;padding:0 8px}
+@media (max-width:420px){.seg label,.seg button{font-size:13px;padding:0 6px}}
+.fx{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;margin-left:4px;border-radius:50%;background:#E08A1E;color:#fff;font-style:normal;font-size:11px;font-weight:800;vertical-align:3px}
