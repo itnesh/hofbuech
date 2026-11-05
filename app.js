@@ -870,7 +870,7 @@ function labInfo(nr, extra = '') {
   const z = labPz(o);
   const zuord = z ? '' : `<div class="fld"><span>Parzelle zuordnen</span><select class="sel" data-act="lzuord" data-id="${o.id}"><option value="">-</option>${parzellen().map(p => `<option>${esc(p)}</option>`).join('')}</select></div>`;
   openSheet(`${labName(nr)} · Obj. ${o.nr}`, `${z && z.geo ? '<div class="karte klein" id="lmini"></div>' : ''}${zuord}${extra}
-    <div class="list"><div class="row"><div class="main"><span class="t">${esc(o.typ || '')}</span><span class="s">${nf(num(o.aren))} ${esc(o.einheit || 'a')}${o.szp ? ' · Schnitt ab ' + o.szp.slice(3) + '.' + o.szp.slice(0, 2) + '.' : ''}${o.duengen === 'nein' ? ' · keine Düngung' : ''}</span></div></div></div>
+    <div class="list"><div class="row"><div class="main"><span class="t wrap">${esc(o.typ || '')}</span><span class="s">${nf(num(o.aren))} ${esc(o.einheit || 'a')}${o.szp ? ' · Schnitt ab ' + o.szp.slice(3) + '.' + o.szp.slice(0, 2) + '.' : ''}${o.duengen === 'nein' ? ' · keine Düngung' : ''}</span></div></div></div>
     <div class="sec-t">Massnahmen / Bemerkungen</div><div class="card lab-mass">${esc(o.massnahmen || '-')}</div>`);
   const sh = $('.sheet'); if (sh) sh.classList.add('mittel');
   const el = $('#lmini'); if (el && z) miniKarte(el, z);
@@ -885,7 +885,7 @@ function vLabiola() {
   if (UI.lTab === 'objekte') {
     const g = {};
     [...S.labiola].filter(o => labPzOk(o.nr)).sort((a, b) => num(a.nr) - num(b.nr)).forEach(o => { const k = labName(o.nr); (g[k] = g[k] || []).push(o); });
-    return `${tabs}${labKarte()}${Object.keys(g).length ? Object.entries(g).map(([pz, os]) => `<div class="sec-t">${esc(pz)}</div><div class="list">${os.map(o => `<button type="button" class="row" data-act="linfo" data-v="${esc(o.nr)}"><span class="av weide">${esc(o.nr)}</span><div class="main"><span class="t">${esc(o.typ || '')}</span><span class="s">${nf(num(o.aren))} ${esc(o.einheit || 'a')}${o.szp ? ' · Schnitt ab ' + o.szp.slice(3) + '.' + o.szp.slice(0, 2) + '.' : ''}${o.duengen === 'nein' ? ' · keine Düngung' : ''}</span>${o.massnahmen ? `<span class="s wrap lab-mass-k">${esc(o.massnahmen)}</span>` : ''}</div></button>`).join('')}</div>`).join('') : '<div class="empty">Keine Objekte.</div>'}`;
+    return `${tabs}${labKarte()}${Object.keys(g).length ? Object.entries(g).map(([pz, os]) => `<div class="sec-t">${esc(pz)}</div><div class="list">${os.map(o => `<button type="button" class="row" data-act="linfo" data-v="${esc(o.nr)}"><span class="av weide">${esc(o.nr)}</span><div class="main"><span class="t wrap">${esc(o.typ || '')}</span><span class="s">${nf(num(o.aren))} ${esc(o.einheit || 'a')}${o.szp ? ' · Schnitt ab ' + o.szp.slice(3) + '.' + o.szp.slice(0, 2) + '.' : ''}${o.duengen === 'nein' ? ' · keine Düngung' : ''}</span>${o.massnahmen ? `<span class="s wrap lab-mass-k">${esc(o.massnahmen)}</span>` : ''}</div></button>`).join('')}</div>`).join('') : '<div class="empty">Keine Objekte.</div>'}`;
   }
   const alle = labAufg().filter(a => labPzOk(labNr(a.objekt)) && (a.art === 'einmalig' || ((a.vonJahr || 0) <= +y && +y <= (a.bisJahr || 9999))))
     .map(a => ({ a, d: aufgabeFaellig(a, y), done: (a.erledigt || {})[y] })).filter(x => x.d).sort((p, q) => (labAb(p.a, y) || p.d) < (labAb(q.a, y) || q.d) ? -1 : 1);
