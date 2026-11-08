@@ -179,6 +179,7 @@ async function wasserqualitaet() {
   const rows = await WQ.laden(fetch, set.akenzaKey, dev, 366);
   const pts = WQ.punkte(rows);
   if (!pts.length) return console.log('Wasserqualität: keine Daten', rows.length);
+  console.log('WQ Rohdaten 48h (Zeit|Trübung|O2|EC|Temp|BatV):\n' + pts.filter(p => p.t >= now - 48 * 3600e3).map(p => [new Date(p.t).toLocaleString('de-CH', { timeZone: 'Europe/Zurich' }), p.tu, p.do, p.ec, p.te, p.bat].join(' | ')).join('\n'));
   const ref = base.collection('sensoren').doc('wasserqualitaet');
   const prev = (await ref.get()).data() || {};
   const r = WQ.auswerten(pts, set, prev, now);
