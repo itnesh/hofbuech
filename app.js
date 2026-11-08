@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.18.4';
+const VERSION = '1.19.0';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -362,9 +362,17 @@ function kpiBlock(k, link = false, L = null) {
     : `<a class="stat" href="#/tiere" data-act="filtlink" data-v="${key}"><b>${k[key]}</b><span>${label}</span></a>`;
   const ls = (v, l) => `<a class="stat ${v <= 5 ? 'low' : ''}" href="#/journale/lager"><b>${nf(v)}</b><span>${l}</span></a>`;
   const sw = id => { const x = S.sensoren.find(s => s.id === id), p = x && x.last ? x.last.prozent : null; return `<a class="stat ${p !== null && p !== undefined && p < 30 ? 'low' : ''} ${SENS.laedt ? 'laedt' : ''}" href="#/journale/${id}"><b>${SENS.laedt ? '<i class="ld"></i>' : p === null || p === undefined ? '-' : Math.round(p) + '%'}${!SENS.laedt && x && x.fehlerSeit ? '<i class="fx" title="Sensor liefert Fehlmessungen">!</i>' : ''}</b><span>${id === 'wasserstand' ? 'Wasserstand' : 'Tränkefass'}</span></a>`; };
-  const lg = L ? `<div class="stats-row"><span class="stats-h">Lager</span>${ls(L.heu, 'Heu')}${ls(L.silo, 'Silage')}${ls(L.stroh, 'Stroh')}</div><div class="stats-row two"><span class="stats-h">Wasser</span>${sw('wasserstand')}${sw('traenkefass')}</div>${ausbKpi()}` : '';
-  const lk = '';
-  return `<div class="stats"><div class="stats-row"><span class="stats-h">Bestand</span>${c('Kalb', 'Kälber')}${c('Rind', 'Rinder')}${c('Kuh', 'Kühe')}</div>${lk}${lg}</div>`;
+  if (L) return `<div class="stats"><div class="stats-row"><span class="stats-h">Lager</span>${ls(L.heu, 'Heu')}${ls(L.silo, 'Silage')}${ls(L.stroh, 'Stroh')}</div><div class="stats-row two"><span class="stats-h">Wasser</span>${sw('wasserstand')}${sw('traenkefass')}</div>${wqKpi()}</div>`;
+  return `<div class="stats"><div class="stats-row"><span class="stats-h">Bestand</span>${c('Kalb', 'Kälber')}${c('Rind', 'Rinder')}${c('Kuh', 'Kühe')}</div></div>`;
+}
+function wqKpi() {
+  const x = S.sensoren.find(s => s.id === 'wasserqualitaet'), al = x && x.alarme ? x.alarme.map(a => a.k) : [];
+  const c = k => { const v = x && x.last ? x.last[k] : null, f = WQ.F[k]; return `<a class="stat ${al.includes(k) ? 'low' : ''} ${SENS.laedt ? 'laedt' : ''}" href="#/journale/wasserqualitaet"><b>${SENS.laedt && !x ? '<i class="ld"></i>' : v === null || v === undefined ? '-' : nf(v)}${al.includes(k) ? '<i class="fx" title="starke Veränderung">!</i>' : ''}</b><span>${f.kurz} ${f.unit}</span></a>`; };
+  return `<div class="stats-row"><span class="stats-h">Wasser&shy;qualität</span>${c('tu')}${c('do')}${c('ec')}</div>`;
+}
+function wqBand() {
+  const x = S.sensoren.find(s => s.id === 'wasserqualitaet');
+  return x && x.alarme && x.alarme.length ? `<a class="band" href="#/journale/wasserqualitaet"><b>Wasserqualität: starke Veränderung</b><span>${esc(x.alarme.map(a => a.text).join(' · '))}</span></a>` : '';
 }
 function herdeBanner() {
   const a = herdeAm(), ic = !a ? '?' : a.typ === 'Weide' ? IC.heuen : a.typ === 'Alp' ? I('<path d="M3 20l6-10 4 6 3-4 5 8z"/>') : I('<path d="M4 11l8-7 8 7v9H4z"/>');
@@ -392,7 +400,7 @@ function vStart() {
   const neu = S.meldungen.filter(m => !m.status).sort((a, b) => a.zeit < b.zeit ? 1 : -1);
   const kam = neu.length ? `<button type="button" class="band blue" data-act="meldung" data-id="${neu[0].id}"><b>${neu.length} Kamera-${neu.length === 1 ? 'Meldung' : 'Meldungen'} (CowCatcher)</b><span>${esc(neu[0].kamera || '')} · ${esc((neu[0].zeit || '').replace('T', ' ').slice(0, 16))}</span></button>` : '';
   const lateRow = late.length ? `<a class="row one" href="#/labiola"><i class="bar red"></i><div class="main"><span class="t1"><span class="hd">${late.length} Labiola-Pendenzen überfällig</span></span></div><small class="rt">›</small></a>` : '';
-  return `${wetterZeile()}${kam}${band}${herdeBanner()}${kpiBlock(k, false, L)}
+  return `${wetterZeile()}${wqBand()}${kam}${band}${herdeBanner()}${kpiBlock(k, false, L)}
   <div class="sec-t">Demnächst (60 Tage)</div>
   <div class="list">${lateRow}${ag.length ? agendaRows(ag) : '<div class="empty">Nichts geplant. Brunst und Besamung erfassen, dann erscheinen hier die nächsten Termine.</div>'}</div>`;
 }
@@ -538,7 +546,7 @@ function jahre(listen) { const s = new Set([String(new Date().getFullYear())]); 
 function jahrSel() { return `<select class="sel" data-act="jahr" aria-label="Jahr">${jahre([S.behandlungen, S.auslauf, S.feld]).map(j => `<option ${j === UI.jahr ? 'selected' : ''}>${j}</option>`).join('')}</select>`; }
 
 function vJournale() {
-  const SECT = { lager: 'Lager', auslauf: 'Auslaufjournal', behandlung: 'Behandlungsjournal', feld: 'Feldkalender', zucht: 'Zucht', traenkefass: 'Tränkefass', wasserstand: 'Wasserstand', ausbringen: 'Gülle / Mist ausbringen', wetter: 'Agrometeo Analyse' };
+  const SECT = { lager: 'Lager', auslauf: 'Auslaufjournal', behandlung: 'Behandlungsjournal', feld: 'Feldkalender', zucht: 'Zucht', traenkefass: 'Tränkefass', wasserstand: 'Wasserstand', wasserqualitaet: 'Wasserqualität', ausbringen: 'Gülle / Mist ausbringen', wetter: 'Agrometeo Analyse' };
   if (!SECT[UI.jTab]) return anaKacheln();
   const tabs = `<div class="anah"><a class="back" href="#/journale/">‹ Übersicht</a><b>${SECT[UI.jTab]}</b></div>`;
   if (UI.jTab === 'auslauf') return tabs + vAuslauf();
@@ -546,6 +554,7 @@ function vJournale() {
   if (UI.jTab === 'lager') return tabs + anaLager();
   if (UI.jTab === 'zucht') return tabs + anaZucht();
   if (UI.jTab === 'traenkefass' || UI.jTab === 'wasserstand') return tabs + anaSensor(UI.jTab);
+  if (UI.jTab === 'wasserqualitaet') return tabs + anaWq();
   if (UI.jTab === 'wetter') return tabs + anaWetter();
   if (UI.jTab === 'ausbringen') return tabs + anaAusbringen();
   const list = S.behandlungen.filter(b => (b.datum || '').startsWith(UI.jahr)).sort((a, b) => a.datum < b.datum ? 1 : -1);
@@ -698,7 +707,7 @@ const CHARTS = {};
 function svgLines(series, labels, colors, h = 150, tips = null, dyn = false, alle = false) {
   const W = chartW(), pad = 26, n = labels.length, all = series.flat().filter(v => v !== null && v !== undefined);
   let mx = Math.max(1, ...all), mn = Math.min(0, ...all);
-  if (dyn && all.length) { const a = Math.min(...all), b = Math.max(...all), p = Math.max(1, (b - a) * 0.12); mn = Math.max(0, Math.floor(a - p)); mx = Math.min(100, Math.ceil(b + p)); if (mx - mn < 4) { mn = Math.max(0, mn - 2); mx = mn + 4; } }
+  if (dyn && all.length) { const a = Math.min(...all), b = Math.max(...all), p = Math.max(1, (b - a) * 0.12); mn = Math.max(0, Math.floor(a - p)); mx = dyn === 'frei' ? Math.ceil(b + p) : Math.min(100, Math.ceil(b + p)); if (mx - mn < 4) { mn = Math.max(0, mn - 2); mx = mn + 4; } }
   const x = i => pad + i * (W - pad - 6) / Math.max(1, n - 1), y = v => 8 + (mx - v) / (mx - mn || 1) * (h - 30);
   let g = `<line x1="${pad}" x2="${W}" y1="${y(mn > 0 ? mn : 0)}" y2="${y(mn > 0 ? mn : 0)}" stroke="#E2E4DF"/><text x="0" y="12" font-size="9" fill="#5F6862">${nf(mx)}</text>${mn !== 0 || dyn ? `<text x="0" y="${y(mn) - 2}" font-size="9" fill="#5F6862">${nf(mn)}</text>` : ''}`;
   series.forEach((s, k) => { g += `<polyline fill="none" stroke="${colors[k]}" stroke-width="2.2" stroke-linejoin="round" points="${s.map((v, i) => v === null || v === undefined ? '' : `${x(i)},${y(v)}`).filter(Boolean).join(' ')}"/>`; });
@@ -728,6 +737,7 @@ function anaKacheln() {
   <div class="sec-t">Lager</div>
   <div class="kacheln drei" style="margin-top:0">${lk('Heu', 'Heu', L.heu)}${lk('Silage', 'Silage', L.silo)}${lk('Stroh', 'Stroh', L.stroh)}</div>
   <div class="grosse">
+    ${gb('wasserqualitaet', 'Wasserqualität', 'Reservoir: Trübung, Sauerstoff, Leitfähigkeit · Alarm', I('<path d="M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z"/>'))}
     ${gb('auslauf', 'Auslaufjournal', 'Weide, Laufhof, Alp · PDF', IC.auslauf)}
     ${gb('lager', 'Lager', 'Heu, Silage, Stroh · Ernte, Kauf, Verbrauch', IC.verbrauch)}
     ${gb('feld', 'Feldkalender', 'Düngung, Ernte · PDF', IC.ernte)}
@@ -771,6 +781,29 @@ function anaSensor(id) {
   const sx = S.sensoren.find(x => x.id === id);
   const ban = SENS.laedt ? '<div class="note blue small" style="margin:8px 0"><i class="ld"></i> Aktuelle Daten von akenza werden geladen …</div>' : SENS.fehler ? `<div class="note small" style="margin:8px 0">akenza nicht erreichbar (${esc(SENS.fehler)}), angezeigt wird der letzte gespeicherte Stand.</div>` : '';
   return ban + (sx ? sensorKarte(sx) : '<div class="empty">Noch keine Daten.</div>');
+}
+function anaWq() {
+  const sx = S.sensoren.find(x => x.id === 'wasserqualitaet');
+  const ban = SENS.laedt ? '<div class="note blue small" style="margin:8px 0"><i class="ld"></i> Aktuelle Daten von akenza werden geladen …</div>' : SENS.fehler ? `<div class="note small" style="margin:8px 0">akenza nicht erreichbar (${esc(SENS.fehler)}), angezeigt wird der letzte gespeicherte Stand.</div>` : '';
+  if (!sx || !sx.last) return ban + '<div class="empty">Noch keine Daten. akenza API-Key und Gerät unter Einstellungen > Sensoren prüfen.</div>';
+  const zt = t => { const d = new Date(t); return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}. ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+  const zd = t => { const d = new Date(t); return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`; };
+  const L = sx.last, B = sx.basis, G = sx.grenzen || WQ.grenzen(S.set), al = (sx.alarme || []).map(a => a.k), alt = Date.now() - L.zeit > 3 * 3600e3;
+  const st = k => { const f = WQ.F[k]; return `<span class="stat ${al.includes(k) ? 'low' : ''}"><b>${L[k] === null || L[k] === undefined ? '-' : nf(L[k])}</b><span>${f.label} ${f.unit}</span></span>`; };
+  const bs = k => `<span class="stat"><b>${B && B[k] !== null ? nf(B[k]) : '-'}</b><span>Basis ${WQ.F[k].unit}</span></span>`;
+  const R = UI.wqR || '48h', ser = R === '365t' ? sx.serie365 || [] : R === '30t' ? sx.serie30 || [] : sx.serie48 || [];
+  const lab = t => { const d = new Date(t); return R === '48h' ? d.getHours() + 'h' : R === '30t' ? d.getDate() + '.' + (d.getMonth() + 1) : MON[d.getMonth()]; };
+  const ft = R === '365t' ? zd : zt;
+  const chart = k => { const f = WQ.F[k], p = ser.filter(x => x[k] !== null && x[k] !== undefined); return `<div class="small muted" style="margin-top:8px">${f.label} (${f.unit})${B && B[k] !== null ? ` · Basis ${nf(B[k])}` : ''}</div>${p.length > 1 ? svgLines([p.map(x => x[k])], p.map(x => lab(x.t)), [f.col], 120, p.map(x => `${ft(x.t)} · ${nf(x[k])} ${f.unit}`), 'frei') : '<div class="empty">Noch zu wenige Messungen.</div>'}`; };
+  const temp = ser.filter(x => x.te !== null && x.te !== undefined);
+  return `${ban}${(sx.alarme || []).length ? `<div class="note" style="margin:8px 0"><b>Starke Veränderung:</b> ${esc(sx.alarme.map(a => a.text).join(' · '))}. Reservoir und Zulauf prüfen.</div>` : ''}${alt ? `<div class="note small" style="margin:8px 0">Letzte Messung ${zt(L.zeit)}, seither keine Daten. Funk/Batterie prüfen.</div>` : ''}
+  <div class="stats"><div class="stats-row"><span class="stats-h">Aktuell</span>${st('tu')}${st('do')}${st('ec')}</div>
+  <div class="stats-row"><span class="stats-h">Basis 7 T.</span>${bs('tu')}${bs('do')}${bs('ec')}</div>
+  <div class="stats-row"><span class="stats-h">Weitere</span><span class="stat"><b>${L.te === null || L.te === undefined ? '-' : nf(L.te)}</b><span>Wasser °C</span></span><span class="stat"><b>${L.bat === null || L.bat === undefined ? '-' : nf(L.bat)}</b><span>Batterie V</span></span><span class="stat"><b class="zeit">${zt(L.zeit)}</b><span>Messung</span></span></div></div>
+  <div class="chips" style="margin:12px 0 4px">${[['48h', '48 Std.'], ['30t', '30 Tage'], ['365t', '365 Tage']].map(([v, l]) => `<button type="button" class="chip ${R === v ? 'on' : ''}" data-act="wqr" data-v="${v}">${l}</button>`).join('')}</div>
+  <div class="card">${chart('tu')}${chart('do')}${chart('ec')}${temp.length > 1 ? `<div class="small muted" style="margin-top:8px">Wassertemperatur (°C)</div>${svgLines([temp.map(x => x.te)], temp.map(x => lab(x.t)), ['#E0A35C'], 100, temp.map(x => `${ft(x.t)} · ${nf(x.te)} °C`), 'frei')}` : ''}</div>
+  <p class="small muted" style="margin:8px 4px">Alarm bei Leitfähigkeit ±${nf(G.ec)} %, Trübung +${nf(G.tu)} NTU oder Sauerstoff -${nf(G.do)} mg/L gegenüber der Basis (Median der letzten 7 Tage ohne die letzten 6 Std., erst ab Echtbetrieb ${esc(S.set.wqAb || WQ.AB)}). ${B ? `Basis aus ${B.n} Messungen.` : 'Basis wird aufgebaut (mind. 12 Messungen nötig), bis dahin kein Alarm.'} Push stündlich über den Hintergrund-Job. Trübungssonde mit Offset ca. 20-25 NTU, nur als Trend nutzbar. Leitfähigkeit noch unkalibriert.</p>
+  <div class="small muted" style="margin:0 4px">Aktualisiert ${sx.aktualisiert ? esc(new Date(sx.aktualisiert).toLocaleString('de-CH')) : '-'}</div>`;
 }
 function anaWetter() {
   const a = S.sensoren.find(x => x.id === 'agrometeo');
@@ -1078,7 +1111,7 @@ function vSettings() {
   ${grp('liste', 'Tierliste', `unbesamt ab ${s.unbesamtAb} Mt. · Abkalbung ${s.baldTage} T.`, numf('unbesamtAb', 'Unbesamt markieren ab (Monate)', s.unbesamtAb) + numf('baldTage', 'Abkalbung markieren (Tage vorher)', s.baldTage))}
   ${grp('listen', 'Auswahllisten', 'Gründe, Medikamente', ta('gruende', 'Gründe Stall / Laufhof', (s.gruende || []).join('\n')) + ta('medikamente', 'Medikamente (Name ; Absetzfrist Tage)', (s.medikamente || []).map(m => `${m.name} ; ${m.frist}`).join('\n'), 'Beispielpräparat ; 21'))}
   ${grp('lager', 'Lager', `Heu ${nf(num(s.startHeu))} · Silage ${nf(num(s.startSilo))} · Stroh ${nf(num(s.startStroh))}`, numf('startHeu', 'Startbestand Heuballen', s.startHeu) + numf('startSilo', 'Startbestand Silageballen', s.startSilo) + numf('startStroh', 'Startbestand Strohballen', s.startStroh))}
-  ${grp('sensoren', 'Sensoren & Wetterdaten', s.akenzaKey ? 'akenza verbunden' : 'nicht verbunden', `<p class="small muted" style="margin:0">Die Daten lädt ein Hintergrund-Job stündlich (Agrometeo täglich) in hofbuech. Schlüssel und Passwort liegen nur in deiner Datenbank, nicht im Code.</p>` + fld('akenzaKey', 'akenza API-Key (x-api-key)', s.akenzaKey, 'type="password" autocomplete="off"') + fld('sensWasser', 'Gerät Wasserstand (akenza Device-ID)', s.sensWasser ?? '02bdf0b1b64b4c40') + fld('sensFass', 'Gerät Tränkefass (akenza Device-ID)', s.sensFass ?? '029412d5966ce1d4') + fld('fassLeer', 'Tränkefass: Abstand bei leer (cm)', s.fassLeer, 'inputmode="decimal" placeholder="83"') + fld('fassVoll', 'Tränkefass: Abstand bei voll (cm)', s.fassVoll, 'inputmode="decimal" placeholder="9.3"') + fld('wasserLeer', 'Wasserstand: Abstand bei leer (cm)', s.wasserLeer, 'inputmode="decimal" placeholder="214"') + fld('wasserVoll', 'Wasserstand: Abstand bei voll (cm)', s.wasserVoll, 'inputmode="decimal" placeholder="56"') + fld('agroUser', 'Agrometeo / vitimeteo Benutzer', s.agroUser ?? 'erdinmatthias') + fld('agroPass', 'Agrometeo / vitimeteo Passwort', s.agroPass, 'type="password" autocomplete="off"') + fld('agroStation', 'Agrometeo Station', s.agroStation ?? '177') + fld('grafanaUrl', 'Grafana-Link zum Einbetten (optional)', s.grafanaUrl, 'placeholder="https://..."'))}
+  ${grp('sensoren', 'Sensoren & Wetterdaten', s.akenzaKey ? 'akenza verbunden' : 'nicht verbunden', `<p class="small muted" style="margin:0">Die Daten lädt ein Hintergrund-Job stündlich (Agrometeo täglich) in hofbuech. Schlüssel und Passwort liegen nur in deiner Datenbank, nicht im Code.</p>` + fld('akenzaKey', 'akenza API-Key (x-api-key)', s.akenzaKey, 'type="password" autocomplete="off"') + fld('sensWasser', 'Gerät Wasserstand (akenza Device-ID)', s.sensWasser ?? '02bdf0b1b64b4c40') + fld('sensFass', 'Gerät Tränkefass (akenza Device-ID)', s.sensFass ?? '029412d5966ce1d4') + fld('fassLeer', 'Tränkefass: Abstand bei leer (cm)', s.fassLeer, 'inputmode="decimal" placeholder="83"') + fld('fassVoll', 'Tränkefass: Abstand bei voll (cm)', s.fassVoll, 'inputmode="decimal" placeholder="9.3"') + fld('wasserLeer', 'Wasserstand: Abstand bei leer (cm)', s.wasserLeer, 'inputmode="decimal" placeholder="214"') + fld('wasserVoll', 'Wasserstand: Abstand bei voll (cm)', s.wasserVoll, 'inputmode="decimal" placeholder="56"') + fld('sensWqs', 'Gerät Wasserqualität WQS-LB (akenza ID)', s.sensWqs ?? WQ.DEVICE) + fld('wqAb', 'Wasserqualität: Echtbetrieb ab (JJJJ-MM-TT HH:MM)', s.wqAb ?? WQ.AB) + fld('wqEc', 'Alarm Leitfähigkeit: Abweichung zur Basis (%)', s.wqEc, `inputmode="decimal" placeholder="${WQ.DEF.ec}"`) + fld('wqTu', 'Alarm Trübung: Anstieg zur Basis (NTU)', s.wqTu, `inputmode="decimal" placeholder="${WQ.DEF.tu}"`) + fld('wqDo', 'Alarm Sauerstoff: Abfall zur Basis (mg/L)', s.wqDo, `inputmode="decimal" placeholder="${WQ.DEF.do}"`) + fld('agroUser', 'Agrometeo / vitimeteo Benutzer', s.agroUser ?? 'erdinmatthias') + fld('agroPass', 'Agrometeo / vitimeteo Passwort', s.agroPass, 'type="password" autocomplete="off"') + fld('agroStation', 'Agrometeo Station', s.agroStation ?? '177') + fld('grafanaUrl', 'Grafana-Link zum Einbetten (optional)', s.grafanaUrl, 'placeholder="https://..."'))}
   <button class="btn pri block" type="submit" style="margin-top:6px">Einstellungen speichern</button>
   </form>
   <div class="form" style="gap:8px;margin-top:8px">
@@ -1800,12 +1833,20 @@ async function akenzaWeb(id, deviceId, leer, voll) {
     last: { zeit: lastOk ? lastOk[0] : last.t, wert: lastOk ? lastOk[1] : last.d[kW] ?? null, prozent: ok ? (lastOk ? pct(lastOk[1]) : null) : null, batterie: bat ?? null },
     serie48: filt(serie48).map(conv), serie30: filt(serie30).map(conv), serie365: Object.keys(hm).map(Number).sort((a, b) => a - b).map(t => ({ 0: t, 1: hm[t] })), fehlerSeit, fehlerInfo, aktualisiert: now, quelle: 'app' });
 }
+async function wqWeb() {
+  const prev = S.sensoren.find(x => x.id === 'wasserqualitaet') || {};
+  const pts = WQ.punkte(await WQ.laden(fetch, S.set.akenzaKey, S.set.sensWqs || WQ.DEVICE, 31));
+  if (!pts.length) return;
+  const r = WQ.auswerten(pts, S.set, prev, Date.now());
+  put('sensoren', { ...prev, ...r, quelle: 'app' });
+}
 async function sensorenLaden(force = false) {
   if (SENS.laedt || !S.set.akenzaKey || !S.loaded.sensoren || !S.loaded.set || navigator.onLine === false) return;
   if (!force && Date.now() - SENS.zuletzt < 5 * 60e3) return;
   SENS.laedt = true; SENS.fehler = ''; SENS.zuletzt = Date.now(); schedule();
   const tasks = [];
   if (S.set.sensWasser !== '') tasks.push(akenzaWeb('wasserstand', S.set.sensWasser || '02bdf0b1b64b4c40', S.set.wasserLeer || 214, S.set.wasserVoll || 56));
+  if (S.set.sensWqs !== '') tasks.push(wqWeb());
   if (S.set.sensFass !== '') tasks.push(akenzaWeb('traenkefass', S.set.sensFass || '029412d5966ce1d4', S.set.fassLeer || 83, S.set.fassVoll || 9.3));
   const res = await Promise.allSettled(tasks);
   const err = res.find(r => r.status === 'rejected'); if (err) { SENS.fehler = err.reason && err.reason.message === 'Failed to fetch' ? 'Browser blockiert die Abfrage' : String(err.reason && err.reason.message || err.reason); console.warn('akenza', err.reason); }
@@ -1891,6 +1932,7 @@ document.addEventListener('click', e => {
   else if (a === 'filtlink') { const v = el.dataset.v, F = UI.tierFilter; F.q = ''; F.abg = false; if (['Kalb', 'Rind', 'Kuh'].includes(v)) { F.kat = v; F.lakt = ''; } else { F.lakt = v; F.kat = ''; } }
   else if (a === 'reset') { Object.assign(UI.tierFilter, { kat: '', lakt: '', q: '' }); render(); }
   else if (a === 'abg') { UI.tierFilter.abg = !UI.tierFilter.abg; render(); }
+  else if (a === 'wqr') { UI.wqR = el.dataset.v; render(); }
   else if (a === 'jtab') { UI.jTab = el.dataset.v; if (el.tagName === 'BUTTON') render(); }
   else if (a === 'ftab') { UI.fTab = el.dataset.v; if (el.tagName === 'BUTTON') render(); }
   else if (a === 'ltab') { UI.lTab = el.dataset.v; render(); }
@@ -1957,7 +1999,7 @@ document.addEventListener('submit', e => {
     abgekalbtTage: num(f.abgekalbtTage.value) || 60, alpVon: f.alpVon.value.trim() || '06-15', alpBis: f.alpBis.value.trim() || '09-15', puffer: num(f.puffer.value), unbesamtAb: num(f.unbesamtAb.value) || 16, baldTage: num(f.baldTage.value) || 30,
     gruende: lines(f.gruende.value),
     medikamente: lines(f.medikamente.value).map(l => { const [n, d] = l.split(';'); return { name: n.trim(), frist: num(d) }; }),
-    grafanaUrl: f.grafanaUrl.value.trim(), akenzaKey: f.akenzaKey.value.trim(), sensWasser: f.sensWasser.value.trim(), sensFass: f.sensFass.value.trim(), agroUser: f.agroUser.value.trim(), agroPass: f.agroPass.value, agroStation: f.agroStation.value.trim(), fassLeer: f.fassLeer.value.trim(), fassVoll: f.fassVoll.value.trim(), wasserLeer: f.wasserLeer.value.trim(), wasserVoll: f.wasserVoll.value.trim(), startHeu: num(f.startHeu.value), startSilo: num(f.startSilo.value), startStroh: num(f.startStroh.value)
+    grafanaUrl: f.grafanaUrl.value.trim(), akenzaKey: f.akenzaKey.value.trim(), sensWasser: f.sensWasser.value.trim(), sensFass: f.sensFass.value.trim(), sensWqs: f.sensWqs.value.trim(), wqAb: f.wqAb.value.trim(), wqEc: f.wqEc.value.trim(), wqTu: f.wqTu.value.trim(), wqDo: f.wqDo.value.trim(), agroUser: f.agroUser.value.trim(), agroPass: f.agroPass.value, agroStation: f.agroStation.value.trim(), fassLeer: f.fassLeer.value.trim(), fassVoll: f.fassVoll.value.trim(), wasserLeer: f.wasserLeer.value.trim(), wasserVoll: f.wasserVoll.value.trim(), startHeu: num(f.startHeu.value), startSilo: num(f.startSilo.value), startStroh: num(f.startStroh.value)
   });
   toast('Einstellungen gespeichert');
 });

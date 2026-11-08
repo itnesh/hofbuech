@@ -172,6 +172,29 @@ if (set.akenzaKey) {
   if (set.sensWasser !== '') await akenza('wasserstand', set.sensWasser || '02bdf0b1b64b4c40', 'Wasserstand', set.wasserLeer || 214, set.wasserVoll || 56).catch(e => console.log('Wasserstand', e.message));
   if (set.sensFass !== '') await akenza('traenkefass', set.sensFass || '029412d5966ce1d4', 'Tränkefass', set.fassLeer || 83, set.fassVoll || 9.3).catch(e => console.log('Tränkefass', e.message));
 } else console.log('akenza: kein API-Key in den Einstellungen');
+// ---------- Wasserqualität (Dragino WQS-LB) ----------
+async function wasserqualitaet() {
+  await import('../wq.js'); const WQ = globalThis.WQ;
+  const dev = set.sensWqs || WQ.DEVICE;
+  const rows = await WQ.laden(fetch, set.akenzaKey, dev, 366);
+  const pts = WQ.punkte(rows);
+  if (!pts.length) return console.log('Wasserqualität: keine Daten', rows.length);
+  const ref = base.collection('sensoren').doc('wasserqualitaet');
+  const prev = (await ref.get()).data() || {};
+  const r = WQ.auswerten(pts, set, prev, now);
+  console.log('Wasserqualität', JSON.stringify(r.last), 'Basis', JSON.stringify(r.basis), 'Alarme', r.alarme.map(a => a.k).join(',') || '-');
+  // Push nur bei neuer Alarmart, zurücksetzen wenn wieder normal
+  const sig = r.alarme.map(a => a.k).sort().join(',');
+  const neu = r.alarme.filter(a => !(prev.alarmSig || '').split(',').includes(a.k));
+  if (neu.length) await push('Wasserqualität: starke Veränderung', neu.map(a => a.text).join(' · '), './#/journale/wasserqualitaet');
+  // Keine Messung seit 6 Stunden: einmal melden
+  let stillPush = prev.stillPush || null;
+  if (r.last && now - r.last.zeit > 6 * 3600e3) { if (stillPush !== r.last.zeit) { await push('Wasserqualität: keine Messwerte', `Letzte Messung ${new Date(r.last.zeit).toLocaleString('de-CH', { timeZone: 'Europe/Zurich' })}. Funk/Batterie prüfen.`, './#/journale/wasserqualitaet'); stillPush = r.last.zeit; } }
+  else stillPush = null;
+  await ref.set({ ...r, alarmSig: sig, stillPush, quelle: 'job' });
+}
+if (set.akenzaKey && set.sensWqs !== '') await wasserqualitaet().catch(e => console.log('Wasserqualität', e.message));
+
 if (set.agroUser && set.agroPass) await agrometeo().catch(e => console.log('agrometeo', e.message));
 else console.log('agrometeo: keine Zugangsdaten');
 process.exit(0);
