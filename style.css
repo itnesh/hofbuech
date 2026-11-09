@@ -346,3 +346,6 @@ html,body{overflow-x:hidden;max-width:100%}
 .lab-ort{font-weight:750;font-size:14.5px;color:#1F4D36}
 .lab-ort small{font-weight:500;font-size:11px;color:var(--muted);margin-left:2px}
 .lab-row .t{font-size:12.5px;font-weight:500}
+.accs{display:flex;flex-direction:column;gap:8px}
+details.acc.ausbk summary small{white-space:normal}
+details.acc.ausbk summary .pill{flex-shrink:0}

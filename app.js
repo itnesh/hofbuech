@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.20.0';
+const VERSION = '1.20.1';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -625,7 +625,7 @@ function reichweite(was, bestand) {
 }
 function feldRows(list) {
   const av = g => g === 'austrag' ? 'stall' : g === 'ernte' ? 'weide' : g === 'kauf' ? 'laufhof' : 'alp';
-  return list.length ? list.map(f => `<button type="button" class="row" data-act="edit" data-c="feld" data-id="${f.id}"><span class="av ${av(FELD[f.typ].g)}">${IC[f.typ] || ''}</span><div class="main"><span class="t">${esc(fL(f))}</span><span class="s">${esc(fSub(f))}${f.notiz ? (fSub(f) ? ' · ' : '') + esc(f.notiz) : ''}</span></div><div class="r"><b>${f.typ === 'verbrauch' ? '− ' : ''}${nf(num(f.menge))} ${fE(f)}</b><br><span class="small muted">${fmt(f.datum)}</span>${f.typ === 'duengung' && f.ausb ? `<br><span class="pill ${(s => s === 'ja' ? 'green' : s === 'nein' ? 'red' : 'warn')(f.ausb[f.was === 'Mist' ? 'mist' : 'guelle'])}" style="font-size:10px">${AUSB_L[f.ausb[f.was === 'Mist' ? 'mist' : 'guelle']]}</span>` : ''}</div></button>`).join('') : '<div class="empty">Keine Einträge in diesem Jahr.</div>';
+  return list.length ? list.map(f => `<button type="button" class="row" data-act="edit" data-c="feld" data-id="${f.id}"><span class="av ${av(FELD[f.typ].g)}">${IC[f.typ] || ''}</span><div class="main"><span class="t">${esc(fL(f))}</span><span class="s">${esc(fSub(f))}${f.notiz ? (fSub(f) ? ' · ' : '') + esc(f.notiz) : ''}</span></div><div class="r"><b>${f.typ === 'verbrauch' ? '− ' : ''}${nf(num(f.menge))} ${fE(f)}</b><br><span class="small muted">${fmt(f.datum)}</span>${f.typ === 'duengung' && f.ausb ? (E => `<br><span class="pill ${E.s === 'ja' ? 'green' : E.s === 'nein' ? 'red' : 'warn'}" style="font-size:10px">${AUSB_L[E.s]}${f.ausb.pruef && Object.keys(f.ausb.pruef).length ? ' ✓' : ''}</span>`)(ausbEff(f)) : ''}</div></button>`).join('') : '<div class="empty">Keine Einträge in diesem Jahr.</div>';
 }
 function vFeld() {
   const list = S.feld.filter(f => (f.datum || '').startsWith(UI.jahr) && (f.typ === 'duengung' || f.typ === 'ernte')).sort((a, b) => a.datum < b.datum ? 1 : -1);
@@ -1414,7 +1414,7 @@ function openForm(key, rec = null, pre = {}) {
       const ids = o.tierIds; delete o.tierIds;
       ids.forEach((tid, i) => put(def.coll, { ...(isEdit && i === 0 ? rec : {}), ...o, typ: key, tierId: tid, ...(isEdit && i === 0 ? { id: rec.id } : { id: undefined }) }));
     } else {
-      const base = isEdit ? { ...rec } : {};
+      const base = isEdit ? { ...((S[def.coll || 'tiere'] || []).find(x => x.id === rec.id) || rec) } : {};
       const obj = { ...base, ...o };
       if (def.typ) obj.typ = def.typ;
       if (def.coll === 'ereignisse' && !obj.typ) obj.typ = key;
@@ -1771,13 +1771,30 @@ async function ausbArchivieren() {
   } catch (e) { ausbArchivFehler = Date.now(); console.warn('Ausbringen-Archiv', e); }
   ausbArchivLaeuft = false;
 }
+// Effektiver Status: vor Ort bestätigt = ok, als nicht ok markiert = nein
+function ausbEff(f) {
+  const a = f.ausb; if (!a) return null;
+  const typ = f.was === 'Mist' ? 'mist' : 'guelle', P = a.pruef || {};
+  const K = a.K.filter(x => typ === 'guelle' || !x.nurGuelle).map(x => ({ ...x, p: P[x.id] || null, es: P[x.id] && P[x.id].ok === true ? 'ja' : P[x.id] && P[x.id].ok === false ? 'nein' : x.s }));
+  return { typ, K, s: K.some(x => x.es === 'nein') ? 'nein' : K.some(x => x.es === 'pruefen') ? 'pruefen' : 'ja', modell: a[typ] };
+}
+const ausbPill = x => `<span class="pill ${x === 'ja' ? 'green' : x === 'nein' ? 'red' : 'warn'}">${AUSB_L[x]}</span>`;
+function ausbFaktorHtml(f, x) {
+  const p = x.p, st = p ? (p.ok ? '<span class="pill green">Bestätigt</span>' : '<span class="pill red">Nicht ok</span>') : ausbPill(x.s);
+  return `<details class="acc ausbk" data-ausbk="${x.id}"><summary><span><b>${esc(x.k)}</b><small>${esc(x.w)}${p && p.notiz ? '<br>' + esc(p.notiz) : ''}</small></span>${st}</summary><div class="acc-b">
+    <p class="small muted" style="margin:0">Modell: ${AUSB_L[x.s]}. ${esc(x.e || '')}</p>
+    <label class="fld"><span>Kommentar (Kontrolle vor Ort)</span><textarea rows="2" data-ausbnotiz>${esc(p && p.notiz || '')}</textarea></label>
+    <div class="btns"><button type="button" class="btn pri" data-act="ausbpr" data-id="${f.id}" data-k="${x.id}" data-v="ok">Geprüft, ok</button><button type="button" class="btn" data-act="ausbpr" data-id="${f.id}" data-k="${x.id}" data-v="nok">Nicht ok</button>${p ? `<button type="button" class="btn" data-act="ausbpr" data-id="${f.id}" data-k="${x.id}" data-v="del">Zurücksetzen</button>` : ''}</div>
+    ${p ? `<p class="small muted" style="margin:0">${p.ok ? 'Bestätigt' : 'Als nicht ok markiert'} ${esc(new Date(p.zeit).toLocaleString('de-CH'))}${p.wer ? ' · ' + esc(p.wer) : ''}</p>` : ''}
+  </div></details>`;
+}
 function ausbSnapHtml(f) {
   const a = f.ausb; if (!a) return f.typ === 'duengung' ? '<div class="note small" style="margin-top:12px">Tagesbetrachtung wird beim nächsten Öffnen mit Internet gespeichert.</div>' : '';
-  const pill = x => `<span class="pill ${x === 'ja' ? 'green' : x === 'nein' ? 'red' : 'warn'}">${AUSB_L[x]}</span>`;
-  const typ = f.was === 'Mist' ? 'mist' : 'guelle';
-  return `<div class="sec-t" style="margin-top:16px">Tagesbetrachtung ${fmt(a.tag)} · ${f.was || 'Gülle'} ${pill(a[typ])}</div>
-  <div class="list">${a.K.filter(x => typ === 'guelle' || !x.nurGuelle).map(x => `<div class="row"><div class="main"><span class="t">${esc(x.k)}</span><span class="s wrap">${esc(x.w)}</span></div><span class="r">${pill(x.s)}</span></div>`).join('')}</div>
-  <p class="small muted" style="margin:6px 4px">${esc(a.quelle)}${a.rueckwirkend ? ', rückwirkend berechnet (Wetter um 12 Uhr, Niederschlag inkl. der 3 Folgetage)' : ', Stand beim Erfassen'} · gespeichert ${esc(new Date(a.erstellt).toLocaleString('de-CH'))}. Modellwerte, ersetzt nicht die Kontrolle vor Ort.</p>`;
+  const E = ausbEff(f);
+  return `<div data-ausbsnap="${f.id}"><div class="sec-t" style="margin-top:16px">Tagesbetrachtung ${fmt(a.tag)} · ${esc(f.was || 'Gülle')} ${ausbPill(E.s)}</div>
+  <p class="small muted" style="margin:0 4px 6px">Faktor antippen zum Prüfen, Bestätigen oder Kommentieren.${E.s !== E.modell ? ` Modell ursprünglich: ${AUSB_L[E.modell]}.` : ''}</p>
+  <div class="accs">${E.K.map(x => ausbFaktorHtml(f, x)).join('')}</div>
+  <p class="small muted" style="margin:6px 4px">${esc(a.quelle)}${a.rueckwirkend ? ', rückwirkend berechnet (Wetter um 12 Uhr, Niederschlag inkl. der 3 Folgetage)' : ', Stand beim Erfassen'} · gespeichert ${esc(new Date(a.erstellt).toLocaleString('de-CH'))}. Modellwerte, ersetzt nicht die Kontrolle vor Ort.</p></div>`;
 }
 function ausbChart(id) {
   const w = ausbDaten(); if (!w || !w.d) return;
@@ -1967,6 +1984,15 @@ document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]'); if (!el) return;
   const a = el.dataset.act;
   if (a === 'form') { e.preventDefault(); openForm(el.dataset.f, null, { tier: ['zugang', 'auslauf', 'ernte', 'kauf', 'verbrauch', 'duengung'].includes(el.dataset.f) ? '' : el.dataset.tier }); }
+  else if (a === 'ausbpr') {
+    const f = S.feld.find(x => x.id === el.dataset.id); if (!f || !f.ausb) return;
+    const k = el.dataset.k, v = el.dataset.v, box = el.closest('[data-ausbk]'), notiz = box ? box.querySelector('[data-ausbnotiz]').value.trim() : '';
+    const P = { ...(f.ausb.pruef || {}) };
+    if (v === 'del') delete P[k]; else P[k] = { ok: v === 'ok', notiz, zeit: Date.now(), wer: USER ? (USER.displayName || USER.email || '') : '' };
+    const nf2 = put('feld', { ...f, ausb: { ...f.ausb, pruef: P } });
+    const snap = document.querySelector(`[data-ausbsnap="${f.id}"]`); if (snap) { snap.outerHTML = ausbSnapHtml(nf2); const d = document.querySelector(`[data-ausbsnap="${f.id}"] [data-ausbk="${k}"]`); if (d) d.open = true; }
+    toast(v === 'del' ? 'Zurückgesetzt' : 'Gespeichert');
+  }
   else if (a === 'edit') { const c = el.dataset.c, r = S[c].find(x => x.id === el.dataset.id); if (r) openForm(formKey(c, r), r); }
   else if (a === 'filt') { const v = el.dataset.v, F = UI.tierFilter; if (['Kalb', 'Rind', 'Kuh'].includes(v)) { F.kat = F.kat === v ? '' : v; F.lakt = ''; } else { F.lakt = F.lakt === v ? '' : v; F.kat = ''; } render(); }
   else if (a === 'filtlink') { const v = el.dataset.v, F = UI.tierFilter; F.q = ''; F.abg = false; if (['Kalb', 'Rind', 'Kuh'].includes(v)) { F.kat = v; F.lakt = ''; } else { F.lakt = v; F.kat = ''; } }
