@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.19.1';
+const VERSION = '1.20.0';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -271,7 +271,7 @@ const UI = { tierFilter: { kat: '', lakt: '', q: '', sort: 'alter', abg: false }
 
 function render() {
   if (mode === 'firebase' && !USER) return;
-  feldMigration(); auslaufBereinigen(); lagerKorrektur(); behFreiKorr(); labiolaSeed(); if (!SENS.zuletzt) setTimeout(() => sensorenLaden(), 0);
+  feldMigration(); auslaufBereinigen(); lagerKorrektur(); behFreiKorr(); labiolaSeed(); setTimeout(ausbArchivieren, 0); if (!SENS.zuletzt) setTimeout(() => sensorenLaden(), 0);
   if (document.querySelector('.sheet.show [data-dirty="1"]')) return; // Formular offen und bearbeitet: nicht neu zeichnen
   const h = location.hash.replace(/^#\/?/, '') || 'start';
   const p = h.split('/');
@@ -625,7 +625,7 @@ function reichweite(was, bestand) {
 }
 function feldRows(list) {
   const av = g => g === 'austrag' ? 'stall' : g === 'ernte' ? 'weide' : g === 'kauf' ? 'laufhof' : 'alp';
-  return list.length ? list.map(f => `<button type="button" class="row" data-act="edit" data-c="feld" data-id="${f.id}"><span class="av ${av(FELD[f.typ].g)}">${IC[f.typ] || ''}</span><div class="main"><span class="t">${esc(fL(f))}</span><span class="s">${esc(fSub(f))}${f.notiz ? (fSub(f) ? ' · ' : '') + esc(f.notiz) : ''}</span></div><div class="r"><b>${f.typ === 'verbrauch' ? '− ' : ''}${nf(num(f.menge))} ${fE(f)}</b><br><span class="small muted">${fmt(f.datum)}</span></div></button>`).join('') : '<div class="empty">Keine Einträge in diesem Jahr.</div>';
+  return list.length ? list.map(f => `<button type="button" class="row" data-act="edit" data-c="feld" data-id="${f.id}"><span class="av ${av(FELD[f.typ].g)}">${IC[f.typ] || ''}</span><div class="main"><span class="t">${esc(fL(f))}</span><span class="s">${esc(fSub(f))}${f.notiz ? (fSub(f) ? ' · ' : '') + esc(f.notiz) : ''}</span></div><div class="r"><b>${f.typ === 'verbrauch' ? '− ' : ''}${nf(num(f.menge))} ${fE(f)}</b><br><span class="small muted">${fmt(f.datum)}</span>${f.typ === 'duengung' && f.ausb ? `<br><span class="pill ${(s => s === 'ja' ? 'green' : s === 'nein' ? 'red' : 'warn')(f.ausb[f.was === 'Mist' ? 'mist' : 'guelle'])}" style="font-size:10px">${AUSB_L[f.ausb[f.was === 'Mist' ? 'mist' : 'guelle']]}</span>` : ''}</div></button>`).join('') : '<div class="empty">Keine Einträge in diesem Jahr.</div>';
 }
 function vFeld() {
   const list = S.feld.filter(f => (f.datum || '').startsWith(UI.jahr) && (f.typ === 'duengung' || f.typ === 'ernte')).sort((a, b) => a.datum < b.datum ? 1 : -1);
@@ -1335,7 +1335,7 @@ function openForm(key, rec = null, pre = {}) {
   if (key === 'tiere' || key === 'zugang') { if (!rec) { v.geburt = ''; v.zugang = ''; } }
   if (key === 'auslauf') { v.bis = ''; if (rec) { const nx = sortedAuslauf().find(a => a.datum > rec.datum); if (nx) v.bis = addDays(nx.datum, -1); } }
   const body = `${def.hint ? `<div class="note blue small" style="margin-bottom:14px">${def.hint}</div>` : ''}<form class="form" data-form>${def.fields.map(f => `<div data-fk="${f.k}">${fieldHtml(f, v)}</div>`).join('')}<div class="calc" data-calc></div>
-  ${def.more && !isEdit ? '<button type="button" class="btn block" data-more>Sichern + nächstes Tier</button>' : ''}</form>`;
+  ${def.more && !isEdit ? '<button type="button" class="btn block" data-more>Sichern + nächstes Tier</button>' : ''}</form>${key === 'duengung' && rec ? ausbSnapHtml(rec) : ''}`;
   const sh = openSheet(def.t, body, {
     onSave: () => doSave(false),
     onDelete: isEdit ? () => {
@@ -1709,9 +1709,12 @@ function ausbDaten() {
 // Status je Kriterium: 'nein' = Verbot, 'pruefen' = selbst kontrollieren, 'ja' = ok
 function ausbBewertung(off = 0) {
   const w = ausbDaten(); if (!w || !w.d) return null;
-  const D = w.d, H = w.h || {}, t0 = addDays(today(), off), iT = D.time.indexOf(t0);
-  if (iT < 0) return null;
+  const D = w.d, H = w.h || {}, t0 = addDays(today(), off);
   const nowH = new Date(), hNow = !H.time ? -1 : off === 0 ? H.time.findIndex(t => new Date(t) > nowH) - 1 : H.time.indexOf(t0 + 'T23:00');
+  const b = ausbBew(D, H, t0, hNow); return b ? { ...b, stand: w.t } : null;
+}
+function ausbBew(D, H, t0, hNow) {
+  const iT = D.time.indexOf(t0); if (iT < 0) return null;
   const last24 = k => H[k] && hNow >= 0 ? H[k].slice(Math.max(0, hNow - 23), hNow + 1).filter(v => v !== null) : [];
   const K = [];
   // 1. Niederschlag > 20 mm/24 h: vor 1-2 Tagen, heute oder in den nächsten 3 Tagen
@@ -1737,7 +1740,44 @@ function ausbBewertung(off = 0) {
   const fenster = tm.every(v => v !== null && v !== undefined && v > 5), unter = tm.filter(v => !(v > 5)).length;
   K.push({ id: 'temp', k: 'Nährstoffbedarf (Düngefenster)', s: fenster ? 'ja' : 'nein', w: `Tagesmittel letzte 7 Tage: ${tm.map(v => v === null || v === undefined ? '-' : nf(v)).join(' / ')} °C`, e: fenster ? 'Tagesmittel 7 Tage in Folge über 5 °C: Pflanzen nehmen Nährstoffe auf.' : `Vegetationsruhe (${unter} von 7 Tagen nicht über 5 °C). Ausbringen nur bei speziellen Bedürfnissen des Pflanzenbaus, siehe unten.` });
   const res = typ => { const k = K.filter(x => typ === 'guelle' || !x.nurGuelle); return k.some(x => x.s === 'nein') ? 'nein' : k.some(x => x.s === 'pruefen') ? 'pruefen' : 'ja'; };
-  return { K, guelle: res('guelle'), mist: res('mist'), stand: w.t, tag: t0 };
+  return { K, guelle: res('guelle'), mist: res('mist'), tag: t0 };
+}
+/* Tagesbetrachtung zu jeder Gülle-/Mist-Düngung speichern (Nachweis, warum es erlaubt war).
+   Neue Einträge: Stand der Prognose am Tag. Ältere Einträge (einmalig rückwirkend): gemessene Wetterdaten Open-Meteo. */
+let ausbArchivLaeuft = false, ausbArchivFehler = 0; const ausbVersucht = new Set();
+async function ausbArchivieren() {
+  if (ausbArchivLaeuft || !S.loaded.feld || navigator.onLine === false || Date.now() - ausbArchivFehler < 10 * 60e3) return;
+  const heute = today(), offen = S.feld.filter(f => f.typ === 'duengung' && f.datum && f.datum <= heute && (!f.ausb || f.ausb.tag !== f.datum) && !ausbVersucht.has(f.id + f.datum));
+  offen.forEach(f => ausbVersucht.add(f.id + f.datum));
+  if (!offen.length) return;
+  ausbArchivLaeuft = true;
+  try {
+    const grenze = addDays(heute, -80), H = 'daily=precipitation_sum,temperature_2m_mean&hourly=snow_depth,soil_temperature_6cm,soil_moisture_3_to_9cm&timezone=Europe%2FZurich';
+    const holen = async (url, quelle) => { const r = await fetch(url); if (!r.ok) throw new Error('HTTP ' + r.status); const j = await r.json(); if (!j.daily) throw new Error(j.reason || 'keine Daten'); return { D: j.daily, H: j.hourly || {}, quelle }; };
+    const gruppen = [offen.filter(f => f.datum >= grenze), offen.filter(f => f.datum < grenze)];
+    for (const [i, g] of gruppen.entries()) {
+      if (!g.length) continue;
+      const tage = g.map(f => f.datum).sort(), von = addDays(tage[0], -7), bis = addDays(tage[tage.length - 1], 3);
+      const ende = bis > addDays(heute, 3) ? addDays(heute, 3) : bis;
+      const w = i === 0
+        ? await holen(`https://api.open-meteo.com/v1/forecast?latitude=${S.set.lat}&longitude=${S.set.lon}&start_date=${von}&end_date=${ende}&${H}`, 'Open-Meteo Prognose/Messung')
+        : await holen(`https://historical-forecast-api.open-meteo.com/v1/forecast?latitude=${S.set.lat}&longitude=${S.set.lon}&start_date=${von}&end_date=${bis}&${H}`, 'Open-Meteo historisch');
+      for (const f of g) {
+        const hNow = f.datum === heute ? (w.H.time || []).findIndex(t => new Date(t) > new Date()) - 1 : (w.H.time || []).indexOf(f.datum + 'T12:00');
+        const b = ausbBew(w.D, w.H, f.datum, hNow); if (!b) continue;
+        put('feld', { ...f, ausb: { tag: f.datum, guelle: b.guelle, mist: b.mist, K: b.K.map(({ id, k, s, w: wert, e, nurGuelle }) => ({ id, k, s, w: wert, e, nurGuelle: !!nurGuelle })), quelle: w.quelle, rueckwirkend: f.datum !== heute, erstellt: Date.now() } });
+      }
+    }
+  } catch (e) { ausbArchivFehler = Date.now(); console.warn('Ausbringen-Archiv', e); }
+  ausbArchivLaeuft = false;
+}
+function ausbSnapHtml(f) {
+  const a = f.ausb; if (!a) return f.typ === 'duengung' ? '<div class="note small" style="margin-top:12px">Tagesbetrachtung wird beim nächsten Öffnen mit Internet gespeichert.</div>' : '';
+  const pill = x => `<span class="pill ${x === 'ja' ? 'green' : x === 'nein' ? 'red' : 'warn'}">${AUSB_L[x]}</span>`;
+  const typ = f.was === 'Mist' ? 'mist' : 'guelle';
+  return `<div class="sec-t" style="margin-top:16px">Tagesbetrachtung ${fmt(a.tag)} · ${f.was || 'Gülle'} ${pill(a[typ])}</div>
+  <div class="list">${a.K.filter(x => typ === 'guelle' || !x.nurGuelle).map(x => `<div class="row"><div class="main"><span class="t">${esc(x.k)}</span><span class="s wrap">${esc(x.w)}</span></div><span class="r">${pill(x.s)}</span></div>`).join('')}</div>
+  <p class="small muted" style="margin:6px 4px">${esc(a.quelle)}${a.rueckwirkend ? ', rückwirkend berechnet (Wetter um 12 Uhr, Niederschlag inkl. der 3 Folgetage)' : ', Stand beim Erfassen'} · gespeichert ${esc(new Date(a.erstellt).toLocaleString('de-CH'))}. Modellwerte, ersetzt nicht die Kontrolle vor Ort.</p>`;
 }
 function ausbChart(id) {
   const w = ausbDaten(); if (!w || !w.d) return;
