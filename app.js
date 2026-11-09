@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.20.3';
+const VERSION = '1.20.4';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -1713,6 +1713,9 @@ function ausbBewertung(off = 0) {
   const nowH = new Date(), hNow = !H.time ? -1 : off === 0 ? H.time.findIndex(t => new Date(t) > nowH) - 1 : H.time.indexOf(t0 + 'T23:00');
   const b = ausbBew(D, H, t0, hNow); return b ? { ...b, stand: w.t } : null;
 }
+// Mist: Frost und Schnee sind kein Verbot (gesetzlich nur für flüssige Dünger), sondern vor Ort prüfen
+const AUSB_MIST_PRUEFEN = ['frost', 'schnee'];
+const ausbS = (x, typ) => typ === 'mist' && AUSB_MIST_PRUEFEN.includes(x.id) && x.s === 'nein' ? 'pruefen' : x.s;
 function ausbBew(D, H, t0, hNow) {
   const iT = D.time.indexOf(t0); if (iT < 0) return null;
   const last24 = k => H[k] && hNow >= 0 ? H[k].slice(Math.max(0, hNow - 23), hNow + 1).filter(v => v !== null) : [];
@@ -1739,7 +1742,7 @@ function ausbBew(D, H, t0, hNow) {
   const tm = []; for (let i = iT - 6; i <= iT; i++) tm.push(D.temperature_2m_mean[i]);
   const fenster = tm.every(v => v !== null && v !== undefined && v > 5), unter = tm.filter(v => !(v > 5)).length;
   K.push({ id: 'temp', k: 'Nährstoffbedarf (Düngefenster)', s: fenster ? 'ja' : 'nein', w: `Tagesmittel letzte 7 Tage: ${tm.map(v => v === null || v === undefined ? '-' : nf(v)).join(' / ')} °C`, e: fenster ? 'Tagesmittel 7 Tage in Folge über 5 °C: Pflanzen nehmen Nährstoffe auf.' : `Vegetationsruhe (${unter} von 7 Tagen nicht über 5 °C). Ausbringen nur bei speziellen Bedürfnissen des Pflanzenbaus, siehe unten.` });
-  const res = typ => { const k = K.filter(x => typ === 'guelle' || !x.nurGuelle); return k.some(x => x.s === 'nein') ? 'nein' : k.some(x => x.s === 'pruefen') ? 'pruefen' : 'ja'; };
+  const res = typ => { const k = K.filter(x => typ === 'guelle' || !x.nurGuelle).map(x => ausbS(x, typ)); return k.includes('nein') ? 'nein' : k.includes('pruefen') ? 'pruefen' : 'ja'; };
   return { K, guelle: res('guelle'), mist: res('mist'), tag: t0 };
 }
 /* Tagesbetrachtung zu jeder Gülle-/Mist-Düngung speichern (Nachweis, warum es erlaubt war).
@@ -1778,8 +1781,9 @@ async function ausbArchivieren() {
 function ausbEff(f) {
   const a = f.ausb; if (!a) return null;
   const typ = f.was === 'Mist' ? 'mist' : 'guelle', P = a.pruef || {};
-  const K = a.K.filter(x => typ === 'guelle' || !x.nurGuelle).map(x => ({ ...x, p: P[x.id] || null, es: P[x.id] && P[x.id].ok === true ? 'ja' : P[x.id] && P[x.id].ok === false ? 'nein' : x.s }));
-  return { typ, K, s: K.some(x => x.es === 'nein') ? 'nein' : K.some(x => x.es === 'pruefen') ? 'pruefen' : 'ja', modell: a[typ] };
+  const K = a.K.filter(x => typ === 'guelle' || !x.nurGuelle).map(x => { const ms = ausbS(x, typ); return { ...x, s: ms, p: P[x.id] || null, es: P[x.id] && P[x.id].ok === true ? 'ja' : P[x.id] && P[x.id].ok === false ? 'nein' : ms }; });
+  const modell = K.some(x => x.s === 'nein') ? 'nein' : K.some(x => x.s === 'pruefen') ? 'pruefen' : 'ja';
+  return { typ, K, s: K.some(x => x.es === 'nein') ? 'nein' : K.some(x => x.es === 'pruefen') ? 'pruefen' : 'ja', modell };
 }
 const ausbPill = x => `<span class="pill ${x === 'ja' ? 'green' : x === 'nein' ? 'red' : 'warn'}">${AUSB_L[x]}</span>`;
 function ausbFaktorHtml(f, x) {
@@ -1859,7 +1863,7 @@ function anaAusbringen() {
   <div class="sec-t">Prognose</div>
   <div class="list">${[1, 2, 3].map(o => ausbBewertung(o)).filter(Boolean).map(p => `<div class="row"><div class="main"><span class="t">${['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'][pd(p.tag).getDay()]} ${fmt(p.tag)}</span><span class="s wrap">${esc(p.K.filter(x => x.s !== 'ja').map(x => x.k + (x.s === 'pruefen' ? ' (prüfen)' : '')).join(', ') || 'keine Einschränkung')}</span></div><span class="r">Gülle ${pill(p.guelle)}<br>Mist ${pill(p.mist)}</span></div>`).join('')}</div>
   <div class="sec-t">Kriterien heute <span class="small muted" style="text-transform:none;letter-spacing:0;font-weight:400">· antippen für Verlauf</span></div>
-  <div class="list">${b.K.map(x => `<button type="button" class="row" data-act="ausbchart" data-id="${x.id}"><div class="main"><span class="t">${esc(x.k)}${x.nurGuelle ? ' <span class="small muted">(nur Gülle)</span>' : ''}</span><span class="s wrap">${esc(x.w)}<br>${esc(x.e)}</span></div><span class="r">${pill(x.s)}</span></button>`).join('')}</div>
+  <div class="list">${b.K.map(x => `<button type="button" class="row" data-act="ausbchart" data-id="${x.id}"><div class="main"><span class="t">${esc(x.k)}${x.nurGuelle ? ' <span class="small muted">(nur Gülle)</span>' : ''}</span><span class="s wrap">${esc(x.w)}<br>${esc(x.e)}</span></div><span class="r">${ausbS(x, 'mist') !== x.s ? `Gülle ${pill(x.s)}<br>Mist ${pill(ausbS(x, 'mist'))}` : pill(x.s)}</span></button>`).join('')}</div>
   <p class="small muted" style="margin:8px 4px">Grundlage: Checkliste "Ausbringen von Gülle und Mist im Winter", ALN Kanton Zürich / Strickhof. Wetterdaten Open-Meteo, Stand ${String(z.getHours()).padStart(2, '0')}:${String(z.getMinutes()).padStart(2, '0')} Uhr.</p>`;
 }
 
