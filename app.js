@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.20.2';
+const VERSION = '1.20.3';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -625,7 +625,7 @@ function reichweite(was, bestand) {
 }
 function feldRows(list) {
   const av = g => g === 'austrag' ? 'stall' : g === 'ernte' ? 'weide' : g === 'kauf' ? 'laufhof' : 'alp';
-  return list.length ? list.map(f => `<button type="button" class="row" data-act="edit" data-c="feld" data-id="${f.id}"><span class="av ${av(FELD[f.typ].g)}">${IC[f.typ] || ''}</span><div class="main"><span class="t">${esc(fL(f))}</span><span class="s">${esc(fSub(f))}${f.notiz ? (fSub(f) ? ' · ' : '') + esc(f.notiz) : ''}</span></div><div class="r"><b>${f.typ === 'verbrauch' ? '− ' : ''}${nf(num(f.menge))} ${fE(f)}</b><br><span class="small muted">${fmt(f.datum)}</span>${f.typ === 'duengung' && f.ausb ? (E => `<br><span class="pill ${E.s === 'ja' ? 'green' : E.s === 'nein' ? 'red' : 'warn'}" style="font-size:10px">${AUSB_L[E.s]}${f.ausb.pruef && Object.keys(f.ausb.pruef).length ? ' ✓' : ''}</span>`)(ausbEff(f)) : ''}</div></button>`).join('') : '<div class="empty">Keine Einträge in diesem Jahr.</div>';
+  return list.length ? list.map(f => `<button type="button" class="row" data-act="edit" data-c="feld" data-id="${f.id}"><span class="av ${av(FELD[f.typ].g)}">${IC[f.typ] || ''}</span><div class="main"><span class="t">${esc(fL(f))}</span><span class="s">${esc(fSub(f))}${f.notiz ? (fSub(f) ? ' · ' : '') + esc(f.notiz) : ''}</span></div><div class="r"><b>${f.typ === 'verbrauch' ? '− ' : ''}${nf(num(f.menge))} ${fE(f)}</b><br><span class="small muted">${fmt(f.datum)}</span>${f.typ === 'duengung' && f.ausb ? (E => `<br><span class="pill ${E.s === 'ja' ? 'green' : E.s === 'nein' ? 'red' : 'warn'}" style="font-size:10px">${AUSB_L[E.s]}${f.ausb.pruef && Object.values(f.ausb.pruef).some(q => q.ok === true || q.ok === false) ? ' ✓' : ''}</span>`)(ausbEff(f)) : ''}</div></button>`).join('') : '<div class="empty">Keine Einträge in diesem Jahr.</div>';
 }
 function vFeld() {
   const list = S.feld.filter(f => (f.datum || '').startsWith(UI.jahr) && (f.typ === 'duengung' || f.typ === 'ernte')).sort((a, b) => a.datum < b.datum ? 1 : -1);
@@ -1783,13 +1783,13 @@ function ausbEff(f) {
 }
 const ausbPill = x => `<span class="pill ${x === 'ja' ? 'green' : x === 'nein' ? 'red' : 'warn'}">${AUSB_L[x]}</span>`;
 function ausbFaktorHtml(f, x) {
-  const p = x.p, st = p ? (p.ok ? '<span class="pill green">Bestätigt</span>' : '<span class="pill red">Nicht ok</span>') : ausbPill(x.s);
+  const p = x.p, st = p && p.ok === true ? '<span class="pill green">Bestätigt</span>' : p && p.ok === false ? '<span class="pill red">Nicht ok</span>' : ausbPill(x.s);
   return `<details class="acc ausbk" data-ausbk="${x.id}"><summary><span><b>${esc(x.k)}</b><small>${esc(x.w)}${p && p.notiz ? '<br>' + esc(p.notiz) : ''}</small></span>${st}</summary><div class="acc-b">
     <p class="small muted" style="margin:0">Modell: ${AUSB_L[x.s]}. ${esc(x.e || '')}</p>
     ${f.ausb.R ? `<div><div class="small" style="font-weight:600;margin-bottom:4px">${esc(AUSB_CH[x.id] ? AUSB_CH[x.id].t : '')}</div>${ausbChartHtml(x.id, f.ausb.R, f.ausb.tag, 'Tag', f.ausb.rueckwirkend ? 'Folgetage (gemessen)' : 'Prognose', `14 Tage vor und 3 Tage nach dem Ausbringen · ${esc(f.ausb.quelle)}`)}</div>` : '<p class="small muted" style="margin:0">Diagramm wird beim nächsten Öffnen mit Internet geladen.</p>'}
     <label class="fld"><span>Kommentar (Kontrolle vor Ort)</span><textarea rows="2" data-ausbnotiz>${esc(p && p.notiz || '')}</textarea></label>
     <div class="btns"><button type="button" class="btn pri" data-act="ausbpr" data-id="${f.id}" data-k="${x.id}" data-v="ok">Geprüft, ok</button><button type="button" class="btn" data-act="ausbpr" data-id="${f.id}" data-k="${x.id}" data-v="nok">Nicht ok</button>${p ? `<button type="button" class="btn" data-act="ausbpr" data-id="${f.id}" data-k="${x.id}" data-v="del">Zurücksetzen</button>` : ''}</div>
-    ${p ? `<p class="small muted" style="margin:0">${p.ok ? 'Bestätigt' : 'Als nicht ok markiert'} ${esc(new Date(p.zeit).toLocaleString('de-CH'))}${p.wer ? ' · ' + esc(p.wer) : ''}</p>` : ''}
+    ${p ? `<p class="small muted" style="margin:0">${p.ok === true ? 'Bestätigt' : p.ok === false ? 'Als nicht ok markiert' : 'Kommentiert'} ${esc(new Date(p.zeit).toLocaleString('de-CH'))}${p.wer ? ' · ' + esc(p.wer) : ''}</p>` : ''}
   </div></details>`;
 }
 function ausbSnapHtml(f) {
@@ -1958,6 +1958,14 @@ async function agroLaden() {
   agroLaeuft = false;
 }
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') sensorenLaden(); });
+document.addEventListener('change', e => {
+  const ta = e.target.closest && e.target.closest('[data-ausbnotiz]'); if (!ta) return;
+  const box = ta.closest('[data-ausbk]'), snap = ta.closest('[data-ausbsnap]'); if (!box || !snap) return;
+  const f = S.feld.find(x => x.id === snap.dataset.ausbsnap); if (!f || !f.ausb) return;
+  const k = box.dataset.ausbk, P = { ...(f.ausb.pruef || {}) }, notiz = ta.value.trim();
+  if (P[k]) P[k] = { ...P[k], notiz }; else if (notiz) P[k] = { ok: null, notiz, zeit: Date.now(), wer: USER ? (USER.displayName || USER.email || '') : '' }; else return;
+  put('feld', { ...f, ausb: { ...f.ausb, pruef: P } }); toast('Kommentar gespeichert');
+});
 
 /* ---------- Behandlungen-Import (Excel) ---------- */
 // Spalten: Von, Bis, Tiere ("Alle" oder Namen/Ohrmarken mit Komma), Behandlungsgrund, Arzneimittel, Dosis, Absetzfrist Fleisch (Tage), Freigabe Fleisch, Erfasst, Name, Notiz
@@ -2003,8 +2011,8 @@ document.addEventListener('click', e => {
     const P = { ...(f.ausb.pruef || {}) };
     if (v === 'del') delete P[k]; else P[k] = { ok: v === 'ok', notiz, zeit: Date.now(), wer: USER ? (USER.displayName || USER.email || '') : '' };
     const nf2 = put('feld', { ...f, ausb: { ...f.ausb, pruef: P } });
-    const snap = document.querySelector(`[data-ausbsnap="${f.id}"]`); if (snap) { snap.outerHTML = ausbSnapHtml(nf2); const d = document.querySelector(`[data-ausbsnap="${f.id}"] [data-ausbk="${k}"]`); if (d) d.open = true; }
-    toast(v === 'del' ? 'Zurückgesetzt' : 'Gespeichert');
+    const snap = document.querySelector(`[data-ausbsnap="${f.id}"]`); if (snap) { snap.outerHTML = ausbSnapHtml(nf2); if (v === 'del') { const d = document.querySelector(`[data-ausbsnap="${f.id}"] [data-ausbk="${k}"]`); if (d) d.open = true; } }
+    toast(v === 'del' ? 'Zurückgesetzt' : v === 'ok' ? 'Geprüft, ok gespeichert' : 'Nicht ok gespeichert');
   }
   else if (a === 'edit') { const c = el.dataset.c, r = S[c].find(x => x.id === el.dataset.id); if (r) openForm(formKey(c, r), r); }
   else if (a === 'filt') { const v = el.dataset.v, F = UI.tierFilter; if (['Kalb', 'Rind', 'Kuh'].includes(v)) { F.kat = F.kat === v ? '' : v; F.lakt = ''; } else { F.lakt = F.lakt === v ? '' : v; F.kat = ''; } render(); }
