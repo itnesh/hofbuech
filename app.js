@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.20.1';
+const VERSION = '1.20.2';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -1747,7 +1747,7 @@ function ausbBew(D, H, t0, hNow) {
 let ausbArchivLaeuft = false, ausbArchivFehler = 0; const ausbVersucht = new Set();
 async function ausbArchivieren() {
   if (ausbArchivLaeuft || !S.loaded.feld || navigator.onLine === false || Date.now() - ausbArchivFehler < 10 * 60e3) return;
-  const heute = today(), offen = S.feld.filter(f => f.typ === 'duengung' && f.datum && f.datum <= heute && (!f.ausb || f.ausb.tag !== f.datum) && !ausbVersucht.has(f.id + f.datum));
+  const heute = today(), offen = S.feld.filter(f => f.typ === 'duengung' && f.datum && f.datum <= heute && (!f.ausb || f.ausb.tag !== f.datum || !f.ausb.R) && !ausbVersucht.has(f.id + f.datum));
   offen.forEach(f => ausbVersucht.add(f.id + f.datum));
   if (!offen.length) return;
   ausbArchivLaeuft = true;
@@ -1757,15 +1757,18 @@ async function ausbArchivieren() {
     const gruppen = [offen.filter(f => f.datum >= grenze), offen.filter(f => f.datum < grenze)];
     for (const [i, g] of gruppen.entries()) {
       if (!g.length) continue;
-      const tage = g.map(f => f.datum).sort(), von = addDays(tage[0], -7), bis = addDays(tage[tage.length - 1], 3);
+      const tage = g.map(f => f.datum).sort(), von = addDays(tage[0], -14), bis = addDays(tage[tage.length - 1], 3);
       const ende = bis > addDays(heute, 3) ? addDays(heute, 3) : bis;
       const w = i === 0
         ? await holen(`https://api.open-meteo.com/v1/forecast?latitude=${S.set.lat}&longitude=${S.set.lon}&start_date=${von}&end_date=${ende}&${H}`, 'Open-Meteo Prognose/Messung')
         : await holen(`https://historical-forecast-api.open-meteo.com/v1/forecast?latitude=${S.set.lat}&longitude=${S.set.lon}&start_date=${von}&end_date=${bis}&${H}`, 'Open-Meteo historisch');
       for (const f of g) {
         const hNow = f.datum === heute ? (w.H.time || []).findIndex(t => new Date(t) > new Date()) - 1 : (w.H.time || []).indexOf(f.datum + 'T12:00');
+        const RR = ausbReihen(w.D, w.H), i0 = RR.time.indexOf(addDays(f.datum, -14)), i1 = RR.time.indexOf(addDays(f.datum, 3));
+        const R = {}; if (i0 >= 0) for (const k of Object.keys(RR)) R[k] = RR[k].slice(i0, i1 < 0 ? undefined : i1 + 1);
+        if (f.ausb && f.ausb.tag === f.datum && !f.ausb.R) { if (i0 >= 0) put('feld', { ...f, ausb: { ...f.ausb, R } }); continue; } // bestehende Bewertung bleibt, nur Diagrammdaten ergänzen
         const b = ausbBew(w.D, w.H, f.datum, hNow); if (!b) continue;
-        put('feld', { ...f, ausb: { tag: f.datum, guelle: b.guelle, mist: b.mist, K: b.K.map(({ id, k, s, w: wert, e, nurGuelle }) => ({ id, k, s, w: wert, e, nurGuelle: !!nurGuelle })), quelle: w.quelle, rueckwirkend: f.datum !== heute, erstellt: Date.now() } });
+        put('feld', { ...f, ausb: { tag: f.datum, guelle: b.guelle, mist: b.mist, K: b.K.map(({ id, k, s, w: wert, e, nurGuelle }) => ({ id, k, s, w: wert, e, nurGuelle: !!nurGuelle })), quelle: w.quelle, rueckwirkend: f.datum !== heute, erstellt: Date.now(), ...(i0 >= 0 ? { R } : {}) } });
       }
     }
   } catch (e) { ausbArchivFehler = Date.now(); console.warn('Ausbringen-Archiv', e); }
@@ -1783,6 +1786,7 @@ function ausbFaktorHtml(f, x) {
   const p = x.p, st = p ? (p.ok ? '<span class="pill green">Bestätigt</span>' : '<span class="pill red">Nicht ok</span>') : ausbPill(x.s);
   return `<details class="acc ausbk" data-ausbk="${x.id}"><summary><span><b>${esc(x.k)}</b><small>${esc(x.w)}${p && p.notiz ? '<br>' + esc(p.notiz) : ''}</small></span>${st}</summary><div class="acc-b">
     <p class="small muted" style="margin:0">Modell: ${AUSB_L[x.s]}. ${esc(x.e || '')}</p>
+    ${f.ausb.R ? `<div><div class="small" style="font-weight:600;margin-bottom:4px">${esc(AUSB_CH[x.id] ? AUSB_CH[x.id].t : '')}</div>${ausbChartHtml(x.id, f.ausb.R, f.ausb.tag, 'Tag', f.ausb.rueckwirkend ? 'Folgetage (gemessen)' : 'Prognose', `14 Tage vor und 3 Tage nach dem Ausbringen · ${esc(f.ausb.quelle)}`)}</div>` : '<p class="small muted" style="margin:0">Diagramm wird beim nächsten Öffnen mit Internet geladen.</p>'}
     <label class="fld"><span>Kommentar (Kontrolle vor Ort)</span><textarea rows="2" data-ausbnotiz>${esc(p && p.notiz || '')}</textarea></label>
     <div class="btns"><button type="button" class="btn pri" data-act="ausbpr" data-id="${f.id}" data-k="${x.id}" data-v="ok">Geprüft, ok</button><button type="button" class="btn" data-act="ausbpr" data-id="${f.id}" data-k="${x.id}" data-v="nok">Nicht ok</button>${p ? `<button type="button" class="btn" data-act="ausbpr" data-id="${f.id}" data-k="${x.id}" data-v="del">Zurücksetzen</button>` : ''}</div>
     ${p ? `<p class="small muted" style="margin:0">${p.ok ? 'Bestätigt' : 'Als nicht ok markiert'} ${esc(new Date(p.zeit).toLocaleString('de-CH'))}${p.wer ? ' · ' + esc(p.wer) : ''}</p>` : ''}
@@ -1796,21 +1800,26 @@ function ausbSnapHtml(f) {
   <div class="accs">${E.K.map(x => ausbFaktorHtml(f, x)).join('')}</div>
   <p class="small muted" style="margin:6px 4px">${esc(a.quelle)}${a.rueckwirkend ? ', rückwirkend berechnet (Wetter um 12 Uhr, Niederschlag inkl. der 3 Folgetage)' : ', Stand beim Erfassen'} · gespeichert ${esc(new Date(a.erstellt).toLocaleString('de-CH'))}. Modellwerte, ersetzt nicht die Kontrolle vor Ort.</p></div>`;
 }
-function ausbChart(id) {
-  const w = ausbDaten(); if (!w || !w.d) return;
-  const D = w.d, H = w.h || {}, t0 = today(), hi = D.time.indexOf(t0);
+// Tageswerte je Kriterium (für Diagramme, auch in der gespeicherten Tagesbetrachtung)
+function ausbReihen(D, H) {
+  H = H || {};
   const tagH = (k, f) => D.time.map(d => { const a = (H.time || []).map((t, i) => t.startsWith(d) ? H[k] && H[k][i] : null).filter(v => v !== null && v !== undefined); return a.length ? f(a) : null; });
-  const avg = a => a.reduce((x, y) => x + y, 0) / a.length;
-  const C = {
-    regen: { t: 'Niederschlag pro Tag', v: D.precipitation_sum, u: 'mm', g: 20, gl: 'Verbot über 20 mm', bar: true },
-    schnee: { t: 'Schneehöhe (max. pro Tag)', v: tagH('snow_depth', a => Math.max(...a) * 100), u: 'cm', g: 1, gl: 'Schneedecke ab 1 cm', bar: true },
-    frost: { t: 'Bodentemperatur 6 cm (min. pro Tag)', v: tagH('soil_temperature_6cm', a => Math.min(...a)), u: '°C', g: 0, gl: 'gefroren unter 0 °C' },
-    nass: { t: 'Bodenfeuchte 3-9 cm (Ø pro Tag)', v: tagH('soil_moisture_3_to_9cm', a => avg(a) * 100), u: 'Vol-%', g: 42, gl: 'wassergesättigt ab ca. 42 %' },
-    trocken: { t: 'Bodenfeuchte 3-9 cm (Ø pro Tag)', v: tagH('soil_moisture_3_to_9cm', a => avg(a) * 100), u: 'Vol-%', g: 12, gl: 'ausgetrocknet unter ca. 12 %' },
-    temp: { t: 'Tagesmitteltemperatur', v: D.temperature_2m_mean, u: '°C', g: 5, gl: 'Düngefenster: 7 Tage über 5 °C' }
-  }[id];
-  if (!C) return;
-  const vals = C.v.map(v => v === null || v === undefined ? null : Math.round(v * 10) / 10), n = vals.length;
+  const avg = a => a.reduce((x, y) => x + y, 0) / a.length, r1 = a => a.map(v => v === null || v === undefined ? null : Math.round(v * 10) / 10);
+  const bf = r1(tagH('soil_moisture_3_to_9cm', a => avg(a) * 100));
+  return { time: [...D.time], regen: r1(D.precipitation_sum), schnee: r1(tagH('snow_depth', a => Math.max(...a) * 100)), frost: r1(tagH('soil_temperature_6cm', a => Math.min(...a))), nass: bf, trocken: bf, temp: r1(D.temperature_2m_mean) };
+}
+const AUSB_CH = {
+  regen: { t: 'Niederschlag pro Tag', u: 'mm', g: 20, gl: 'Verbot über 20 mm', bar: true },
+  schnee: { t: 'Schneehöhe (max. pro Tag)', u: 'cm', g: 1, gl: 'Schneedecke ab 1 cm', bar: true },
+  frost: { t: 'Bodentemperatur 6 cm (min. pro Tag)', u: '°C', g: 0, gl: 'gefroren unter 0 °C' },
+  nass: { t: 'Bodenfeuchte 3-9 cm (Ø pro Tag)', u: 'Vol-%', g: 42, gl: 'wassergesättigt ab ca. 42 %' },
+  trocken: { t: 'Bodenfeuchte 3-9 cm (Ø pro Tag)', u: 'Vol-%', g: 12, gl: 'ausgetrocknet unter ca. 12 %' },
+  temp: { t: 'Tagesmitteltemperatur', u: '°C', g: 5, gl: 'Düngefenster: 7 Tage über 5 °C' }
+};
+// Diagramm + Tabelle; t0 = Bezugstag (heute bzw. Ausbringtag), lbl = Beschriftung der Linie, folge = Legende für die Tage danach
+function ausbChartHtml(id, R, t0, lbl = 'heute', folge = 'Prognose', fuss = '') {
+  const C = AUSB_CH[id]; if (!C || !R || !R[id]) return '';
+  const vals = R[id], n = vals.length, hi = R.time.indexOf(t0); if (hi < 0) return '';
   const W = 340, H0 = 190, pl = 30, pr = 8, pt = 12, pb = 26, cw = (W - pl - pr) / n;
   const fin = vals.filter(v => v !== null);
   let mn = Math.min(C.g, ...fin, C.bar ? 0 : Infinity), mx = Math.max(C.g, ...fin);
@@ -1819,16 +1828,20 @@ function ausbChart(id) {
   const ticks = [mn, (mn + mx) / 2, mx].map(v => Math.round(v * 10) / 10);
   let g = `<rect x="${pl + hi * cw}" y="${pt}" width="${(n - hi) * cw}" height="${H0 - pt - pb}" fill="#EEF3F0"/>`;
   g += ticks.map(v => `<line x1="${pl}" x2="${W - pr}" y1="${y(v)}" y2="${y(v)}" stroke="#E2E4DF" stroke-width="1"/><text x="${pl - 4}" y="${y(v) + 3}" font-size="9" text-anchor="end" fill="#6B726D">${nf(v)}</text>`).join('');
-  if (C.bar) g += vals.map((v, i) => v === null ? '' : `<rect x="${x(i) - cw * 0.32}" y="${y(Math.max(v, 0))}" width="${cw * 0.64}" height="${Math.max(0.5, y(0) - y(Math.max(v, 0)))}" rx="2" fill="${v > C.g || (id === 'schnee' && v >= C.g) ? '#C0392B' : i >= hi ? '#7FB89A' : '#2E8B62'}"><title>${fmt(D.time[i])}: ${nf(v)} ${C.u}</title></rect>`).join('');
+  if (C.bar) g += vals.map((v, i) => v === null ? '' : `<rect x="${x(i) - cw * 0.32}" y="${y(Math.max(v, 0))}" width="${cw * 0.64}" height="${Math.max(0.5, y(0) - y(Math.max(v, 0)))}" rx="2" fill="${v > C.g || (id === 'schnee' && v >= C.g) ? '#C0392B' : i >= hi ? '#7FB89A' : '#2E8B62'}"><title>${fmt(R.time[i])}: ${nf(v)} ${C.u}</title></rect>`).join('');
   else { const pts = vals.map((v, i) => v === null ? null : [x(i), y(v)]); let d = '', on = false; pts.forEach(p => { if (!p) { on = false; return; } d += (on ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1); on = true; });
-    g += `<path d="${d}" fill="none" stroke="#2E8B62" stroke-width="2"/>` + vals.map((v, i) => v === null ? '' : `<circle cx="${x(i)}" cy="${y(v)}" r="2.6" fill="${(id === 'frost' && v < C.g) || (id === 'nass' && v >= C.g) || (id === 'trocken' && v < C.g) || (id === 'temp' && v <= C.g) ? '#C0392B' : '#2E8B62'}"><title>${fmt(D.time[i])}: ${nf(v)} ${C.u}</title></circle>`).join(''); }
+    g += `<path d="${d}" fill="none" stroke="#2E8B62" stroke-width="2"/>` + vals.map((v, i) => v === null ? '' : `<circle cx="${x(i)}" cy="${y(v)}" r="2.6" fill="${(id === 'frost' && v < C.g) || (id === 'nass' && v >= C.g) || (id === 'trocken' && v < C.g) || (id === 'temp' && v <= C.g) ? '#C0392B' : '#2E8B62'}"><title>${fmt(R.time[i])}: ${nf(v)} ${C.u}</title></circle>`).join(''); }
   g += `<line x1="${pl}" x2="${W - pr}" y1="${y(C.g)}" y2="${y(C.g)}" stroke="#E08A1E" stroke-width="1.5" stroke-dasharray="4 3"/>`;
-  g += `<line x1="${pl + hi * cw}" x2="${pl + hi * cw}" y1="${pt}" y2="${H0 - pb}" stroke="#1F4D36" stroke-width="1"/><text x="${pl + hi * cw + 3}" y="${pt + 9}" font-size="9" fill="#1F4D36">heute</text>`;
-  g += D.time.map((d, i) => i % 2 === hi % 2 ? `<text x="${x(i)}" y="${H0 - 10}" font-size="8.5" text-anchor="middle" fill="${i === hi ? '#1F4D36' : '#6B726D'}"${i === hi ? ' font-weight="700"' : ''}>${+d.slice(8)}.${+d.slice(5, 7)}.</text>` : '').join('');
+  g += `<line x1="${pl + hi * cw}" x2="${pl + hi * cw}" y1="${pt}" y2="${H0 - pb}" stroke="#1F4D36" stroke-width="1"/><text x="${pl + hi * cw + 3}" y="${pt + 9}" font-size="9" fill="#1F4D36">${lbl}</text>`;
+  g += R.time.map((d, i) => i % 2 === hi % 2 ? `<text x="${x(i)}" y="${H0 - 10}" font-size="8.5" text-anchor="middle" fill="${i === hi ? '#1F4D36' : '#6B726D'}"${i === hi ? ' font-weight="700"' : ''}>${+d.slice(8)}.${+d.slice(5, 7)}.</text>` : '').join('');
   const svg = `<svg viewBox="0 0 ${W} ${H0}" width="100%" style="display:block">${g}</svg>`;
-  const tab = vals.map((v, i) => ({ d: D.time[i], v })).filter(r => r.d >= addDays(t0, -3)).map(r => `<span class="${r.d === t0 ? 'on' : ''}"><small>${['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'][pd(r.d).getDay()]} ${+r.d.slice(8)}.</small><b>${r.v === null ? '-' : nf(r.v)}</b></span>`).join('');
-  openSheet(C.t, `<div class="card">${svg}<div class="small muted" style="margin-top:6px;display:flex;gap:12px;flex-wrap:wrap"><span><i class="sw" style="background:#E08A1E"></i>${esc(C.gl)}</span><span><i class="sw" style="background:#EEF3F0;border:1px solid #CFDDD5"></i>Prognose</span></div></div>
-    <div class="ausb-tab">${tab}</div><p class="small muted" style="margin:8px 2px">Einheit: ${C.u} · letzte 14 Tage und Prognose 3 Tage · Open-Meteo, Modellwerte für den Hof</p>`);
+  const tab = vals.map((v, i) => ({ d: R.time[i], v })).filter(r => r.d >= addDays(t0, -3)).map(r => `<span class="${r.d === t0 ? 'on' : ''}"><small>${['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'][pd(r.d).getDay()]} ${+r.d.slice(8)}.</small><b>${r.v === null ? '-' : nf(r.v)}</b></span>`).join('');
+  return `<div class="card">${svg}<div class="small muted" style="margin-top:6px;display:flex;gap:12px;flex-wrap:wrap"><span><i class="sw" style="background:#E08A1E"></i>${esc(C.gl)}</span><span><i class="sw" style="background:#EEF3F0;border:1px solid #CFDDD5"></i>${folge}</span></div></div>
+    <div class="ausb-tab">${tab}</div><p class="small muted" style="margin:8px 2px">Einheit: ${C.u} · ${fuss || 'letzte 14 Tage und Prognose 3 Tage · Open-Meteo, Modellwerte für den Hof'}</p>`;
+}
+function ausbChart(id) {
+  const w = ausbDaten(); if (!w || !w.d || !AUSB_CH[id]) return;
+  openSheet(AUSB_CH[id].t, ausbChartHtml(id, ausbReihen(w.d, w.h), today()));
   const sh = $('.sheet'); if (sh) sh.classList.add('mittel');
 }
 const AUSB_L = { ja: 'Ja', nein: 'Nein', pruefen: 'Prüfen' }, AUSB_C = { ja: 'ok', nein: 'red', pruefen: 'warn' };
