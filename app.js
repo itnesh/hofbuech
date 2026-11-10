@@ -1,5 +1,6 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.20.6';
+const VERSION = '1.21.0';
+const DSK = () => window.matchMedia('(min-width:1100px)').matches; // Browser-Layout (Laptop/Monitor), Smartphone unverändert
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -290,7 +291,7 @@ function render() {
     else if (p[0] === 'meldung') { title = S.set.hofname || 'hofbuech'; tab = 'start'; html = vStart(); const m = S.meldungen.find(x => x.id === p[1]); if (m && !UI.mOpen) { UI.mOpen = 1; setTimeout(() => { meldungSheet(m); history.replaceState(null, '', '#/start'); UI.mOpen = 0; }, 50); } }
     else if (p[0] === 'kalender') { title = 'Kalender'; html = vKalender(); }
     else if (p[0] === 'analyse') { title = 'Analyse'; tab = 'journale'; html = vJournale(); }
-    else if (p[0] === 'einstellungen') { title = 'Einstellungen'; html = vSettings(); showBack = true; tab = ''; }
+    else if (p[0] === 'einstellungen') { title = 'Einstellungen'; html = vSettings(); showBack = true; tab = 'einst'; }
     else { html = vStart(); tab = 'start'; }
   } catch (e) { console.error(e); html = `<div class="note">Anzeigefehler: ${esc(e.message)}</div>`; }
   $('#title').textContent = title;
@@ -398,9 +399,39 @@ function vStart() {
   const neu = S.meldungen.filter(m => !m.status).sort((a, b) => a.zeit < b.zeit ? 1 : -1);
   const kam = neu.length ? `<button type="button" class="band blue" data-act="meldung" data-id="${neu[0].id}"><b>${neu.length} Kamera-${neu.length === 1 ? 'Meldung' : 'Meldungen'} (CowCatcher)</b><span>${esc(neu[0].kamera || '')} · ${esc((neu[0].zeit || '').replace('T', ' ').slice(0, 16))}</span></button>` : '';
   const lateRow = late.length ? `<a class="row one" href="#/labiola"><i class="bar red"></i><div class="main"><span class="t1"><span class="hd">${late.length} Labiola-Pendenzen überfällig</span></span></div><small class="rt">›</small></a>` : '';
-  return `${wetterZeile()}${wqBand()}${kam}${herdeBanner()}${kpiBlock(k, false, L)}
-  <div class="sec-t">Demnächst (60 Tage)</div>
+  const dem = `<div class="sec-t">Demnächst (60 Tage)</div>
   <div class="list">${lateRow}${ag.length ? agendaRows(ag) : '<div class="empty">Nichts geplant. Brunst und Besamung erfassen, dann erscheinen hier die nächsten Termine.</div>'}</div>`;
+  if (DSK()) return `${wqBand()}${kam}<div class="dsk-start"><div class="dsk-l">${wetterZeile()}${herdeBanner()}${kpiBlock(k, false, L)}${dem}</div><div class="dsk-r">${startKal()}</div></div>`;
+  return `${wetterZeile()}${wqBand()}${kam}${herdeBanner()}${kpiBlock(k, false, L)}
+  ${dem}`;
+}
+function startKal() {
+  const [Y, M] = UI.kalMonat.split('-').map(Number), nDays = new Date(Y, M, 0).getDate();
+  const first = `${UI.kalMonat}-01`, last = `${UI.kalMonat}-${String(nDays).padStart(2, '0')}`, t = today();
+  const items = kalItems(first, last), byDay = {};
+  items.forEach(x => (byDay[x.d] = byDay[x.d] || []).push(x));
+  const tag = UI.kalTag && UI.kalTag.startsWith(UI.kalMonat) ? UI.kalTag : '';
+  let show = tag ? (byDay[tag] || []) : items.filter(x => UI.kalMonat === t.slice(0, 7) ? x.d >= t : true);
+  const mehr = !tag && show.length > 14 ? show.length - 14 : 0; if (mehr) show = show.slice(0, 14);
+  return `<div class="sec-t" style="margin-top:8px">Kalender <a href="#/kalender" style="font-weight:500;text-transform:none;letter-spacing:0;float:right">Kalender öffnen ›</a></div>
+  ${kalGrid(byDay)}
+  <div class="sec-t">${tag ? fmt(tag) + ' <a href="#/start" data-act="kaltag" data-v="" style="font-weight:500;text-transform:none;letter-spacing:0">ganzer Monat</a>' : UI.kalMonat === t.slice(0, 7) ? 'Ab heute in diesem Monat' : 'Ganzer Monat'}</div>
+  <div class="list">${show.map(x => itemRow(x, false)).join('') || '<div class="empty">Keine Einträge.</div>'}${mehr ? `<a class="row one" href="#/kalender"><i class="bar grey"></i><div class="main"><span class="t1"><span class="hd">${mehr} weitere im Kalender</span></span></div><small class="rt">›</small></a>` : ''}</div>`;
+}
+function kalGrid(byDay) {
+  const [Y, M] = UI.kalMonat.split('-').map(Number), nDays = new Date(Y, M, 0).getDate();
+  const off = (new Date(Y, M - 1, 1).getDay() + 6) % 7, t = today();
+  let cells = '';
+  for (let i = 0; i < off; i++) cells += '<span class="kd empty"></span>';
+  for (let d = 1; d <= nDays; d++) {
+    const ds = `${UI.kalMonat}-${String(d).padStart(2, '0')}`, ev = byDay[ds] || [];
+    cells += `<button type="button" class="kd ${ds === t ? 'today' : ''} ${ds === UI.kalTag ? 'sel' : ''} ${inAlp(ds) ? 'alp' : ''}" data-act="kaltag" data-v="${ds}"><span>${d}</span><i>${ev.slice(0, 4).map(x => `<b class="${x.c}${x.plan ? ' plan' : ''}"></b>`).join('')}</i></button>`;
+  }
+  return `<div class="kal">
+    <div class="kal-h"><button type="button" class="iconbtn" data-act="kalmon" data-v="-1" aria-label="Vormonat">‹</button><b>${['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'][M - 1]} ${Y}</b><button type="button" class="iconbtn" data-act="kalmon" data-v="1" aria-label="Folgemonat">›</button></div>
+    <div class="kal-w"><span>Mo</span><span>Di</span><span>Mi</span><span>Do</span><span>Fr</span><span>Sa</span><span>So</span></div>
+    <div class="kal-g">${cells}</div>
+  </div>`;
 }
 function lagerKpi(L) {
   const c = (v, l) => `<span class="stat ${v <= 5 ? 'low' : ''}"><b>${nf(v)}</b><span>${l}</span></span>`;
@@ -428,7 +459,7 @@ function vTiere() {
   </div>
   ${tlTiere.length ? `<div class="sec-t">Zeitachse (heute ±365 Tage)</div>${timeline(tlTiere)}` : ''}
   <div class="sec-t">${list.length} Tiere</div>
-  <div class="list">${list.length ? list.map(t => tierRow(t, d)).join('') : '<div class="empty">Keine Tiere.</div>'}</div>`;
+  <div class="list zw">${list.length ? list.map(t => tierRow(t, d)).join('') : '<div class="empty">Keine Tiere.</div>'}</div>`;
 }
 function tierRow(t, d = today()) {
   const l = lakt(t), f = frist(t.id), kat = kategorie(t);
@@ -444,7 +475,7 @@ function tierRow(t, d = today()) {
 }
 function timeline(tiere) {
   const d = today(), start = addDays(d, -365), end = addDays(d, 365);
-  const NW = 64, W = 360, ppd = (W - NW - 4) / 730, rowH = 22, head = 18, H = head + tiere.length * rowH;
+  const NW = 64, W = DSK() ? Math.max(360, Math.min(1400, (($('#view') || {}).clientWidth || 392) - 32)) : 360, ppd = (W - NW - 4) / 730, rowH = 22, head = 18, H = head + tiere.length * rowH;
   const x = s => NW + Math.round(diff(start, s) * ppd * 10) / 10;
   const clip = (a, b) => [a < start ? start : a, b > end ? end : b];
   const tip = t => ` data-tip="${esc(t)}"`;
@@ -668,24 +699,12 @@ function vKalender() {
   const first = `${UI.kalMonat}-01`, nDays = new Date(Y, M, 0).getDate(), last = `${UI.kalMonat}-${String(nDays).padStart(2, '0')}`;
   const KF = UI.kalFilter || '', items = kalItems(first, last).filter(x => !KF || (KF === 'prognose' ? x.plan : x.cat === KF)), byDay = {};
   items.forEach(x => (byDay[x.d] = byDay[x.d] || []).push(x));
-  const off = (new Date(Y, M - 1, 1).getDay() + 6) % 7, t = today();
-  let cells = '';
-  for (let i = 0; i < off; i++) cells += '<span class="kd empty"></span>';
-  for (let d = 1; d <= nDays; d++) {
-    const ds = `${UI.kalMonat}-${String(d).padStart(2, '0')}`, ev = byDay[ds] || [];
-    const alp = inAlp(ds);
-    cells += `<button type="button" class="kd ${ds === t ? 'today' : ''} ${ds === UI.kalTag ? 'sel' : ''} ${alp ? 'alp' : ''}" data-act="kaltag" data-v="${ds}"><span>${d}</span><i>${ev.slice(0, 4).map(x => `<b class="${x.c}${x.plan ? ' plan' : ''}"></b>`).join('')}</i></button>`;
-  }
   const show = UI.kalTag && UI.kalTag.startsWith(UI.kalMonat) ? (byDay[UI.kalTag] || []) : items;
   const rows = show.map(x => itemRow(x, false)).join('');
-  return `<div class="kal">
-    <div class="kal-h"><button type="button" class="iconbtn" data-act="kalmon" data-v="-1" aria-label="Vormonat">‹</button><b>${['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'][M - 1]} ${Y}</b><button type="button" class="iconbtn" data-act="kalmon" data-v="1" aria-label="Folgemonat">›</button></div>
-    <div class="kal-w"><span>Mo</span><span>Di</span><span>Mi</span><span>Do</span><span>Fr</span><span>Sa</span><span>So</span></div>
-    <div class="kal-g">${cells}</div>
-  </div>
-  <div class="chips kf">${[['', 'Alle'], ['zucht', 'Brunst/Besamung'], ['abkalbung', 'Abkalbung'], ['behandlung', 'Behandlung'], ['auslauf', 'Weide / Stall'], ['feld', 'Feldkalender'], ['labiola', 'Labiola'], ['tiere', 'Zu-/Abgang'], ['prognose', 'Prognose']].map(([v, l]) => `<button type="button" class="chip ${KF === v ? 'on' : ''}" data-act="kalfilter" data-v="${v}">${l}</button>`).join('')}</div>
-  <div class="sec-t">${UI.kalTag && UI.kalTag.startsWith(UI.kalMonat) ? fmt(UI.kalTag) + ' <a href="#/kalender" data-act="kaltag" data-v="" style="font-weight:500;text-transform:none;letter-spacing:0">ganzer Monat</a>' : 'Ganzer Monat'}</div>
-  <div class="list">${rows || '<div class="empty">Keine Einträge.</div>'}</div>`;
+  return `<div class="kal-wrap"><div class="kal-l">${kalGrid(byDay)}
+  <div class="chips kf">${[['', 'Alle'], ['zucht', 'Brunst/Besamung'], ['abkalbung', 'Abkalbung'], ['behandlung', 'Behandlung'], ['auslauf', 'Weide / Stall'], ['feld', 'Feldkalender'], ['labiola', 'Labiola'], ['tiere', 'Zu-/Abgang'], ['prognose', 'Prognose']].map(([v, l]) => `<button type="button" class="chip ${KF === v ? 'on' : ''}" data-act="kalfilter" data-v="${v}">${l}</button>`).join('')}</div></div>
+  <div class="kal-r"><div class="sec-t">${UI.kalTag && UI.kalTag.startsWith(UI.kalMonat) ? fmt(UI.kalTag) + ' <a href="#/kalender" data-act="kaltag" data-v="" style="font-weight:500;text-transform:none;letter-spacing:0">ganzer Monat</a>' : 'Ganzer Monat'}</div>
+  <div class="list">${rows || '<div class="empty">Keine Einträge.</div>'}</div></div></div>`;
 }
 
 const chartW = () => { const v = $('#view'); const w = v ? v.clientWidth - 64 : 340; return Math.max(320, Math.min(960, w || 340)); };
@@ -2135,4 +2154,5 @@ async function updateCheck() { try { const t = await (await fetch('index.html', 
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') updateCheck(); });
 setInterval(updateCheck, 10 * 60e3);
 if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => { }); navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.nav) { const h = e.data.nav.split('#')[1]; if (h !== undefined && location.hash !== '#' + h) location.hash = h; else render(); } }); }
+window.matchMedia('(min-width:1100px)').addEventListener('change', () => schedule());
 boot();
