@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.20.4';
+const VERSION = '1.20.5';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -395,12 +395,10 @@ function vStart() {
     <div class="card" style="margin-top:16px"><b>Los geht's</b><p class="muted" style="margin:6px 0 12px">Tiere über den + Button erfassen.</p><div class="btns"><button class="btn pri" data-act="form" data-f="zugang">Tier erfassen</button></div></div>`;
   }
   const all = agenda(60), late = all.filter(x => x.keep), ag = all.filter(x => !x.keep);
-  const offen = aktiveTiere().filter(t => { const l = lakt(t), m = alterMt(t); return l && l.status === 'Unbesamt' && (m === null || m >= S.set.unbesamtAb); });
-  const band = offen.length ? `<a class="band" href="#/tiere" data-act="filtlink" data-v="Unbesamt"><b>${offen.length} ${offen.length === 1 ? 'Tier' : 'Tiere'} zum Besamen offen</b><span>${esc(offen.map(t => t.name || t.ohrmarke).join(', '))}</span></a>` : '';
   const neu = S.meldungen.filter(m => !m.status).sort((a, b) => a.zeit < b.zeit ? 1 : -1);
   const kam = neu.length ? `<button type="button" class="band blue" data-act="meldung" data-id="${neu[0].id}"><b>${neu.length} Kamera-${neu.length === 1 ? 'Meldung' : 'Meldungen'} (CowCatcher)</b><span>${esc(neu[0].kamera || '')} · ${esc((neu[0].zeit || '').replace('T', ' ').slice(0, 16))}</span></button>` : '';
   const lateRow = late.length ? `<a class="row one" href="#/labiola"><i class="bar red"></i><div class="main"><span class="t1"><span class="hd">${late.length} Labiola-Pendenzen überfällig</span></span></div><small class="rt">›</small></a>` : '';
-  return `${wetterZeile()}${wqBand()}${kam}${band}${herdeBanner()}${kpiBlock(k, false, L)}
+  return `${wetterZeile()}${wqBand()}${kam}${herdeBanner()}${kpiBlock(k, false, L)}
   <div class="sec-t">Demnächst (60 Tage)</div>
   <div class="list">${lateRow}${ag.length ? agendaRows(ag) : '<div class="empty">Nichts geplant. Brunst und Besamung erfassen, dann erscheinen hier die nächsten Termine.</div>'}</div>`;
 }
