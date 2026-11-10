@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.22.1';
+const VERSION = '1.22.2';
 const DSK = () => window.matchMedia('(min-width:1100px)').matches; // Browser-Layout (Laptop/Monitor), Smartphone unverändert
 
 /* ---------- Helfer ---------- */
@@ -1068,18 +1068,26 @@ function labGantt(items, y) {
   const W = chartW(), lw = Math.min(150, Math.round(W * 0.34)), rh = 18, top = 18, H = top + items.length * rh + 6, cw = (W - lw - 4) / 12;
   const x = d => { const dt = pd(d), m = dt.getMonth(), dim = new Date(dt.getFullYear(), m + 1, 0).getDate(); return lw + (m + (dt.getDate() - 1) / dim) * cw; };
   const y0 = `${y}-01-01`, y1 = `${y}-12-31`, T = today();
-  let g = '';
+  let g = '', defs = '';
   for (let m = 0; m < 12; m++) g += `<rect x="${lw + m * cw}" y="0" width="${cw}" height="${H}" fill="${m % 2 ? '#F4F6F2' : '#FFFFFF'}"/><text x="${lw + m * cw + cw / 2}" y="12" font-size="9" text-anchor="middle" fill="#6B726D">${MON[m].slice(0, 3)}</text>`;
   items.forEach(({ a, d, done }, i) => {
-    const yy = top + i * rh; let ab = labAb(a, y) || addDays(d, a.faelligMT && a.faelligMT <= '03-31' && !a.abMT ? -40 : -21);
-    const s = ab < y0 ? y0 : ab > y1 ? y1 : ab, e = d > y1 ? y1 : d < y0 ? y0 : d;
+    const yy = top + i * rh, abEcht = labAb(a, y); let ab = abEcht || addDays(d, a.faelligMT && a.faelligMT <= '03-31' && !a.abMT ? -40 : -21);
+    const e = d > y1 ? y1 : d < y0 ? y0 : d, s0 = ab < y0 ? y0 : ab > y1 ? y1 : ab, s = s0 > e ? e : s0;
     const col = done ? '#2E8B62' : d < T ? '#C0392B' : '#E08A1E';
     g += `<g data-act="lpend" data-id="${a.id}" style="cursor:pointer"><rect x="0" y="${yy}" width="${W}" height="${rh}" fill="transparent"/>`;
     g += `<text x="4" y="${yy + 12}" font-size="9.5" fill="#1F2A24">${esc(labName(labNr(a.objekt)).slice(0, 18))}</text>`;
-    g += `<rect x="${x(s)}" y="${yy + 4}" width="${Math.max(3, x(e) - x(s) + cw / 30)}" height="${rh - 8}" rx="4" fill="${col}" opacity="${done ? 0.55 : 0.85}"><title>${esc(labTitel(a, y))}: ${ab ? 'ab ' + fmt(ab) + ' ' : ''}bis ${fmt(d)}</title></rect></g>`;
+    // ab = frühestens ab Datum (Balken läuft nach rechts aus), bis = spätestens bis Datum (Balken läuft von links ein)
+    const istAb = !!abEcht, istBis = !istAb || a.art === 'einmalig' || (a.faelligMT && a.faelligMT !== '10-31');
+    const x1 = x(s), x2 = x1 + Math.max(3, x(e) - x(s) + cw / 30), by = yy + 4, bh = rh - 8, op = done ? 0.55 : 0.85, cy = by + bh / 2, dm = v => `${+v.slice(8, 10)}.${+v.slice(5, 7)}.`;
+    const gid = 'lg' + (istAb && !istBis ? 'r' : !istAb ? 'l' : 'n') + col.slice(1);
+    if (!defs.includes(gid)) defs += `<linearGradient id="${gid}" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="${col}" stop-opacity="${gid[2] === 'l' ? 0.15 : 1}"/><stop offset="1" stop-color="${col}" stop-opacity="${gid[2] === 'r' ? 0.15 : 1}"/></linearGradient>`;
+    g += `<rect x="${x1}" y="${by}" width="${x2 - x1}" height="${bh}" rx="4" fill="url(#${gid})" opacity="${op}"><title>${esc(labTitel(a, y))}: ${istAb ? 'ab ' + fmt(ab) + ' ' : ''}bis ${fmt(d)}</title></rect>`;
+    if (istAb) g += `<path d="M${x1} ${by - 1.5}L${x1 + 7} ${cy}L${x1} ${by + bh + 1.5}Z" fill="${col}" opacity="${op}" pointer-events="none"/><text x="${x1 - 3}" y="${cy + 3.2}" font-size="8.5" font-weight="600" text-anchor="end" fill="${col}">ab ${dm(s)} →</text>`;
+    if (istBis) { const rechts = x2 + 52 < W; g += `<path d="M${x2} ${by - 1.5}L${x2 - 7} ${cy}L${x2} ${by + bh + 1.5}Z" fill="${col}" opacity="${op}" pointer-events="none"/>${istAb ? '' : `<text x="${rechts ? x2 + 3 : x1 - 3}" y="${cy + 3.2}" font-size="8.5" font-weight="600" text-anchor="${rechts ? 'start' : 'end'}" fill="${col}">← bis ${dm(e)}</text>`}`; }
+    g += `</g>`;
   });
   if (T.startsWith(String(y))) g += `<line x1="${x(T)}" x2="${x(T)}" y1="14" y2="${H}" stroke="#1F4D36" stroke-width="1.5"/>`;
-  return `<div class="card" style="padding:8px 6px"><svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Jahreskalender Pendenzen">${g}</svg><div class="small muted legende"><span><i class="sw" style="background:#E08A1E"></i>offen</span><span><i class="sw" style="background:#C0392B"></i>überfällig</span><span><i class="sw" style="background:#2E8B62;opacity:.55"></i>erledigt</span></div></div>`;
+  return `<div class="card" style="padding:8px 6px"><svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Jahreskalender Pendenzen"><defs>${defs}</defs>${g}</svg><div class="small muted legende"><span>▶ ab = frühestens ab</span><span>◀ bis = spätestens bis</span><span><i class="sw" style="background:#E08A1E"></i>offen</span><span><i class="sw" style="background:#C0392B"></i>überfällig</span><span><i class="sw" style="background:#2E8B62;opacity:.55"></i>erledigt</span></div></div>`;
 }
 function labKarte() { return S.parzellen.some(z => z.geo) ? `<div id="karte" class="karte" data-filter="1"></div>${UI.lPz ? `<div class="toolbar"><span class="chip on">${esc(pzKurz(UI.lPz))}</span><button class="btn" data-act="lpz" data-v="">Filter aufheben</button></div>` : '<p class="small muted" style="margin:2px 4px 8px">Parzelle antippen zum Filtern.</p>'}` : ''; }
 const labPzOk = nr => !UI.lPz || labPzs(labObj(nr)).some(z => z.name === UI.lPz);
