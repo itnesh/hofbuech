@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.21.0';
+const VERSION = '1.22.0';
 const DSK = () => window.matchMedia('(min-width:1100px)').matches; // Browser-Layout (Laptop/Monitor), Smartphone unverändert
 
 /* ---------- Helfer ---------- */
@@ -186,7 +186,7 @@ function verbotSegmente(y) {
 function imVerbot(d) { if (inAlp(d)) return false; for (const y of [+d.slice(0, 4), +d.slice(0, 4) + 1]) { const [a, b] = verbotFenster(y); if (d >= a && d <= b) return true; } return false; }
 
 function aufgabeFaellig(a, y) { if (a.archiv || (a.art !== 'einmalig' && ((a.vonJahr && +y < a.vonJahr) || (a.bisJahr && +y > a.bisJahr)))) return null; return a.art === 'einmalig' ? (a.faellig && a.faellig.startsWith(String(y)) ? a.faellig : null) : (a.faelligMT ? `${y}-${a.faelligMT}` : null); }
-function aufgabenOffen(y) { return S.aufgaben.map(a => ({ a, d: aufgabeFaellig(a, y) })).filter(x => x.d && !(x.a.erledigt || {})[String(y)]); }
+function aufgabenOffen(y) { return labAufg().map(a => ({ a, d: aufgabeFaellig(a, y) })).filter(x => x.d && !(x.a.erledigt || {})[String(y)]); }
 function agenda(tage = 150) {
   const d = today(), end = addDays(d, tage), it = [];
   for (const t of aktiveTiere()) {
@@ -401,9 +401,63 @@ function vStart() {
   const lateRow = late.length ? `<a class="row one" href="#/labiola"><i class="bar red"></i><div class="main"><span class="t1"><span class="hd">${late.length} Labiola-Pendenzen überfällig</span></span></div><small class="rt">›</small></a>` : '';
   const dem = `<div class="sec-t">Demnächst (60 Tage)</div>
   <div class="list">${lateRow}${ag.length ? agendaRows(ag) : '<div class="empty">Nichts geplant. Brunst und Besamung erfassen, dann erscheinen hier die nächsten Termine.</div>'}</div>`;
-  if (DSK()) return `${wqBand()}${kam}<div class="dsk-start"><div class="dsk-l">${wetterZeile()}${herdeBanner()}${kpiBlock(k, false, L)}${dem}</div><div class="dsk-r">${startKal()}</div></div>`;
+  if (DSK()) return `${wqBand()}${kam}${wetterZeile(true)}<div class="dsk-start"><div class="dsk-l">${herdeBanner()}${kpiBlock(k, false, L)}${dashCharts()}</div><div class="dsk-r">${startKal()}</div></div>`;
   return `${wetterZeile()}${wqBand()}${kam}${herdeBanner()}${kpiBlock(k, false, L)}
   ${dem}`;
+}
+// Startseite Browser: frei wählbare Diagramme (Einstellung je nach Jahreszeit)
+const DASH = {
+  ws: 'Wasserstand 30 Tage', tf: 'Tränkefass 30 Tage', tu: 'Trübung 30 Tage', do: 'Sauerstoff 30 Tage', ec: 'Leitfähigkeit 30 Tage',
+  wetter: 'Wetter 14 Tage (Temperatur, Niederschlag)', lager: 'Lager 12 Monate', auslauf: 'Weide / Laufhof / Alp pro Monat', zucht: 'Abkalbungen / Besamungen pro Jahr'
+};
+const DASH_STD = ['ws', 'tu', 'wetter', 'lager'];
+let CW_OVR = 0;
+function dashChart(k) {
+  const dd = t => { const d = new Date(t); return d.getDate() + '.' + (d.getMonth() + 1) + '.'; };
+  const card = (t, body, href) => `<div class="dash-c"><div class="dash-h"><b>${t}</b>${href ? `<a href="${href}">Details ›</a>` : ''}</div>${body || '<div class="empty">Noch keine Daten.</div>'}</div>`;
+  if (k === 'ws' || k === 'tf') {
+    const id = k === 'ws' ? 'wasserstand' : 'traenkefass', x = S.sensoren.find(s => s.id === id), p = (x && x.serie30 || []).filter(q => q[1] !== null && q[1] !== undefined);
+    const pc = x && x.last && x.last.prozent !== null && x.last.prozent !== undefined, u = pc ? '%' : 'cm';
+    return card(k === 'ws' ? 'Wasserstand' : 'Tränkefass', p.length > 1 ? svgLines([p.map(q => q[1])], p.map(q => dd(q[0])), ['#3E7CB1'], 130, p.map(q => `${dd(q[0])} ${new Date(q[0]).getHours()}h · ${nf(Math.round(q[1]))} ${u}`), pc ? true : 'frei') : '', '#/journale/' + id);
+  }
+  if (k === 'tu' || k === 'do' || k === 'ec') {
+    const x = S.sensoren.find(s => s.id === 'wasserqualitaet'), f = WQ.F[k], p = (x && x.serie30 || []).filter(q => q[k] !== null && q[k] !== undefined);
+    return card(`${f.label} (${f.unit})`, p.length > 1 ? svgLines([p.map(q => q[k])], p.map(q => dd(q.t)), [f.col], 130, p.map(q => `${dd(q.t)} ${new Date(q.t).getHours()}h · ${nf(q[k])} ${f.unit}`), 'frei') : '', '#/journale/wasserqualitaet');
+  }
+  if (k === 'wetter') {
+    const w = wetterDaten(), D = w && w.d; if (!D) return card('Wetter 14 Tage', '');
+    const lb = D.time.map(t => { const d = pd(t); return d.getDate() + '.'; });
+    const tmin = D.temperature_2m_min || D.temperature_2m_max.map(() => null);
+    return card('Temperatur 14 Tage (°C)', svgLines([D.temperature_2m_max, tmin], lb, ['#E0A35C', '#5B8FD6'], 110, D.time.map((t, i) => `${fmt(t)}: max ${Math.round(D.temperature_2m_max[i])}°, min ${tmin[i] === null ? '-' : Math.round(tmin[i]) + '°'}`), 'frei', true) + '<div class="small muted" style="margin-top:6px">Niederschlag (mm)</div>' + svgBars([D.precipitation_sum], lb, ['#3E7CB1'], 80), '#/journale/wetter');
+  }
+  if (k === 'lager') {
+    const now = new Date(), mons = []; for (let i = 11; i >= 0; i--) mons.push(iso(new Date(now.getFullYear(), now.getMonth() - i + 1, 0)));
+    const bal = (was, st) => mons.map(e => num(st) + S.feld.filter(f => f.datum <= e && f.was === was).reduce((a, f) => a + (f.typ === 'ernte' || f.typ === 'kauf' ? num(f.menge) : f.typ === 'verbrauch' ? -num(f.menge) : 0), 0));
+    const H = bal('Heu', S.set.startHeu), Si = bal('Silage', S.set.startSilo), St = bal('Stroh', S.set.startStroh), c = ['#2E8B62', '#E0A35C', '#B8A04A'];
+    return card('Lager 12 Monate', svgLines([H, Si, St], mons.map(m => MON[+m.slice(5, 7) - 1].slice(0, 3)), c, 130, mons.map((m, i) => `Ende ${MON[+m.slice(5, 7) - 1]}: Heu ${nf(H[i])} · Silage ${nf(Si[i])} · Stroh ${nf(St[i])}`), false, true) + `<div class="legend"><span><i class="sw" style="background:${c[0]}"></i>Heu</span><span><i class="sw" style="background:${c[1]}"></i>Silage</span><span><i class="sw" style="background:${c[2]}"></i>Stroh</span></div>`, '#/journale/lager');
+  }
+  if (k === 'auslauf') {
+    const J = String(new Date().getFullYear()), typs = ['Weide', 'Laufhof', 'Alp'], c = ['#2E8B62', '#5B8FD6', '#E0A35C'], per = typs.map(() => Array(12).fill(0));
+    auslaufTage(J).forEach(([d, a]) => { const i = typs.indexOf(a.typ); if (i >= 0) per[i][+d.slice(5, 7) - 1]++; });
+    return card(`Weide / Laufhof / Alp ${J}`, svgBars(per, MON.map(m => m.slice(0, 3)), c, 130) + `<div class="legend">${typs.map((t, i) => `<span><i class="sw" style="background:${c[i]}"></i>${t}</span>`).join('')}</div>`, '#/journale/auslauf');
+  }
+  if (k === 'zucht') {
+    const yrs = jahre([S.ereignisse]).sort().slice(-6), cnt = (typ, y) => S.ereignisse.filter(e => e.typ === typ && e.datum.startsWith(y)).length;
+    return card('Abkalbungen / Besamungen', yrs.length ? svgBars([yrs.map(y => cnt('abkalbung', y)), yrs.map(y => cnt('besamung', y))], yrs, ['#2E8B62', '#5B8FD6'], 130) + '<div class="legend"><span><i class="sw" style="background:#2E8B62"></i>Abkalbungen</span><span><i class="sw" style="background:#5B8FD6"></i>Besamungen</span></div>' : '', '#/journale/zucht');
+  }
+  return '';
+}
+function dashCharts() {
+  const ks = (Array.isArray(S.set.startCharts) ? S.set.startCharts : DASH_STD).filter(k => DASH[k]);
+  CW_OVR = 320; let h = '';
+  try { h = ks.map(k => { try { return dashChart(k); } catch (e) { return ''; } }).join(''); } finally { CW_OVR = 0; }
+  return `<div class="sec-t">Diagramme <button type="button" class="lnk" data-act="dashcfg">anpassen</button></div>${ks.length ? `<div class="dash">${h}</div>` : '<div class="empty">Keine Diagramme gewählt.</div>'}`;
+}
+function dashCfg() {
+  const ks = Array.isArray(S.set.startCharts) ? S.set.startCharts : DASH_STD;
+  openSheet('Diagramme auf der Startseite', `<p class="small muted" style="margin-top:0">Auswahl und Reihenfolge je nach Jahreszeit. Gilt für die Browser-Ansicht.</p><div class="list">${Object.entries(DASH).map(([k, l]) => `<label class="row" style="min-height:50px"><input type="checkbox" name="dash" value="${k}" ${ks.includes(k) ? 'checked' : ''} style="width:20px;height:20px;accent-color:#1E4D2B"><div class="main"><span class="t">${l}</span></div></label>`).join('')}</div>`, {
+    onSave: () => { const sel = [...document.querySelectorAll('.sheet input[name=dash]:checked')].map(x => x.value), alt = ks.filter(k => sel.includes(k)); W.setSettings({ ...S.set, startCharts: [...alt, ...sel.filter(k => !alt.includes(k))] }); closeSheet(); toast('Diagramme gespeichert'); }
+  });
 }
 function startKal() {
   const [Y, M] = UI.kalMonat.split('-').map(Number), nDays = new Date(Y, M, 0).getDate();
@@ -475,7 +529,7 @@ function tierRow(t, d = today()) {
 }
 function timeline(tiere) {
   const d = today(), start = addDays(d, -365), end = addDays(d, 365);
-  const NW = 64, W = DSK() ? Math.max(360, Math.min(1400, (($('#view') || {}).clientWidth || 392) - 32)) : 360, ppd = (W - NW - 4) / 730, rowH = 22, head = 18, H = head + tiere.length * rowH;
+  const BIG = DSK(), NW = BIG ? 110 : 64, W = BIG ? Math.max(360, Math.min(1400, (($('#view') || {}).clientWidth || 392) - 32)) : 360, ppd = (W - NW - 4) / 730, rowH = BIG ? 30 : 22, head = BIG ? 26 : 18, H = head + tiere.length * rowH;
   const x = s => NW + Math.round(diff(start, s) * ppd * 10) / 10;
   const clip = (a, b) => [a < start ? start : a, b > end ? end : b];
   const tip = t => ` data-tip="${esc(t)}"`;
@@ -489,11 +543,11 @@ function timeline(tiere) {
   const m0 = pd(start); m0.setDate(1); m0.setMonth(m0.getMonth() + 1);
   for (let m = new Date(m0); iso(m) <= end; m.setMonth(m.getMonth() + 1)) {
     const s = iso(m), xx = x(s);
-    g += `<line x1="${xx}" x2="${xx}" y1="${head - 4}" y2="${H}" stroke="${m.getMonth() === 0 ? '#C9CCC6' : '#EEF0EC'}" stroke-width=".6"/>${m.getMonth() % 3 === 0 ? `<text x="${xx + 1.5}" y="${head - 6}" font-size="7.5" fill="#59605B">${m.getMonth() === 0 ? "'" + String(m.getFullYear()).slice(2) : MON[m.getMonth()]}</text>` : ''}`;
+    g += `<line x1="${xx}" x2="${xx}" y1="${head - 4}" y2="${H}" stroke="${m.getMonth() === 0 ? '#C9CCC6' : '#EEF0EC'}" stroke-width=".6"/>${(BIG || m.getMonth() % 3 === 0) ? `<text x="${xx + 1.5}" y="${head - 6}" font-size="${BIG ? 11.5 : 7.5}" fill="#59605B">${m.getMonth() === 0 ? (BIG ? "Jan '" + String(m.getFullYear()).slice(2) : "'" + String(m.getFullYear()).slice(2)) : MON[m.getMonth()]}</text>` : ''}`;
   }
   tiere.forEach((t, i) => {
     const cy = head + i * rowH + rowH / 2;
-    g += `<line x1="0" x2="${W}" y1="${head + (i + 1) * rowH}" y2="${head + (i + 1) * rowH}" stroke="#EEF0EC" stroke-width=".6"/><a href="#/tier/${t.id}"><text x="4" y="${cy + 3.5}" font-size="10" font-weight="600" fill="#16201B">${esc((t.name || kurzOM(t.ohrmarke)).slice(0, 11))}</text></a>`;
+    g += `<line x1="0" x2="${W}" y1="${head + (i + 1) * rowH}" y2="${head + (i + 1) * rowH}" stroke="#EEF0EC" stroke-width=".6"/><a href="#/tier/${t.id}"><text x="${BIG ? 8 : 4}" y="${cy + (BIG ? 5 : 3.5)}" font-size="${BIG ? 14 : 10}" font-weight="600" fill="#16201B">${esc((t.name || kurzOM(t.ohrmarke)).slice(0, BIG ? 14 : 11))}</text></a>`;
     for (const e of evOf(t.id)) {
       if (e.datum < start || e.datum > end) continue;
       const xx = x(e.datum);
@@ -512,6 +566,8 @@ function timeline(tiere) {
   return `<div class="tl"><svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Zeitachse Besamung und Abkalbung, Symbole antippen"><defs><pattern id="hatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="5" fill="#F8E1DE"/><line x1="0" y1="0" x2="0" y2="5" stroke="#E3A79F" stroke-width="1.6"/></pattern></defs>${g}</svg></div>
   <p class="small muted" style="margin:6px 4px">Symbol antippen für Details.</p>`;
 }
+const IC_EDIT = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>';
+const cardHead = (t, c, id) => `<div class="card-h"><b>${t}</b><button type="button" class="edit-ic" data-act="edit" data-c="${c}" data-id="${id}" aria-label="Bearbeiten" title="Bearbeiten">${IC_EDIT}</button></div>`;
 function vTier(t) {
   const l = lakt(t), f = frist(t.id), m = alterMt(t);
   const mutter = t.mutterId ? tierById(t.mutterId) : null;
@@ -521,7 +577,7 @@ function vTier(t) {
   return `
   ${f ? `<div class="note" style="margin-top:8px"><b>Absetzfrist läuft</b> bis ${fmt(f.freiAb)} (${esc(f.medikament)})</div>` : ''}
   ${!aktiv(t) ? `<div class="note blue" style="margin-top:8px">Abgang ${fmt(t.abgang)} · ${esc(t.abgangGrund || '')}</div>` : ''}
-  <div class="card" style="margin-top:8px"><dl class="info">
+  <div class="tier-g"><div class="tier-d"><div class="card" style="margin-top:8px">${cardHead('Stammdaten', 'tiere', t.id)}<dl class="info">
     <dt>Name</dt><dd>${esc(t.name || '-')}</dd>
     <dt>Ohrmarke</dt><dd class="num">${esc(t.ohrmarke || '-')}</dd>
     <dt>Mutter</dt><dd>${mutter ? `<a href="#/tier/${mutter.id}">${esc(mutter.name || mutter.ohrmarke)}</a>` : esc(t.mutterName || '-')}</dd>
@@ -530,14 +586,13 @@ function vTier(t) {
     <dt>Geschlecht</dt><dd>${t.geschlecht === 'm' ? 'männlich' : 'weiblich'}${t.rasse ? ' · ' + esc(t.rasse) : ''}</dd>
     <dt>Kategorie</dt><dd>${kategorie(t)}</dd>
     ${l ? `<dt>Status</dt><dd>${l.status}${l.status === 'Besamt' ? `<br><span class="small ${inAlp(l.erwartet) ? '' : 'muted'}" style="${inAlp(l.erwartet) ? 'color:var(--red)' : ''}">Abkalbung ca. ${fmt(l.erwartet)}${inAlp(l.erwartet) ? ' (während Alp!)' : ''}</span>` : ''}</dd>` : ''}
-  </dl>${t.notiz ? `<p class="small muted" style="margin:10px 0 0">${esc(t.notiz)}</p>` : ''}</div>
-  <div class="btnlist" style="margin-top:12px">
+  </dl>${t.notiz ? `<p class="small muted" style="margin:10px 0 0">${esc(t.notiz)}</p>` : ''}</div></div>
+  <div class="tier-b"><div class="btnlist" style="margin-top:12px">
     <a class="btnrow" href="#/tier/${t.id}/laktation"><span>Laktationsplanung</span><span class="muted">${ev.length} ›</span></a>
     <a class="btnrow" href="#/tier/${t.id}/nachkommen"><span>Nachkommen</span><span class="muted">${kinder.length} ›</span></a>
     <a class="btnrow" href="#/tier/${t.id}/behandlungen"><span>Behandlungen</span><span class="muted">${beh.length} ›</span></a>
   </div>
-  <div class="btns" style="margin-top:12px"><button class="btn" data-act="edit" data-c="tiere" data-id="${t.id}">Bearbeiten</button></div>
-  <p class="small muted" style="margin:10px 4px">Neue Einträge für ${esc(t.name || 'dieses Tier')}: unten auf + tippen, das Tier ist vorausgewählt.</p>`;
+  <p class="small muted" style="margin:10px 4px">Neue Einträge für ${esc(t.name || 'dieses Tier')}: auf + tippen, das Tier ist vorausgewählt.</p></div></div>`;
 }
 function evLabel(e) {
   if (e.typ === 'abkalbung') { const k = e.kalbId ? tierById(e.kalbId) : null; const kn = k ? (k.geschlecht === 'm' ? '♂ ' : '♀ ') + (k.name || k.ohrmarke) : e.kalbName ? (e.kalbGeschlecht === 'm' ? '♂ ' : '♀ ') + e.kalbName : ''; return [e.totgeburt ? 'Abkalbung (Totgeburt)' : 'Abkalbung', [kn, e.verlauf, e.lage, e.groesse ? 'Kalb ' + e.groesse : '', e.notiz].filter(Boolean).join(' · ')]; }
@@ -686,7 +741,7 @@ function kalItems(from, to) {
   for (const a of S.auslauf) it.push({ d: a.datum, k: 'Herde', n: ortTxt(a), s: a.notiz || '', c: 'grey', cat: 'auslauf' });
   for (const t of S.tiere) { if (t.geburt && t.zugang === t.geburt) continue; if (t.zugang) it.push({ d: t.zugang, k: 'Zugang', n: t.name || t.ohrmarke, id: t.id, c: 'grey', cat: 'tiere' }); }
   for (const t of S.tiere) if (t.abgang) it.push({ d: t.abgang, k: 'Abgang', n: t.name || t.ohrmarke, s: t.abgangGrund || '', id: t.id, c: 'grey', cat: 'tiere' });
-  for (const a of S.aufgaben) for (const [y, dt] of Object.entries(a.erledigt || {})) it.push({ d: dt, k: 'Erledigt', n: a.titel, s: a.objekt || '', c: 'green', link: '#/labiola', cat: 'labiola' });
+  for (const a of labUnik()) for (const [y, dt] of Object.entries(a.erledigt || {})) it.push({ d: dt, k: 'Erledigt', n: a.titel, s: a.objekt || '', c: 'green', link: '#/labiola', cat: 'labiola' });
   for (const p of S.lprotokoll) it.push({ d: p.datum, k: 'Labiola-Schnitt', n: p.objekt, s: [p.teil, p.art, p.notiz].filter(Boolean).join(' · '), c: 'green', link: '#/labiola', cat: 'labiola' });
   for (const m of S.meldungen) it.push({ d: (m.zeit || '').slice(0, 10), k: 'Kamera', n: m.kamera || 'CowCatcher', s: m.tierName ? 'Brunst ' + m.tierName : '', c: 'blue', cat: 'zucht' });
   it.push(...agenda(800).map(x => ({ ...x, plan: true })));
@@ -707,7 +762,7 @@ function vKalender() {
   <div class="list">${rows || '<div class="empty">Keine Einträge.</div>'}</div></div></div>`;
 }
 
-const chartW = () => { const v = $('#view'); const w = v ? v.clientWidth - 64 : 340; return Math.max(320, Math.min(960, w || 340)); };
+const chartW = () => { if (CW_OVR) return CW_OVR; const v = $('#view'); const w = v ? v.clientWidth - 64 : 340; return Math.max(320, Math.min(960, w || 340)); };
 function svgBars(series, labels, colors, h = 150) {
   const n = labels.length, W = chartW(), pad = 22, bw = (W - pad) / n;
   const tot = labels.map((_, i) => series.reduce((a, s) => a + (s[i] || 0), 0)), mx = Math.max(1, ...tot);
@@ -910,7 +965,8 @@ const labHosts = o => labPzs(o).filter(z => !istObjekt(z));
 function labPz(o) { return labPzs(o)[0] || null; }
 const pzKurz = n => String(n || '').replace(/^\s*(obj\.?|objekt)?\s*\d+\s*[-–:.]?\s*/i, '').replace(/\s*\(.*\)\s*$/, '').trim() || n;
 function labName(nr) { const m = LAB_MAP[String(nr)]; if (m) return m.name; const o = labObj(nr), z = labPz(o); return z ? pzKurz(z.name) : o ? (o.flurname || `Obj. ${nr}`) : `Obj. ${nr}`; }
-const labAufg = () => S.aufgaben.filter(a => !a.archiv);
+const labUnik = () => { const seen = new Set(); return S.aufgaben.filter(a => !a.vid || (seen.has(a.vid) ? false : seen.add(a.vid))); };
+const labAufg = () => { const seen = new Set(); return S.aufgaben.filter(a => !a.archiv && (!a.vid || (seen.has(a.vid) ? false : seen.add(a.vid)))); };
 function labTeil(y) { const a = S.aufgaben.find(x => x.vid === 'o1-frueh'); return a && a.teil ? a.teil[String(y)] || '' : ''; }
 // Seed: Objekte und Pendenzen aus dem Vertrag (einmalig), 2025 und 2026 als erledigt
 // Parzellen abgleichen (einmalig): Namen vereinheitlichen, Duplikate entfernen, Einträge umbenennen, Rest ausblenden
@@ -936,7 +992,27 @@ function pzMigration() {
   const n = Object.keys(umben).length;
   setTimeout(() => openSheet('Parzellen abgeglichen', `<p>${n ? 'Umbenannt: ' + esc(Object.entries(umben).map(([a, b]) => a + ' → ' + b).join(', ')) : 'Keine Umbenennung nötig.'}</p>${weg.length ? `<p>Ausgeblendet (nicht in der Liste): ${esc(weg.join(', '))}</p>` : ''}<p class="small muted">Bestehende Einträge in Feldkalender und Auslaufjournal wurden mit umbenannt.</p>`), 800);
 }
+// Doppelte Labiola-Pendenzen/-Objekte zusammenführen (entstanden durch mehrfaches Seeding auf mehreren Geräten)
+let labDedupOk = false;
+function labDedupe() {
+  if (labDedupOk || !S.loaded.aufgaben || !S.loaded.labiola) return;
+  labDedupOk = true;
+  const grp = {}; for (const a of S.aufgaben) if (a.vid) (grp[a.vid] = grp[a.vid] || []).push(a);
+  for (const g of Object.values(grp)) {
+    if (g.length < 2) continue;
+    const sc = a => (a.archiv ? -1000 : 0) + Object.keys(a.erledigt || {}).length * 10 + Object.keys(a.teil || {}).length;
+    g.sort((a, b) => sc(b) - sc(a) || (b.geaendert || 0) - (a.geaendert || 0));
+    const keep = g[0], er = {}, teil = {};
+    for (const a of [...g].reverse()) { Object.assign(er, a.erledigt || {}); Object.assign(teil, a.teil || {}); }
+    Object.assign(er, keep.erledigt || {}); Object.assign(teil, keep.teil || {});
+    put('aufgaben', { ...keep, erledigt: er, ...(Object.keys(teil).length ? { teil } : {}) });
+    g.slice(1).forEach(a => del('aufgaben', a.id));
+  }
+  const og = {}; for (const o of S.labiola) if (o.nr !== undefined && o.nr !== '') (og[String(o.nr)] = og[String(o.nr)] || []).push(o);
+  for (const g of Object.values(og)) { if (g.length < 2) continue; g.sort((a, b) => (b.parzelle ? 1 : 0) - (a.parzelle ? 1 : 0) || (b.geaendert || 0) - (a.geaendert || 0)); g.slice(1).forEach(o => del('labiola', o.id)); }
+}
 function labiolaSeed() {
+  labDedupe();
   pzMigration();
   if (S.loaded.aufgaben && S.loaded.set && S.set.labPend !== 3 && S.set.labSeed === LAB_VERTRAG) { S.set.labPend = 3; W.setSettings({ ...S.set, labPend: 3 }); for (const a of S.aufgaben) { if (!a.vid) continue; const p = LAB_PEND.find(x => x.vid === a.vid); if (!p) { if (!a.archiv) put('aufgaben', { ...a, archiv: true }); } else put('aufgaben', { ...a, ...p, erledigt: a.erledigt || {}, ...(a.teil ? { teil: a.teil } : {}) }); } }
   if (!S.loaded.labiola || !S.loaded.aufgaben || !S.loaded.set || !S.loaded.lprotokoll || S.set.labSeed === LAB_VERTRAG) return;
@@ -951,7 +1027,7 @@ function labiolaSeed() {
     const er = {};
     if (p.art === 'einmalig') { const y = p.faellig.slice(0, 4); if (y <= '2026') er[y] = p.faellig < T ? p.faellig : T; }
     else for (const y of ['2025', '2026']) { if (+y < (p.vonJahr || 2026)) continue; const d = `${y}-${p.faelligMT}`; er[y] = d < T ? d : T; }
-    put('aufgaben', { ...p, vonJahr: p.vonJahr || 2026, bisJahr: 2033, erledigt: er, ...(p.teilwahl ? { teil } : {}), vertrag: LAB_VERTRAG });
+    put('aufgaben', { ...p, id: 'lab-' + p.vid, vonJahr: p.vonJahr || 2026, bisJahr: 2033, erledigt: er, ...(p.teilwahl ? { teil } : {}), vertrag: LAB_VERTRAG });
   }
 }
 // Frühestens-Datum einer Pendenz im Jahr y (abhängig von einer vorherigen Pendenz)
@@ -1048,17 +1124,26 @@ const WIC = {
   storm: '<path d="M7 13h10a3.5 3.5 0 0 0 0-7 5 5 0 0 0-9.5 1.5A3 3 0 0 0 7 13z" fill="#7E878E"/><path d="M12 13l-2 4h3l-1.5 4" stroke="#E8A700" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>'
 };
 let wetterLaden = false;
-function wetterZeile() {
-  let w = null; try { w = JSON.parse(localStorage.getItem('hb-wetter2') || 'null'); } catch (e) { }
+function wetterDaten() {
+  let w = null; try { w = JSON.parse(localStorage.getItem('hb-wetter3') || 'null'); } catch (e) { }
   if ((!w || Date.now() - w.t > 3 * 3600e3) && !wetterLaden && navigator.onLine !== false) {
     wetterLaden = true;
-    fetch(`https://api.open-meteo.com/v1/forecast?latitude=${S.set.lat}&longitude=${S.set.lon}&daily=weather_code,temperature_2m_max,precipitation_sum,precipitation_probability_max&forecast_days=14&timezone=Europe%2FZurich`)
-      .then(r => r.json()).then(j => { localStorage.setItem('hb-wetter2', JSON.stringify({ t: Date.now(), d: j.daily })); wetterLaden = false; schedule(); }).catch(() => { wetterLaden = false; });
+    fetch(`https://api.open-meteo.com/v1/forecast?latitude=${S.set.lat}&longitude=${S.set.lon}&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max,sunshine_duration&forecast_days=14&timezone=Europe%2FZurich`)
+      .then(r => r.json()).then(j => { localStorage.setItem('hb-wetter3', JSON.stringify({ t: Date.now(), d: j.daily })); wetterLaden = false; schedule(); }).catch(() => { wetterLaden = false; });
   }
-  if (!w || !w.d) return '';
+  return w && w.d ? w : null;
+}
+function wetterZeile(gross = false) {
+  const w = wetterDaten();
+  if (!w) return '';
   const D = w.d, WT = ['S', 'M', 'D', 'M', 'D', 'F', 'S'];
   // Regen-Symbol nur bei relevantem Niederschlag (>= 1 mm und Wahrscheinlichkeit >= 50 %), sonst bewölkt
   const sym = i => { let c = WMO(D.weather_code[i]); const mm = D.precipitation_sum[i] || 0, pr = D.precipitation_probability_max ? D.precipitation_probability_max[i] : null; if ((c === 'rain' || c === 'storm') && (mm < 1 || (pr !== null && pr < 50))) c = 'cloud'; return c; };
+  if (gross) {
+    const WL = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'], r = (a, i) => a && a[i] !== null && a[i] !== undefined ? a[i] : null;
+    return `<div class="wetter-g" title="Wetter 14 Tage (Open-Meteo)">${D.time.map((t, i) => { const d = pd(t), mm = r(D.precipitation_sum, i), pr = r(D.precipitation_probability_max, i), wi = r(D.wind_speed_10m_max, i), so = r(D.sunshine_duration, i), mn = r(D.temperature_2m_min, i);
+      return `<div class="wg ${i === 0 ? 'heute' : ''} ${d.getDay() === 0 || d.getDay() === 6 ? 'we' : ''}"><small class="wg-d">${i === 0 ? 'Heute' : WL[d.getDay()] + ' ' + d.getDate() + '.'}</small><svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true">${WIC[sym(i)]}</svg><b>${Math.round(D.temperature_2m_max[i])}°<span>${mn === null ? '' : ' ' + Math.round(mn) + '°'}</span></b><i class="wg-l"></i><small class="${mm >= 1 ? 'nass' : ''}" title="Niederschlag">${mm === null ? '-' : nf(Math.round(mm * 10) / 10)} mm</small><small title="Regenwahrscheinlichkeit">${pr === null ? '-' : pr + ' %'}</small><small title="Wind max.">${wi === null ? '-' : Math.round(wi) + ' km/h'}</small><small title="Sonnenstunden">${so === null ? '-' : Math.round(so / 3600) + ' h Sonne'}</small></div>`; }).join('')}</div>`;
+  }
   return `<div class="wetter" title="Wetter 14 Tage (Open-Meteo)">${D.time.map((t, i) => `<span title="${fmt(t)}: ${Math.round(D.temperature_2m_max[i])}°, ${D.precipitation_sum[i]} mm${D.precipitation_probability_max ? ', ' + D.precipitation_probability_max[i] + ' %' : ''}"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">${WIC[sym(i)]}</svg><small>${i === 0 ? 'H' : WT[pd(t).getDay()]}</small></span>`).join('')}</div>`;
 }
 
@@ -1078,9 +1163,8 @@ function vNotizen() {
   <div class="list">${list.length ? list.map(n => `<a class="row one" href="#/notiz/${n.id}"><i class="bar green"></i><div class="main"><span class="t1"><b>${esc(n.titel)}</b> <span class="ex">${esc(n.kategorie || '')}${(n.bilder || []).length ? ' · ' + n.bilder.length + ' Bild' + (n.bilder.length > 1 ? 'er' : '') : ''}</span></span></div><small class="rt">›</small></a>`).join('') : '<div class="empty">Noch keine Notizen.</div>'}</div>`;
 }
 function vNotiz(n) {
-  return `<div class="card" style="margin-top:8px"><div class="small muted">${esc(n.kategorie || '')}${n.datum ? ' · ' + fmt(n.datum) : ''}</div><div class="ntext">${esc(n.text || '').replace(/\n/g, '<br>')}</div></div>
-  ${(n.bilder || []).map(b => `<img class="nbild" src="${b}" alt="">`).join('')}
-  <div class="btns" style="margin-top:12px"><button class="btn" data-act="edit" data-c="notizen" data-id="${n.id}">Bearbeiten</button></div>`;
+  return `<div class="card" style="margin-top:8px"><div class="card-h"><span class="small muted">${esc(n.kategorie || '')}${n.datum ? ' · ' + fmt(n.datum) : ''}</span><button type="button" class="edit-ic" data-act="edit" data-c="notizen" data-id="${n.id}" aria-label="Bearbeiten" title="Bearbeiten">${IC_EDIT}</button></div><div class="ntext">${esc(n.text || '').replace(/\n/g, '<br>')}</div></div>
+  ${(n.bilder || []).map(b => `<img class="nbild" src="${b}" alt="">`).join('')}`;
 }
 
 function meldungSheet(m) {
@@ -2040,6 +2124,7 @@ document.addEventListener('click', e => {
     const snap = document.querySelector(`[data-ausbsnap="${f.id}"]`); if (snap) { snap.outerHTML = ausbSnapHtml(nf2); if (v === 'del') { const d = document.querySelector(`[data-ausbsnap="${f.id}"] [data-ausbk="${k}"]`); if (d) d.open = true; } }
     toast(v === 'del' ? 'Zurückgesetzt' : v === 'ok' ? 'Geprüft, ok gespeichert' : 'Nicht ok gespeichert');
   }
+  else if (a === 'dashcfg') dashCfg();
   else if (a === 'edit') { const c = el.dataset.c, r = S[c].find(x => x.id === el.dataset.id); if (r) openForm(formKey(c, r), r); }
   else if (a === 'filt') { const v = el.dataset.v, F = UI.tierFilter; if (['Kalb', 'Rind', 'Kuh'].includes(v)) { F.kat = F.kat === v ? '' : v; F.lakt = ''; } else { F.lakt = F.lakt === v ? '' : v; F.kat = ''; } render(); }
   else if (a === 'filtlink') { const v = el.dataset.v, F = UI.tierFilter; F.q = ''; F.abg = false; if (['Kalb', 'Rind', 'Kuh'].includes(v)) { F.kat = v; F.lakt = ''; } else { F.lakt = v; F.kat = ''; } }
