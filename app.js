@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.23.2';
+const VERSION = '1.23.3';
 const DSK = () => window.matchMedia('(min-width:1100px)').matches; // Browser-Layout (Laptop/Monitor), Smartphone unverändert
 
 /* ---------- Helfer ---------- */
@@ -198,7 +198,7 @@ function agenda(tage = 150) {
       const k = addDays(l.bes.datum, 21); if (k >= addDays(d, -2)) it.push({ d: k, k: 'Brunstkontrolle', n, id: t.id, c: 'blue', cat: 'zucht' });
     } else {
       const br = evOf(t.id, 'brunst').filter(e => !l.cal || e.datum > l.cal.datum).pop();
-      if (br) { let nx = addDays(brTag0(br), 21); while (nx < addDays(d, -1)) nx = addDays(nx, 21); const dm = x => `${+x.slice(8, 10)}.${+x.slice(5, 7)}.`, st = br.zeit && br.phase === 'haupt' ? br.zeit : br.zeit && br.phase === 'vor' ? fmtDT(new Date(new Date(`${br.datum}T${br.zeit}`).getTime() + 12 * 3600e3)).slice(-5) : ''; it.push({ d: nx, k: 'Gepl. Brunst', n, s: `${['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'][pd(nx).getDay()]} ${dm(nx)}${st ? ' · ' + st : ''}`, verbot: imVerbot(nx), id: t.id, c: imVerbot(nx) ? 'red' : 'blue', cat: 'zucht' }); }
+      if (br) { const t0 = br.zeit ? new Date(`${br.datum}T${br.zeit}`) : pd(br.datum), off = { vor: 12, nach: -12 }[br.phase] || 0, st = iso(new Date(t0.getTime() + off * 3600e3)); let nx = addDays(st, 21); while (addDays(nx, 1) < d) nx = addDays(nx, 21); const wt = x => `${['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'][pd(x).getDay()]} ${+x.slice(8, 10)}.${+x.slice(5, 7)}.`; it.push({ d: nx, k: 'Gepl. Brunst', n, s: `${wt(nx)} - ${wt(addDays(nx, 1))}`, verbot: imVerbot(nx), id: t.id, c: imVerbot(nx) ? 'red' : 'blue', cat: 'zucht' }); }
     }
   }
   for (const y of [+d.slice(0, 4), +d.slice(0, 4) + 1]) { const [a, b] = alpFenster(y); const ist = alpIst()[String(y)]; if (!ist) it.push({ d: a, k: 'Gepl. Alpauffahrt', n: '', c: 'grey', cat: 'auslauf' }); if (!ist || !ist[1]) it.push({ d: b, k: 'Gepl. Alpabfahrt', n: '', c: 'grey', cat: 'auslauf' }); }
