@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.20.5';
+const VERSION = '1.20.6';
 
 /* ---------- Helfer ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -792,14 +792,19 @@ function anaWq() {
   const R = UI.wqR || '48h', ser = R === '365t' ? sx.serie365 || [] : R === '30t' ? sx.serie30 || [] : sx.serie48 || [];
   const lab = t => { const d = new Date(t); return R === '48h' ? d.getHours() + 'h' : R === '30t' ? d.getDate() + '.' + (d.getMonth() + 1) : MON[d.getMonth()]; };
   const ft = R === '365t' ? zd : zt;
-  const chart = k => { const f = WQ.F[k], p = ser.filter(x => x[k] !== null && x[k] !== undefined); return `<div class="small muted" style="margin-top:8px">${f.label} (${f.unit})${B && B[k] !== null ? ` · Basis ${nf(B[k])}` : ''}</div>${p.length > 1 ? svgLines([p.map(x => x[k])], p.map(x => lab(x.t)), [f.col], 120, p.map(x => `${ft(x.t)} · ${nf(x[k])} ${f.unit}`), 'frei') : '<div class="empty">Noch zu wenige Messungen.</div>'}`; };
+  const wsx = S.sensoren.find(x => x.id === 'wasserstand'), wsSer = (wsx ? (R === '365t' ? wsx.serie365 : R === '30t' ? wsx.serie30 : wsx.serie48) || [] : []).map(p => [p[0], p[1]]).filter(p => p[1] !== null && p[1] !== undefined);
+  const wsTol = R === '365t' ? 864e5 : R === '30t' ? 6 * 3600e3 : 2 * 3600e3;
+  const wsAm = t => { let b = null, bd = Infinity; for (const p of wsSer) { const d = Math.abs(p[0] - t); if (d < bd) { bd = d; b = p; } } return b && bd <= wsTol ? b[1] : null; };
+  const wsTxt = t => { const v = wsAm(t); return v === null ? '' : ` · Wasserstand ${Math.round(v)} %`; };
+  const wsChart = () => { const v = ser.map(x => wsAm(x.t)); return v.filter(x => x !== null).length > 1 ? `<div class="small muted">Wasserstand (%)</div>${svgLines([v], ser.map(x => lab(x.t)), ['#3E7CB1'], 90, ser.map((x, i) => `${ft(x.t)} · ${v[i] === null ? '-' : Math.round(v[i]) + ' %'}`), 'frei')}` : ''; };
+  const chart = k => { const f = WQ.F[k], p = ser.filter(x => x[k] !== null && x[k] !== undefined); return `<div class="small muted" style="margin-top:8px">${f.label} (${f.unit})${B && B[k] !== null ? ` · Basis ${nf(B[k])}` : ''}</div>${p.length > 1 ? svgLines([p.map(x => x[k])], p.map(x => lab(x.t)), [f.col], 120, p.map(x => `${ft(x.t)} · ${nf(x[k])} ${f.unit}${wsTxt(x.t)}`), 'frei') : '<div class="empty">Noch zu wenige Messungen.</div>'}`; };
   const temp = ser.filter(x => x.te !== null && x.te !== undefined);
   return `${ban}${(sx.alarme || []).length ? `<div class="note" style="margin:8px 0"><b>Starke Veränderung:</b> ${esc(sx.alarme.map(a => a.text).join(' · '))}. Reservoir und Zulauf prüfen.</div>` : ''}${alt ? `<div class="note small" style="margin:8px 0">Letzte Messung ${zt(L.zeit)}, seither keine Daten. Funk/Batterie prüfen.</div>` : ''}
   <div class="stats"><div class="stats-row"><span class="stats-h">Aktuell</span>${st('tu')}${st('do')}${st('ec')}</div>
   <div class="stats-row"><span class="stats-h">Basis 7 T.</span>${bs('tu')}${bs('do')}${bs('ec')}</div>
   <div class="stats-row"><span class="stats-h">Weitere</span><span class="stat"><b>${L.te === null || L.te === undefined ? '-' : nf(L.te)}</b><span>Wasser °C</span></span><span class="stat"><b>${L.bat === null || L.bat === undefined ? '-' : nf(L.bat)}</b><span>Batterie V</span></span><span class="stat"><b class="zeit">${zt(L.zeit)}</b><span>Messung</span></span></div></div>
   <div class="chips" style="margin:12px 0 4px">${[['48h', '48 Std.'], ['30t', '30 Tage'], ['365t', '365 Tage']].map(([v, l]) => `<button type="button" class="chip ${R === v ? 'on' : ''}" data-act="wqr" data-v="${v}">${l}</button>`).join('')}</div>
-  <div class="card">${chart('tu')}${chart('do')}${chart('ec')}${temp.length > 1 ? `<div class="small muted" style="margin-top:8px">Wassertemperatur (°C)</div>${svgLines([temp.map(x => x.te)], temp.map(x => lab(x.t)), ['#E0A35C'], 100, temp.map(x => `${ft(x.t)} · ${nf(x.te)} °C`), 'frei')}` : ''}</div>
+  <div class="card">${wsChart()}${chart('tu')}${chart('do')}${chart('ec')}${temp.length > 1 ? `<div class="small muted" style="margin-top:8px">Wassertemperatur (°C)</div>${svgLines([temp.map(x => x.te)], temp.map(x => lab(x.t)), ['#E0A35C'], 100, temp.map(x => `${ft(x.t)} · ${nf(x.te)} °C`), 'frei')}` : ''}</div>
   <p class="small muted" style="margin:8px 4px">Alarm bei Leitfähigkeit ±${nf(G.ec)} %, Trübung +${nf(G.tu)} NTU oder Sauerstoff -${nf(G.do)} mg/L gegenüber der Basis (Median der letzten 7 Tage ohne die letzten 6 Std., Daten ab ${esc(S.set.wqAb || WQ.AB)}). ${B ? `Basis aus ${B.n} Messungen.` : 'Basis wird aufgebaut (mind. 12 Messungen nötig), bis dahin kein Alarm.'} Push stündlich über den Hintergrund-Job. Trübungssonde mit Offset ca. 20-25 NTU, nur als Trend nutzbar. Leitfähigkeit noch unkalibriert.</p>
   <div class="small muted" style="margin:0 4px">Aktualisiert ${sx.aktualisiert ? esc(new Date(sx.aktualisiert).toLocaleString('de-CH')) : '-'}</div>`;
 }
