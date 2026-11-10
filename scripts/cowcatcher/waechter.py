@@ -280,4 +280,8 @@ def main():
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:  # Dienst-Stopp (nssm sendet Ctrl+C)
+        log.info('Waechter gestoppt')
+        os._exit(0)
