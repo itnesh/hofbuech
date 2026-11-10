@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.23.3';
+const VERSION = '1.23.4';
 const DSK = () => window.matchMedia('(min-width:1100px)').matches; // Browser-Layout (Laptop/Monitor), Smartphone unverändert
 
 /* ---------- Helfer ---------- */
@@ -288,7 +288,7 @@ function render() {
     else if (p[0] === 'labiola') { title = 'Labiola'; html = vLabiola(); }
     else if (p[0] === 'notizen') { title = 'Notizen'; html = vNotizen(); }
     else if (p[0] === 'notiz') { const n = S.notizen.find(x => x.id === p[1]); title = n ? n.titel : 'Notiz'; tab = 'notizen'; showBack = true; html = n ? vNotiz(n) : '<div class="empty">Notiz nicht gefunden.</div>'; }
-    else if (p[0] === 'meldung') { title = S.set.hofname || 'hofbuech'; tab = 'start'; html = vStart(); const m = S.meldungen.find(x => x.id === p[1]); if (m && !UI.mOpen) { UI.mOpen = 1; setTimeout(() => { meldungSheet(m); history.replaceState(null, '', '#/start'); UI.mOpen = 0; }, 50); } }
+    else if (p[0] === 'meldung') { title = S.set.hofname || 'hofbuech'; tab = 'start'; html = vStart(); const m = p[1] === 'neu' ? S.meldungen.filter(x => !x.status).sort((x, y) => x.zeit < y.zeit ? 1 : -1)[0] : S.meldungen.find(x => x.id === p[1]); if (m && !UI.mOpen) { UI.mOpen = 1; setTimeout(() => { meldungSheet(m); history.replaceState(null, '', '#/start'); UI.mOpen = 0; }, 50); } }
     else if (p[0] === 'kalender') { title = 'Kalender'; html = vKalender(); }
     else if (p[0] === 'analyse') { title = 'Analyse'; tab = 'journale'; html = vJournale(); }
     else if (p[0] === 'einstellungen') { title = 'Einstellungen'; html = vSettings(); showBack = true; tab = 'einst'; }
