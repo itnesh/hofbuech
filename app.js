@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.22.3';
+const VERSION = '1.23.0';
 const DSK = () => window.matchMedia('(min-width:1100px)').matches; // Browser-Layout (Laptop/Monitor), Smartphone unverändert
 
 /* ---------- Helfer ---------- */
@@ -198,7 +198,8 @@ function agenda(tage = 150) {
       const k = addDays(l.bes.datum, 21); if (k >= addDays(d, -2)) it.push({ d: k, k: 'Brunstkontrolle', n, id: t.id, c: 'blue', cat: 'zucht' });
     } else {
       const br = evOf(t.id, 'brunst').filter(e => !l.cal || e.datum > l.cal.datum).pop();
-      if (br) { let nx = addDays(br.datum, 21); while (nx < addDays(d, -1)) nx = addDays(nx, 21); it.push({ d: nx, k: 'Gepl. Brunst', n, verbot: imVerbot(nx), id: t.id, c: imVerbot(nx) ? 'red' : 'blue', cat: 'zucht' }); }
+      if (br && br.phase && br.phase !== 'nach') { const bi = brunstInfo(br), bz = S.ereignisse.some(e => e.tierId === t.id && e.typ === 'besamung' && e.datum >= br.datum); if (!bz && iso(bi.bis) >= addDays(d, -1)) { it.push({ d: iso(bi.von), k: `Besamen ${fmtDT(bi.von).slice(3)} - ${fmtDT(bi.bis).slice(3)}`, n, id: t.id, c: 'warn', cat: 'zucht' }); } }
+      if (br) { let nx = addDays(brTag0(br), 21); while (nx < addDays(d, -1)) nx = addDays(nx, 21); it.push({ d: nx, k: 'Gepl. Brunst', n, verbot: imVerbot(nx), id: t.id, c: imVerbot(nx) ? 'red' : 'blue', cat: 'zucht' }); }
     }
   }
   for (const y of [+d.slice(0, 4), +d.slice(0, 4) + 1]) { const [a, b] = alpFenster(y); const ist = alpIst()[String(y)]; if (!ist) it.push({ d: a, k: 'Gepl. Alpauffahrt', n: '', c: 'grey', cat: 'auslauf' }); if (!ist || !ist[1]) it.push({ d: b, k: 'Gepl. Alpabfahrt', n: '', c: 'grey', cat: 'auslauf' }); }
@@ -559,7 +560,7 @@ function timeline(tiere) {
     for (const e of evOf(t.id)) {
       if (e.datum < start || e.datum > end) continue;
       const xx = x(e.datum);
-      if (e.typ === 'brunst') g += `<rect x="${xx - 3}" y="${cy - 7}" width="6" height="14" fill="transparent"${tip('Brunst ' + fmt(e.datum))}/><line x1="${xx}" x2="${xx}" y1="${cy - 6}" y2="${cy + 6}" stroke="#B8641A" stroke-width="1.8" pointer-events="none"/>`;
+      if (e.typ === 'brunst') g += `<rect x="${xx - 3}" y="${cy - 7}" width="6" height="14" fill="transparent"${tip('Brunst ' + fmt(e.datum) + (e.phase ? ' · ' + BR_PH_TXT[e.phase] : ''))}/><line x1="${xx}" x2="${xx}" y1="${cy - 6}" y2="${cy + 6}" stroke="#B8641A" stroke-width="1.8" pointer-events="none"/>`;
       if (e.typ === 'besamung') g += `<circle cx="${xx}" cy="${cy}" r="3.6" fill="${imVerbot(e.datum) ? '#A12A1F' : '#1D4F91'}"${tip('Besamung ' + fmt(e.datum) + (e.stier ? ' · ' + e.stier : '') + (imVerbot(e.datum) ? ' (im Besamungsverbot)' : ''))}/>`;
       if (e.typ === 'abkalbung') g += `<path d="M${xx} ${cy - 5.5}L${xx + 5.5} ${cy + 4.5}L${xx - 5.5} ${cy + 4.5}Z" fill="#1F4D36"${tip('Abkalbung ' + fmt(e.datum))}/>`;
     }
@@ -602,10 +603,33 @@ function vTier(t) {
   </div>
   <p class="small muted" style="margin:10px 4px">Neue Einträge für ${esc(t.name || 'dieses Tier')}: auf + tippen, das Tier ist vorausgewählt.</p></div></div>`;
 }
+// Brunstphasen (Swissgenetics / die-fruchtbare-kuh.ch): Vorbrunst 24-48 h (springt auf andere, steht selbst nicht),
+// Hauptbrunst 12-24 h (steht = Duldungsreflex), Eisprung ca. 24-36 h nach Beginn Stehen.
+// Optimal besamen 12-24 h nach Beginn des Stehens (AM/PM-Regel). Nachbrunst: steht nicht mehr, Schleim/Abbluten.
+const BR_PHASE = [['vor', 'Springt auf'], ['haupt', 'Steht'], ['nach', 'Vorbei / Blut'], ['', 'unklar']];
+const BR_PH_TXT = { vor: 'Vorbrunst (springt auf, steht nicht)', haupt: 'Hauptbrunst (steht)', nach: 'Nachbrunst (vorbei)' };
+function brunstInfo(e) {
+  const t0 = new Date(`${e.datum}T${e.zeit || '12:00'}`), h = n => new Date(t0.getTime() + n * 3600e3);
+  if (e.phase === 'vor') return { tag0: addDays(e.datum, 1), von: h(24), bis: h(48), haupt: [h(6), h(24)] };
+  if (e.phase === 'haupt') return { tag0: e.datum, von: h(12), bis: h(24) };
+  if (e.phase === 'nach') return { tag0: addDays(e.datum, -1), von: null, bis: h(6) };
+  return { tag0: e.datum, von: null, bis: null };
+}
+const brTag0 = e => brunstInfo(e).tag0;
+function fmtDT(d0) { const d = new Date(Math.round(d0.getTime() / 18e5) * 18e5); return `${['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'][d.getDay()]} ${d.getDate()}.${d.getMonth() + 1}. ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; }
+function brunstCalc(v) {
+  const b = brunstInfo(v), nx = addDays(b.tag0, 21);
+  let t = '';
+  if (v.phase === 'vor') t = `Hauptbrunst (Stehen) erwartet ca. <b>${fmtDT(b.haupt[0])} - ${fmtDT(b.haupt[1])}</b>. Weiter beobachten und sobald sie steht als <b>Steht</b> erfassen, dann wird der Termin genauer.<br>Besamen voraussichtlich <b>${fmtDT(b.von)} - ${fmtDT(b.bis)}</b>.`;
+  else if (v.phase === 'haupt') t = `Besamen <b>${fmtDT(b.von)} - ${fmtDT(b.bis)}</b> (12-24 h nach erstem Stehen). Steht sie schon länger, eher am Anfang des Fensters.`;
+  else if (v.phase === 'nach') t = `Hauptbrunst vorbei, Eisprung läuft. Besamung nur noch bis ca. <b>${fmtDT(b.bis)}</b> sinnvoll, sonst nächste Brunst abwarten.`;
+  else t = 'Phase wählen: <b>Springt auf</b> = Vorbrunst, <b>Steht</b> = Hauptbrunst, <b>Vorbei</b> = Nachbrunst. Daraus wird der Besamungszeitpunkt berechnet.';
+  return `${t}<br>Nächste Brunst ca. <b>${fmt(nx)}</b>${imVerbot(nx) ? ' <span class="pill red">Besamungsverbot</span>' : ''}`;
+}
 function evLabel(e) {
   if (e.typ === 'abkalbung') { const k = e.kalbId ? tierById(e.kalbId) : null; const kn = k ? (k.geschlecht === 'm' ? '♂ ' : '♀ ') + (k.name || k.ohrmarke) : e.kalbName ? (e.kalbGeschlecht === 'm' ? '♂ ' : '♀ ') + e.kalbName : ''; return [e.totgeburt ? 'Abkalbung (Totgeburt)' : 'Abkalbung', [kn, e.verlauf, e.lage, e.groesse ? 'Kalb ' + e.groesse : '', e.notiz].filter(Boolean).join(' · ')]; }
   if (e.typ === 'besamung') return ['Besamung', [e.stier, e.notiz].filter(Boolean).join(' · ')];
-  if (e.typ === 'brunst') return ['Brunst', [e.sicherheit, e.notiz].filter(Boolean).join(' · ')];
+  if (e.typ === 'brunst') return ['Brunst', [BR_PH_TXT[e.phase], e.zeit ? e.zeit + ' Uhr' : '', e.sicherheit, e.notiz].filter(Boolean).join(' · ')];
   return [e.typ, ''];
 }
 function vLaktation(t) {
@@ -1292,9 +1316,11 @@ const FORMS = {
   brunst: { t: 'Brunst', coll: 'ereignisse', fields: [
     { k: 'tierId', l: 'Tier', t: 'tier', filter: t => t.geschlecht === 'w' && kategorie(t) !== 'Kalb' },
     { k: 'datum', l: 'Datum', t: 'date' },
+    { k: 'zeit', l: 'Uhrzeit Beobachtung', t: 'time', def: () => new Date().toTimeString().slice(0, 5) },
+    { k: 'phase', l: 'Was zeigt sie?', t: 'seg', o: BR_PHASE, def: '' },
     { k: 'sicherheit', l: 'Sicherheit', t: 'seg', o: [['unsicher', 'unsicher'], ['normal', 'normal'], ['sehr sicher', 'sehr sicher']], def: 'normal' },
     { k: 'notiz', l: 'Notiz', t: 'textarea' }],
-    calc: v => v.datum ? `Nächste Brunst ca. <b>${fmt(addDays(v.datum, 21))}</b>${imVerbot(v.datum) ? ' <span class="pill red">Besamungsverbot</span>' : ''}` : '' },
+    calc: v => v.datum ? brunstCalc(v) : '' },
   besamung: { t: 'Besamung', coll: 'ereignisse', fields: [
     { k: 'tierId', l: 'Tier', t: 'tier', filter: t => t.geschlecht === 'w' && kategorie(t) !== 'Kalb' },
     { k: 'datum', l: 'Datum', t: 'date' },
