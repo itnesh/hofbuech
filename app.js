@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.23.4';
+const VERSION = '1.24.0';
 const DSK = () => window.matchMedia('(min-width:1100px)').matches; // Browser-Layout (Laptop/Monitor), Smartphone unverändert
 
 /* ---------- Helfer ---------- */
@@ -95,7 +95,8 @@ function initLocal() {
   W = {
     put: (c, o) => { const i = S[c].findIndex(x => x.id === o.id); if (i >= 0) S[c][i] = o; else S[c].push(o); persist(); },
     del: (c, id) => { S[c] = S[c].filter(x => x.id !== id); persist(); },
-    setSettings: o => { S.set = mergeSet(o); persist(); }
+    setSettings: o => { S.set = mergeSet(o); persist(); },
+    get: (c, id) => Promise.resolve(((S[c]) || JSON.parse(localStorage.getItem('hb-local') || '{}')[c] || []).find(x => x.id === id) || null)
   };
   setSync('off', 'Nur lokal gespeichert (Firebase nicht eingerichtet)');
 }
@@ -125,6 +126,7 @@ async function initFirebase(cfg) {
   W = {
     put: (c, o) => { F.setDoc(F.doc(db, 'hoefe', HOF, c, o.id), clean(o)).catch(showErr); },
     del: (c, id) => { F.deleteDoc(F.doc(db, 'hoefe', HOF, c, id)).catch(showErr); },
+    get: (c, id) => F.getDoc(F.doc(db, 'hoefe', HOF, c, id)).then(d => d.exists() ? d.data() : null),
     setSettings: o => { F.setDoc(F.doc(db, 'hoefe', HOF, 'einstellungen', 'main'), clean(o)).catch(showErr); }
   };
 }
@@ -661,7 +663,7 @@ function jahre(listen) { const s = new Set([String(new Date().getFullYear())]); 
 function jahrSel() { return `<select class="sel" data-act="jahr" aria-label="Jahr">${jahre([S.behandlungen, S.auslauf, S.feld]).map(j => `<option ${j === UI.jahr ? 'selected' : ''}>${j}</option>`).join('')}</select>`; }
 
 function vJournale() {
-  const SECT = { lager: 'Lager', auslauf: 'Auslaufjournal', behandlung: 'Behandlungsjournal', feld: 'Feldkalender', zucht: 'Zucht', traenkefass: 'Tränkefass', wasserstand: 'Wasserstand', wasserqualitaet: 'Wasserqualität', ausbringen: 'Gülle / Mist ausbringen', wetter: 'Agrometeo Analyse' };
+  const SECT = { lager: 'Lager', auslauf: 'Auslaufjournal', behandlung: 'Behandlungsjournal', feld: 'Feldkalender', zucht: 'Zucht', traenkefass: 'Tränkefass', wasserstand: 'Wasserstand', wasserqualitaet: 'Wasserqualität', ausbringen: 'Gülle / Mist ausbringen', wetter: 'Agrometeo Analyse', kamera: 'Kamera-Meldungen' };
   if (!SECT[UI.jTab]) return anaKacheln();
   const tabs = `<div class="anah"><a class="back" href="#/journale/">‹ Übersicht</a><b>${SECT[UI.jTab]}</b></div>`;
   if (UI.jTab === 'auslauf') return tabs + vAuslauf();
@@ -672,6 +674,7 @@ function vJournale() {
   if (UI.jTab === 'wasserqualitaet') return tabs + anaWq();
   if (UI.jTab === 'wetter') return tabs + anaWetter();
   if (UI.jTab === 'ausbringen') return tabs + anaAusbringen();
+  if (UI.jTab === 'kamera') return tabs + anaKamera();
   const list = S.behandlungen.filter(b => (b.datum || '').startsWith(UI.jahr)).sort((a, b) => a.datum < b.datum ? 1 : -1);
   const offen = S.behandlungen.filter(b => b.freiAb && b.freiAb > today());
   return `${tabs}
@@ -840,6 +843,7 @@ function anaKacheln() {
   <div class="sec-t">Lager</div>
   <div class="kacheln drei" style="margin-top:0">${lk('Heu', 'Heu', L.heu)}${lk('Silage', 'Silage', L.silo)}${lk('Stroh', 'Stroh', L.stroh)}</div>
   <div class="grosse">
+    ${gb('kamera', 'Kamera-Meldungen', `CowCatcher · ${S.meldungen.filter(m => !m.status).length} offen · Timeline Brunst je Tier`, I('<path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/>'))}
     ${gb('wasserqualitaet', 'Wasserqualität', 'Reservoir: Trübung, Sauerstoff, Leitfähigkeit · Alarm', I('<path d="M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z"/>'))}
     ${gb('auslauf', 'Auslaufjournal', 'Weide, Laufhof, Alp · PDF', IC.auslauf)}
     ${gb('lager', 'Lager', 'Heu, Silage, Stroh · Ernte, Kauf, Verbrauch', IC.verbrauch)}
@@ -1209,11 +1213,75 @@ function vNotiz(n) {
 
 function meldungSheet(m) {
   const kandidaten = aktiveTiere().filter(t => t.geschlecht === 'w' && kategorie(t) !== 'Kalb');
-  openSheet('Kamera-Meldung', `${m.bild ? `<img class="nbild" src="${m.bild}" alt="">` : ''}
-  <p class="small muted">${esc(m.kamera || '')} · ${esc((m.zeit || '').replace('T', ' ').slice(0, 16))}${m.score ? ' · Treffer ' + esc(m.score) : ''}</p>
-  <div class="sec-t">Welches Tier ist brünstig?</div>
-  <div class="chips">${kandidaten.map(t => `<button type="button" class="chip" data-act="meldtier" data-id="${m.id}" data-t="${t.id}">${esc(t.name || t.ohrmarke)}</button>`).join('')}</div>
-  <div class="btns" style="margin-top:16px"><button class="btn" data-act="meldverwerfen" data-id="${m.id}">Kein Brunstverhalten / verwerfen</button></div>`);
+  const poster = m.thumb || m.bild || '';
+  const media = m.video ? `<video id="mvid" class="nbild" controls playsinline muted autoplay loop ${poster ? `poster="${poster}"` : ''}></video><p id="mvinfo" class="small muted">Video wird geladen …</p>` : poster ? `<img class="nbild" src="${poster}" alt="">` : '';
+  const st = m.status === 'brunst' ? `<div class="note blue small" style="margin-top:10px">Zugeordnet: <b>${esc(m.tierName || '')}</b> (Brunst erfasst)</div>` : m.status === 'verworfen' ? '<div class="note small" style="margin-top:10px">Verworfen</div>' : '';
+  openSheet('Kamera-Meldung', `${media}
+  <p class="small muted">${esc(m.kamera || '')} · ${esc((m.zeit || '').replace('T', ' ').slice(0, 16))}${m.score ? ' · Treffer ' + esc(m.score) : ''}</p>${st}
+  <div class="sec-t">${m.status === 'brunst' ? 'Anderes Tier zuordnen' : 'Welches Tier ist brünstig?'}</div>
+  <div class="chips">${kandidaten.map(t => `<button type="button" class="chip ${m.tierId === t.id ? 'on' : ''}" data-act="meldtier" data-id="${m.id}" data-t="${t.id}">${esc(t.name || t.ohrmarke)}</button>`).join('')}</div>
+  <div class="btns" style="margin-top:16px">${m.status ? `<button class="btn" data-act="meldreset" data-id="${m.id}">Zurück auf offen</button>` : `<button class="btn" data-act="meldverwerfen" data-id="${m.id}">Kein Brunstverhalten / verwerfen</button>`}</div>`);
+  if (m.video && W.get) W.get('meldvideos', m.id).then(d => { const v = $('#mvid'), i = $('#mvinfo'); if (!v) return; if (d && d.video) { v.src = d.video; i && i.remove(); } else if (i) i.textContent = 'Video nicht verfügbar.'; }).catch(e => { const i = $('#mvinfo'); if (i) i.textContent = 'Video nicht ladbar: ' + e.message; });
+}
+// Brunst aus Meldung: pro Tier und Tag nur ein Ereignis, Meldungen daran verknüpft
+function meldZuordnen(m, t) {
+  meldLoesen(m);
+  const datum = (m.zeit || today()).slice(0, 10);
+  const ev = S.ereignisse.find(e => e.typ === 'brunst' && e.tierId === t.id && e.datum === datum);
+  if (ev) { const ids = [...new Set([...(ev.meldungIds || (ev.meldungId ? [ev.meldungId] : [])), m.id])]; put('ereignisse', { ...ev, meldungIds: ids }); }
+  else put('ereignisse', { typ: 'brunst', tierId: t.id, datum, zeit: (m.zeit || '').slice(11, 16), sicherheit: 'normal', notiz: 'CowCatcher ' + (m.kamera || ''), meldungIds: [m.id], auto: true });
+  put('meldungen', { ...m, status: 'brunst', tierId: t.id, tierName: t.name || t.ohrmarke });
+}
+function meldLoesen(m) {
+  for (const ev of S.ereignisse.filter(e => e.typ === 'brunst' && ((e.meldungIds || []).includes(m.id) || e.meldungId === m.id))) {
+    const ids = (ev.meldungIds || [ev.meldungId]).filter(x => x && x !== m.id);
+    if (!ids.length && (ev.auto || /^CowCatcher/.test(ev.notiz || ''))) del('ereignisse', ev.id);
+    else { const n = { ...ev, meldungIds: ids }; delete n.meldungId; put('ereignisse', n); }
+  }
+}
+function meldWeiter(m) { const n = naechsteOffene(m.id); if (UI.jTab === 'kamera' && location.hash.startsWith('#/journale') && n) { closeSheet(true); meldungSheet(n); } else closeSheet(); }
+function naechsteOffene(nach) { return S.meldungen.filter(x => !x.status && x.id !== nach).sort((a, b) => a.zeit < b.zeit ? 1 : -1)[0]; }
+
+function anaKamera() {
+  const N = UI.kTage || 42, f = UI.kFilter || 'offen', d0 = addDays(today(), -(N - 1)), d1 = addDays(today(), 7);
+  const M = S.meldungen, offen = M.filter(m => !m.status);
+  const tage = []; for (let d = d0; d <= d1; d = addDays(d, 1)) tage.push(d);
+  const kuehe = aktiveTiere().filter(t => t.geschlecht === 'w' && kategorie(t) !== 'Kalb');
+  const imFenster = m => (m.zeit || '').slice(0, 10) >= d0;
+  const erwartet = t => {
+    const cal = evOf(t.id, 'abkalbung').filter(e => e.datum <= today()).pop();
+    const bes = evOf(t.id, 'besamung').filter(e => !cal || e.datum > cal.datum).pop();
+    const br = evOf(t.id, 'brunst').filter(e => (!cal || e.datum > cal.datum) && (!bes || e.datum > bes.datum)).pop();
+    const out = new Set(); if (bes) { out.add(addDays(bes.datum, 21)); return out; }
+    if (br) for (let x = addDays(br.datum, 21); x <= d1; x = addDays(x, 21)) if (x >= d0) out.add(x);
+    return out;
+  };
+  const cell = (d, inner, cls = '', tip = '') => `<span class="tl-c ${cls}${d === today() ? ' heute' : ''}${pd(d).getDay() === 1 ? ' mo' : ''}"${tip ? ` data-tip="${esc(tip)}"` : ''}>${inner}</span>`;
+  const kopf = `<div class="tl-r tl-h"><span class="tl-n"></span>${tage.map(d => cell(d, d === today() || (pd(d).getDay() === 1 && Math.abs(diff(d, today())) > 2) ? `<b>${d === today() ? 'heute' : +d.slice(8, 10) + '.' + +d.slice(5, 7)}</b>` : '')).join('')}</div>`;
+  const zOff = `<div class="tl-r"><span class="tl-n"><b>Offen</b></span>${tage.map(d => { const n = offen.filter(m => (m.zeit || '').startsWith(d)).length; return cell(d, n ? `<i class="tl-o">${n}</i>` : '', '', n ? `${fmt(d)}: ${n} offene Meldung(en)` : ''); }).join('')}</div>`;
+  const zeilen = kuehe.map(t => {
+    const er = erwartet(t), nm = t.name || t.ohrmarke;
+    let anz = 0;
+    const z = tage.map(d => {
+      const n = M.filter(m => m.tierId === t.id && m.status === 'brunst' && (m.zeit || '').startsWith(d)).length; anz += n;
+      const br = S.ereignisse.some(e => e.tierId === t.id && e.typ === 'brunst' && e.datum === d);
+      const be = S.ereignisse.some(e => e.tierId === t.id && e.typ === 'besamung' && e.datum === d);
+      const inner = be ? '<i class="tl-b">B</i>' : n ? `<i class="tl-m">${n}</i>` : br ? '<i class="tl-x"></i>' : er.has(d) ? '<i class="tl-e"></i>' : '';
+      const tip = [n ? `${n} Kamera-Meldung(en)` : '', br && !n ? 'Brunst (manuell)' : '', be ? 'Besamung' : '', er.has(d) && !n && !br ? 'erwartete Brunst' : ''].filter(Boolean).join(', ');
+      return cell(d, inner, '', tip ? `${nm} ${fmt(d)}: ${tip}` : '');
+    }).join('');
+    return `<div class="tl-r"><a class="tl-n" href="#/tier/${t.id}">${esc(nm)}${anz ? ` <small>${anz}</small>` : ''}</a>${z}</div>`;
+  }).join('');
+  setTimeout(() => { const e = $('.tl'); if (e) e.scrollLeft = e.scrollWidth; }, 0);
+  const liste = M.filter(m => f === 'alle' ? true : f === 'offen' ? !m.status : m.status === f).sort((a, b) => a.zeit < b.zeit ? 1 : -1).slice(0, 200);
+  const nach = { offen: offen.length, brunst: M.filter(m => m.status === 'brunst').length, verworfen: M.filter(m => m.status === 'verworfen').length, alle: M.length };
+  const zeile = m => `<button type="button" class="row" data-act="meldung" data-id="${m.id}">${m.thumb || m.bild ? `<img class="mthumb" src="${m.thumb || m.bild}" alt="">` : '<span class="av">K</span>'}<div class="main"><span class="t">${m.status === 'brunst' ? esc(m.tierName || '') : m.status === 'verworfen' ? 'Verworfen' : 'Offen - Tier zuordnen'}</span><span class="s">${esc(fmt((m.zeit || '').slice(0, 10)))} ${esc((m.zeit || '').slice(11, 16))} · ${esc(m.kamera || '')}${m.score ? ' · ' + esc(m.score) : ''}${m.video ? ' · Video' : ''}</span></div><span class="r">›</span></button>`;
+  return `<div class="stats"><div class="stats-row four"><span class="stats-h">${N} Tage</span><span class="stat"><b>${M.filter(imFenster).length}</b><span>Meldungen</span></span><span class="stat"><b>${offen.length}</b><span>offen</span></span><span class="stat"><b>${new Set(M.filter(m => imFenster(m) && m.tierId).map(m => m.tierId)).size}</b><span>Tiere</span></span><span class="stat"><b>${M.filter(m => imFenster(m) && m.status === 'verworfen').length}</b><span>verworfen</span></span></div></div>
+  <div class="toolbar"><div class="seg mini">${[[21, '3 Wo.'], [42, '6 Wo.'], [90, '3 Mt.']].map(([v, l]) => `<button type="button" class="${N === v ? 'on' : ''}" data-act="ktage" data-v="${v}">${l}</button>`).join('')}</div>${offen.length ? `<button class="btn pri" data-act="meldung" data-id="${naechsteOffene().id}">Offene zuordnen (${offen.length})</button>` : ''}</div>
+  <div class="card tl"><div class="tl-in">${kopf}${zOff}${zeilen || '<div class="empty">Keine weiblichen Tiere erfasst.</div>'}</div></div>
+  <div class="legend"><span><i class="tl-m">2</i>Meldungen zugeordnet</span><span><i class="tl-x"></i>Brunst manuell</span><span><i class="tl-b">B</i>Besamung</span><span><i class="tl-e"></i>erwartete Brunst (21 T.)</span><span><i class="tl-o">1</i>offen</span></div>
+  <div class="seg" style="margin:14px 0 8px">${[['offen', 'Offen'], ['brunst', 'Zugeordnet'], ['verworfen', 'Verworfen'], ['alle', 'Alle']].map(([v, l]) => `<button type="button" class="${f === v ? 'on' : ''}" data-act="kfilter" data-v="${v}">${l} (${nach[v]})</button>`).join('')}</div>
+  <div class="list">${liste.length ? liste.map(zeile).join('') : '<div class="empty">Keine Meldungen.</div>'}</div>`;
 }
 
 function sensorKarte(sx) {
@@ -2180,8 +2248,11 @@ document.addEventListener('click', e => {
   else if (a === 'kaltag') { e.preventDefault(); UI.kalTag = UI.kalTag === el.dataset.v ? '' : el.dataset.v; render(); }
   else if (a === 'notizkat') { UI.notizKat = el.dataset.v; render(); }
   else if (a === 'meldung') { const m = S.meldungen.find(x => x.id === el.dataset.id); if (m) meldungSheet(m); }
-  else if (a === 'meldtier') { const m = S.meldungen.find(x => x.id === el.dataset.id), t = tierById(el.dataset.t); if (m && t) { put('ereignisse', { typ: 'brunst', tierId: t.id, datum: (m.zeit || today()).slice(0, 10), sicherheit: 'normal', notiz: 'CowCatcher ' + (m.kamera || ''), meldungId: m.id }); put('meldungen', { ...m, status: 'brunst', tierId: t.id, tierName: t.name || t.ohrmarke }); toast('Brunst erfasst: ' + (t.name || '')); closeSheet(); } }
-  else if (a === 'meldverwerfen') { const m = S.meldungen.find(x => x.id === el.dataset.id); if (m) { put('meldungen', { ...m, status: 'verworfen' }); closeSheet(); } }
+  else if (a === 'meldtier') { const m = S.meldungen.find(x => x.id === el.dataset.id), t = tierById(el.dataset.t); if (m && t) { meldZuordnen(m, t); toast('Brunst erfasst: ' + (t.name || t.ohrmarke || '')); meldWeiter(m); } }
+  else if (a === 'meldverwerfen') { const m = S.meldungen.find(x => x.id === el.dataset.id); if (m) { put('meldungen', { ...m, status: 'verworfen' }); meldWeiter(m); } }
+  else if (a === 'meldreset') { const m = S.meldungen.find(x => x.id === el.dataset.id); if (m) { meldLoesen(m); const n = { ...m, status: '' }; delete n.tierId; delete n.tierName; put('meldungen', n); closeSheet(); } }
+  else if (a === 'ktage') { UI.kTage = +el.dataset.v; render(); }
+  else if (a === 'kfilter') { UI.kFilter = el.dataset.v; render(); }
   else if (a === 'kalfilter') { UI.kalFilter = el.dataset.v; render(); }
   else if (a === 'kalmon') { const [y, m] = UI.kalMonat.split('-').map(Number); const d = new Date(y, m - 1 + Number(el.dataset.v), 1); UI.kalMonat = iso(d).slice(0, 7); UI.kalTag = ''; render(); }
   else if (a === 'pdf') { el.disabled = true; pdf(el.dataset.p, el.dataset.id).catch(showErr).finally(() => el.disabled = false); }
