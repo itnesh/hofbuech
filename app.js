@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.22.0';
+const VERSION = '1.22.1';
 const DSK = () => window.matchMedia('(min-width:1100px)').matches; // Browser-Layout (Laptop/Monitor), Smartphone unverändert
 
 /* ---------- Helfer ---------- */
@@ -513,7 +513,15 @@ function vTiere() {
   </div>
   ${tlTiere.length ? `<div class="sec-t">Zeitachse (heute ±365 Tage)</div>${timeline(tlTiere)}` : ''}
   <div class="sec-t">${list.length} Tiere</div>
-  <div class="list zw">${list.length ? list.map(t => tierRow(t, d)).join('') : '<div class="empty">Keine Tiere.</div>'}</div>`;
+  <div class="list zw" style="--zc:${zwSpalten(list.length)}">${list.length ? list.map(t => tierRow(t, d)).join('') : '<div class="empty">Keine Tiere.</div>'}</div>`;
+}
+// Browser: Spaltenzahl so wählen, dass keine Kachel leer bleibt (z.B. 8 Tiere = 4 x 2)
+function zwSpalten(n) {
+  const max = window.innerWidth >= 1700 ? 4 : 3;
+  if (n <= max) return Math.max(1, n);
+  let best = 2, leer = 99;
+  for (let c = max; c >= 2; c--) { const l = (c - n % c) % c; if (l < leer) { leer = l; best = c; } }
+  return best;
 }
 function tierRow(t, d = today()) {
   const l = lakt(t), f = frist(t.id), kat = kategorie(t);

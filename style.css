@@ -465,3 +465,9 @@ details.acc.ausbk summary .pill{flex-shrink:0}
   .wg-l{display:block;width:60%;height:1px;background:var(--line);margin:4px 0 3px}
   .wg small{font-size:10.5px;line-height:1.35}
 }
+/* v1.22.1: Tierliste ohne leere Kacheln (Spaltenzahl dynamisch) */
+@media (min-width:1100px){
+  .list.zw,.list.zw[style]{grid-template-columns:repeat(var(--zc,2),minmax(0,1fr));gap:1px;background:var(--line2)}
+  .list.zw .row,.list.zw .row:nth-child(odd),.list.zw .row:nth-child(3n){border:0;background:var(--card)}
+  .list.zw .row:hover{background:#FAFAF8}
+}
