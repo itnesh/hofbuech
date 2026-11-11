@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.26.1';
+const VERSION = '1.27.0';
 const DSK = () => window.matchMedia('(min-width:1100px)').matches; // Browser-Layout (Laptop/Monitor), Smartphone unverändert
 
 /* ---------- Helfer ---------- */
@@ -64,7 +64,7 @@ const DEF = {
 
 /* ---------- Datenhaltung ---------- */
 const COLLS = ['tiere', 'ereignisse', 'behandlungen', 'auslauf', 'feld', 'parzellen', 'labiola', 'aufgaben', 'lprotokoll', 'meldungen', 'notizen', 'sensoren'];
-const S = { loaded: {}, tiere: [], ereignisse: [], behandlungen: [], auslauf: [], feld: [], parzellen: [], labiola: [], aufgaben: [], lprotokoll: [], meldungen: [], notizen: [], sensoren: [], set: { ...DEF } };
+const S = { loaded: {}, dokumente: [], tiere: [], ereignisse: [], behandlungen: [], auslauf: [], feld: [], parzellen: [], labiola: [], aufgaben: [], lprotokoll: [], meldungen: [], notizen: [], sensoren: [], set: { ...DEF } };
 let W = null; // writer
 let mode = 'local';
 const HOF = window.HB_HOF || 'bannhalde';
@@ -658,7 +658,7 @@ function vNachkommen(t) {
   return `<div class="sec-t">Nachkommen von ${esc(t.name || t.ohrmarke)}</div><div class="list">${k.map(x => tierRow(x)).join('')}${ext.map(e => `<button type="button" class="row" data-act="edit" data-c="ereignisse" data-id="${e.id}"><span class="av kalb">${TIC.Kalb}</span><div class="main"><span class="t">${esc(e.kalbName || 'Kalb')}${e.kalbOhrmarke ? ` <span class="om">${kurzOM(e.kalbOhrmarke)}</span>` : ''}${e.kalbGeschlecht === 'm' ? ' <span class="om">♂</span>' : ''}</span><span class="s wrap">geb. ${fmt(e.datum)} · ${e.totgeburt ? 'Totgeburt' : 'nicht mehr im Bestand'}${e.notiz ? ' · ' + esc(e.notiz) : ''}</span></div></button>`).join('')}${!k.length && !ext.length ? '<div class="empty">Keine Nachkommen erfasst.</div>' : ''}</div>`;
 }
 function behRows(list) {
-  return list.length ? list.map(b => `<button type="button" class="row" data-act="edit" data-c="behandlungen" data-id="${b.id}"><div class="main"><span class="t">${esc(b.medikament || '-')}${b.grund ? ' · ' + esc(b.grund) : ''}</span><span class="s">${esc(tierListe(b.tierIds, b.datum))} · ${esc([b.menge, b.durch].filter(Boolean).join(' · '))}</span></div><div class="r">${fmt(b.datum)}${b.bis && b.bis !== b.datum ? '<br><span class="small muted">bis ' + fmt(b.bis) + '</span>' : ''}<br>${b.freiAb && b.freiAb > today() ? `<span class="pill warn">frei ab ${fmtS(b.freiAb)}</span>` : `<span class="pill">frei</span>`}</div></button>`).join('') : '<div class="empty">Keine Behandlungen.</div>';
+  return list.length ? list.map(b => `<button type="button" class="row" data-act="edit" data-c="behandlungen" data-id="${b.id}"><div class="main"><span class="t">${esc(b.medikament || '-')}${b.grund ? ' · ' + esc(b.grund) : ''}</span><span class="s">${esc(tierListe(b.tierIds, b.datum))} · ${esc([b.menge, b.durch].filter(Boolean).join(' · '))}${(b.dokIds || []).length ? ` · ${b.dokIds.length} Dok.` : ''}</span></div><div class="r">${fmt(b.datum)}${b.bis && b.bis !== b.datum ? '<br><span class="small muted">bis ' + fmt(b.bis) + '</span>' : ''}<br>${b.freiAb && b.freiAb > today() ? `<span class="pill warn">frei ab ${fmtS(b.freiAb)}</span>` : `<span class="pill">frei</span>`}</div></button>`).join('') : '<div class="empty">Keine Behandlungen.</div>';
 }
 function tierListe(ids = [], d) { if (alleTiere(ids, d)) return `Alle Tiere (${ids.length})`; return ids.length > 3 ? `${ids.length} Tiere` : ids.map(tName).join(', '); }
 function vTierBeh(t) {
@@ -1193,6 +1193,25 @@ function wetterZeile(gross = false) {
   return `<div class="wetter" title="Wetter 14 Tage (Open-Meteo)">${D.time.map((t, i) => `<span title="${fmt(t)}: ${Math.round(D.temperature_2m_max[i])}°, ${D.precipitation_sum[i]} mm${D.precipitation_probability_max ? ', ' + D.precipitation_probability_max[i] + ' %' : ''}"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">${WIC[sym(i)]}</svg><small>${i === 0 ? 'H' : WT[pd(t).getDay()]}</small></span>`).join('')}</div>`;
 }
 
+const DOKC = new Map();
+async function dokLaden(id) { if (DOKC.has(id)) return DOKC.get(id); try { const d = await W.get('dokumente', id); if (d) DOKC.set(id, d); return d; } catch (e) { return null; } }
+// Scan: lange Seite max. 1800 px, JPEG, Ziel unter ca. 700 KB (Firestore-Dokument max. 1 MB)
+function dokKomprimieren(file) {
+  return new Promise((res, rej) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let max = 1800, q = 0.78, out, w, h;
+      for (let i = 0; i < 6; i++) {
+        const sc = Math.min(1, max / Math.max(img.width, img.height)); w = Math.round(img.width * sc); h = Math.round(img.height * sc);
+        const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, w, h); x.drawImage(img, 0, 0, w, h);
+        out = c.toDataURL('image/jpeg', q); if (out.length < 700000) break; max = Math.round(max * 0.85); q = Math.max(0.55, q - 0.06);
+      }
+      res({ data: out, w, h });
+    };
+    img.onerror = rej; img.src = url;
+  });
+}
 function bildKomprimieren(file, max = 1280, q = 0.72) {
   return new Promise((res, rej) => {
     const img = new Image(), url = URL.createObjectURL(file);
@@ -1438,6 +1457,7 @@ const FORMS = {
     { k: 'erfasst', l: 'Erfassungsdatum', t: 'date' },
     { k: 'durch', l: 'Name', t: 'text', def: 'Matthias Erdin', list: () => [...new Set(['Matthias Erdin', ...S.behandlungen.map(b => b.durch).filter(x => x && x !== 'Tierhalter')])] },
     { k: 'unterschrift', l: 'Unterschrift', t: 'sign', req: true },
+    { k: 'dokIds', l: 'Dokumente (Scans, Anhang im PDF)', t: 'dokumente' },
     { k: 'notiz', l: 'Notiz', t: 'textarea' }],
     calc: v => v.datum ? `Freigabe Fleisch ab: <b>${fmt(addDays(v.bis && v.bis >= v.datum ? v.bis : v.datum, num(v.frist)))}</b>` : '',
     prep: v => { if (!v.bis || v.bis < v.datum) v.bis = ''; v.freiAb = addDays(v.bis || v.datum, num(v.frist)); v.frist = num(v.frist); } },
@@ -1535,6 +1555,10 @@ function fieldHtml(f, v) {
     const arr = Array.isArray(val) ? val : [];
     return `<div class="fld"><span>${f.l}</span><div class="thumbs" data-bilder="${f.k}">${arr.map((b, i) => `<span class="th"><img src="${b}" alt=""><button type="button" data-delbild="${i}" aria-label="Bild entfernen">×</button></span>`).join('')}<label class="th add">+<input type="file" accept="image/*" multiple data-addbild="${f.k}" class="hidden"></label></div></div>`;
   }
+  if (f.t === 'dokumente') {
+    const arr = Array.isArray(val) ? val : [];
+    return `<div class="fld"><span>${f.l}</span><div class="thumbs" data-doks="${f.k}">${arr.map(id => `<span class="th dok" data-did="${id}"><i class="ld"></i><button type="button" data-delbild="x" aria-label="Dokument entfernen">×</button></span>`).join('')}<label class="th add">+<input type="file" accept="image/*" multiple data-adddok="${f.k}" class="hidden"></label></div><span class="small muted" style="text-transform:none;letter-spacing:0">Foto aufnehmen oder aus Fotos/Dateien wählen. Auch nachträglich möglich.</span></div>`;
+  }
   if (f.t === 'sign') return `<div class="fld"><span>${f.l}</span><input type="hidden" name="${f.k}" value="${esc(val)}"><div class="sign"><canvas data-sign="${f.k}" width="600" height="200"></canvas><button type="button" class="chip" data-signclear="${f.k}">Neu unterschreiben</button></div></div>`;
   if (f.t === 'textarea') return `<label class="fld"><span>${f.l}</span><textarea name="${f.k}" rows="${f.rows || 2}">${esc(val)}</textarea></label>`;
   if (f.t === 'tier') {
@@ -1567,6 +1591,7 @@ function openForm(key, rec = null, pre = {}) {
     onSave: () => doSave(false),
     onDelete: isEdit ? () => {
       const coll = def.coll || 'tiere';
+      (rec.dokIds || []).forEach(d => del('dokumente', d));
       del(coll, rec.id);
       if (coll === 'tiere') { toast('Tier gelöscht'); location.hash = '#/tiere'; }
     } : null
@@ -1578,6 +1603,7 @@ function openForm(key, rec = null, pre = {}) {
     def.fields.forEach(f => {
       if (f.t === 'tiere') o[f.k] = $$(`[data-picker="${f.k}"] .chip.on`, form).map(b => b.dataset.id);
       else if (f.t === 'bilder') o[f.k] = $$(`[data-bilder="${f.k}"] img`, form).map(i => i.getAttribute('src'));
+      else if (f.t === 'dokumente') o[f.k] = $$(`[data-doks="${f.k}"] [data-did]`, form).map(e => e.dataset.did);
       else if (f.t === 'tag') { const c = $(`[data-tag="${f.k}"] .chip.on`, form); const n = form.elements[f.k + '__neu'] ? (form.elements[f.k + '__neu'].value || '').trim() : ''; o[f.k] = n || (c ? c.dataset.v : ''); }
       else if (f.t === 'seg') { const c = $(`input[name="${f.k}"]:checked`, form); o[f.k] = c ? c.value : ''; }
       else o[f.k] = (form.elements[f.k] && form.elements[f.k].value || '').trim();
@@ -1593,7 +1619,15 @@ function openForm(key, rec = null, pre = {}) {
     if (e.target.name === 'medikament') { const m = (S.set.medikamente || []).find(m => m.name === e.target.value); if (m && form.elements.frist) form.elements.frist.value = m.frist; }
     upd();
   });
+  const neuDok = new Map();
+  $$('[data-doks] [data-did]', form).forEach(async el => { const d = await dokLaden(el.dataset.did); if (d && d.data) el.insertAdjacentHTML('afterbegin', `<img src="${d.data}" alt="">`); else el.insertAdjacentHTML('afterbegin', '<small class="muted">fehlt</small>'); el.querySelector('.ld')?.remove(); });
   form.addEventListener('change', async e => {
+    const di = e.target.closest('[data-adddok]');
+    if (di) {
+      const box = $(`[data-doks="${di.dataset.adddok}"]`, form);
+      for (const f of [...di.files]) { try { const d = await dokKomprimieren(f); const id = uid(); neuDok.set(id, d); const sp = document.createElement('span'); sp.className = 'th dok'; sp.dataset.did = id; sp.innerHTML = `<img src="${d.data}" alt=""><button type="button" data-delbild="x" aria-label="Dokument entfernen">×</button>`; box.insertBefore(sp, box.lastElementChild); } catch (er) { toast('Bild konnte nicht gelesen werden'); } }
+      di.value = ''; form.dataset.dirty = '1'; return;
+    }
     const inp = e.target.closest('[data-addbild]'); if (!inp) return;
     const box = $(`[data-bilder="${inp.dataset.addbild}"]`, form);
     for (const f of [...inp.files]) { const url = await bildKomprimieren(f); const sp = document.createElement('span'); sp.className = 'th'; sp.innerHTML = `<img src="${url}" alt=""><button type="button" data-delbild="x" aria-label="Bild entfernen">×</button>`; box.insertBefore(sp, box.lastElementChild); }
@@ -1637,6 +1671,11 @@ function openForm(key, rec = null, pre = {}) {
     def.fields.forEach(f => { if (f.show && !f.show(o)) o[f.k] = ''; });
     if (JSON.stringify(o).length > 950000) return toast('Zu viele/grosse Bilder (max. ca. 1 MB pro Notiz)');
     if (def.prep) def.prep(o);
+    if (Array.isArray(o.dokIds)) {
+      const bez = isEdit ? rec.id : (o.id = o.id || uid());
+      o.dokIds.forEach(d => { if (neuDok.has(d)) { const x = neuDok.get(d); DOKC.set(d, x); put('dokumente', { id: d, ...x, bezug: def.coll, refId: bez, datum: today() }); } });
+      (isEdit && rec.dokIds || []).filter(d => !o.dokIds.includes(d)).forEach(d => { DOKC.delete(d); del('dokumente', d); });
+    }
     if (def.save && (!isEdit || def.saveEdit)) def.save(o, rec);
     else if (def.multi) {
       const ids = o.tierIds; delete o.tierIds;
@@ -1788,9 +1827,10 @@ async function pdf(p, id) {
     const list = S.behandlungen.filter(b => p === 'behTier' ? (b.tierIds || []).includes(id) : (b.datum || '').startsWith(J)).sort((a, b) => a.datum < b.datum ? -1 : 1);
     const title = p === 'behTier' ? `Behandlungsjournal ${tName(id)}` : `Behandlungsjournal ${J}`;
     const doc = await pdfQuer(); const y = pdfKopf(doc, title, true);
-    const body = [], sig = [];
+    const body = [], sig = [], anh = [], anhNr = {};
+    list.forEach(b => (b.dokIds || []).forEach(d => { anh.push({ b, d }); (anhNr[b.id] = anhNr[b.id] || []).push(anh.length); }));
     list.forEach(b => {
-      const zeile = tier => { body.push([fmt(b.datum), fmt(b.bis || b.datum), tier, b.grund || '', [b.medikament, b.menge].filter(Boolean).join(' · '), String(b.frist ?? ''), fmt(freiCalc(b)), fmt(b.erfasst || (b.geaendert ? iso(new Date(b.geaendert)) : '')), b.durch || '', '']); sig.push(b.unterschrift || ''); };
+      const zeile = tier => { body.push([fmt(b.datum), fmt(b.bis || b.datum), tier, (b.grund || '') + (anhNr[b.id] ? `\nAnhang ${anhNr[b.id].length > 1 ? anhNr[b.id][0] + '-' + anhNr[b.id].at(-1) : anhNr[b.id][0]}` : ''), [b.medikament, b.menge].filter(Boolean).join(' · '), String(b.frist ?? ''), fmt(freiCalc(b)), fmt(b.erfasst || (b.geaendert ? iso(new Date(b.geaendert)) : '')), b.durch || '', '']); sig.push(b.unterschrift || ''); };
       if (p !== 'behTier' && alleTiere(b.tierIds, b.datum)) return zeile(`Alle Tiere (${(b.tierIds || []).length})`);
       (b.tierIds || []).filter(t => p !== 'behTier' || t === id).forEach(tid => { const t = tierById(tid); zeile(`${t ? t.name || '' : '?'}${t && t.ohrmarke ? '\n' + t.ohrmarke : ''}`); });
     });
@@ -1799,6 +1839,19 @@ async function pdf(p, id) {
       at: { columnStyles: { 0: { cellWidth: 17 }, 1: { cellWidth: 17 }, 2: { cellWidth: 34 }, 5: { cellWidth: 19, halign: 'center' }, 6: { cellWidth: 19 }, 7: { cellWidth: 17 }, 8: { cellWidth: 26 }, 9: { cellWidth: 34 } }, bodyStyles: { minCellHeight: 11 },
         didDrawCell: d => { if (d.section === 'body' && d.column.index === 9 && sig[d.row.index]) { try { doc.addImage(sig[d.row.index], 'PNG', d.cell.x + 1, d.cell.y + 0.8, Math.min(d.cell.width - 2, (d.cell.height - 1.6) * 3), d.cell.height - 1.6); } catch (e) { } } } }
     });
+    for (let i = 0; i < anh.length; i++) {
+      const { b, d } = anh[i], x = await dokLaden(d);
+      const hoch = !x || !x.w || x.h >= x.w;
+      doc.addPage('a4', hoch ? 'portrait' : 'landscape');
+      const pw = doc.internal.pageSize.getWidth(), ph = doc.internal.pageSize.getHeight();
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(0); doc.text(`Anhang ${i + 1}`, 10, 13);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5);
+      doc.text(doc.splitTextToSize(`Behandlung ${fmt(b.datum)}${b.bis && b.bis !== b.datum ? ' - ' + fmt(b.bis) : ''} · ${[b.medikament, b.grund].filter(Boolean).join(' · ')} · ${tierListe(b.tierIds, b.datum)}`, pw - 20), 10, 18.5);
+      doc.setDrawColor(31, 77, 54); doc.setLineWidth(0.4); doc.line(10, 22, pw - 10, 22);
+      if (!x || !x.data) { doc.text('Dokument konnte nicht geladen werden.', 10, 30); continue; }
+      const mw = pw - 20, mh = ph - 22 - 14, sc = Math.min(mw / x.w, mh / x.h), iw = x.w * sc, ih = x.h * sc;
+      try { doc.addImage(x.data, 'JPEG', (pw - iw) / 2, 25, iw, ih); } catch (e) { doc.text('Dokument konnte nicht eingefügt werden.', 10, 30); }
+    }
     pdfFuss(doc);
     return pdfAusgabe(doc, title, p === 'behTier' ? `Behandlungen_${tName(id)}.pdf` : `Behandlungsjournal_${J}.pdf`);
   }
