@@ -493,3 +493,11 @@ video.nbild{background:#000;aspect-ratio:16/9}
 .tl-e{border:1.5px dashed #B8641A;opacity:.6;width:12px;height:12px}
 .legend .tl-m,.legend .tl-o,.legend .tl-b,.legend .tl-x,.legend .tl-e{margin-right:2px}
 @media (min-width:1100px){.tl-c{flex-basis:20px;width:20px}.tl-n{flex-basis:130px;width:130px}}
+.tl-k{border:0;background:none;padding:0;cursor:pointer;font:inherit;color:inherit}
+.tl-k.sel{background:rgba(91,143,214,.22);border-radius:4px}
+.mstrip{display:flex;gap:8px;overflow-x:auto;padding:8px 14px 12px;border-bottom:1px solid var(--line2)}
+.mstrip button{border:0;background:none;padding:0;cursor:pointer;display:flex;flex-direction:column;gap:3px;flex:0 0 auto;font:inherit;color:inherit}
+.mstrip img,.mstrip span{width:96px;height:64px;border-radius:8px;object-fit:cover;background:#E7E8E3;display:block}
+.mstrip small{font-size:10.5px;color:var(--muted);text-align:left}
+.sheet .mstrip{padding:4px 0 8px;border:0}
+video#mvid{cursor:pointer}
