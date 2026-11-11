@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.25.1';
+const VERSION = '1.26.0';
 const DSK = () => window.matchMedia('(min-width:1100px)').matches; // Browser-Layout (Laptop/Monitor), Smartphone unverändert
 
 /* ---------- Helfer ---------- */
@@ -292,14 +292,14 @@ function render() {
     if (p[0] === 'start') { title = S.set.hofname || 'hofbuech'; html = vStart(); }
     else if (p[0] === 'tiere') { title = 'Tiere'; html = vTiere(); }
     else if (p[0] === 'tier') { const t = tierById(p[1]); showBack = true; tab = 'tiere'; if (!t) { html = '<div class="empty">Tier nicht gefunden.</div>'; } else if (p[2] === 'laktation') { title = 'Laktationsplanung'; html = vLaktation(t); } else if (p[2] === 'nachkommen') { title = 'Nachkommen'; html = vNachkommen(t); } else if (p[2] === 'behandlungen') { title = 'Behandlungen'; html = vTierBeh(t); } else { title = t.name || t.ohrmarke; html = vTier(t); } }
-    else if (p[0] === 'journale') { title = 'Analyse'; if (p[1] !== undefined) UI.jTab = p[1]; html = vJournale(); }
-    else if (p[0] === 'feld') { title = 'Analyse'; UI.jTab = 'lager'; tab = 'journale'; html = vJournale(); }
+    else if (p[0] === 'journale') { title = 'Mehr'; if (p[1] !== undefined) UI.jTab = p[1]; html = vJournale(); }
+    else if (p[0] === 'feld') { title = 'Mehr'; UI.jTab = 'lager'; tab = 'journale'; html = vJournale(); }
     else if (p[0] === 'labiola') { title = 'Labiola'; html = vLabiola(); }
     else if (p[0] === 'notizen') { title = 'Notizen'; html = vNotizen(); }
     else if (p[0] === 'notiz') { const n = S.notizen.find(x => x.id === p[1]); title = n ? n.titel : 'Notiz'; tab = 'notizen'; showBack = true; html = n ? vNotiz(n) : '<div class="empty">Notiz nicht gefunden.</div>'; }
     else if (p[0] === 'meldung') { title = S.set.hofname || 'hofbuech'; tab = 'start'; html = vStart(); const m = p[1] === 'neu' ? S.meldungen.filter(x => !x.status).sort((x, y) => x.zeit < y.zeit ? 1 : -1)[0] : S.meldungen.find(x => x.id === p[1]); if (m && !UI.mOpen) { UI.mOpen = 1; setTimeout(() => { meldungSheet(m); history.replaceState(null, '', '#/start'); UI.mOpen = 0; }, 50); } }
     else if (p[0] === 'kalender') { title = 'Kalender'; html = vKalender(); }
-    else if (p[0] === 'analyse') { title = 'Analyse'; tab = 'journale'; html = vJournale(); }
+    else if (p[0] === 'analyse') { title = 'Mehr'; tab = 'journale'; html = vJournale(); }
     else if (p[0] === 'einstellungen') { title = 'Einstellungen'; html = vSettings(); showBack = true; tab = 'einst'; }
     else { html = vStart(); tab = 'start'; }
   } catch (e) { console.error(e); html = `<div class="note">Anzeigefehler: ${esc(e.message)}</div>`; }
@@ -670,7 +670,7 @@ function jahre(listen) { const s = new Set([String(new Date().getFullYear())]); 
 function jahrSel() { return `<select class="sel" data-act="jahr" aria-label="Jahr">${jahre([S.behandlungen, S.auslauf, S.feld]).map(j => `<option ${j === UI.jahr ? 'selected' : ''}>${j}</option>`).join('')}</select>`; }
 
 function vJournale() {
-  const SECT = { lager: 'Lager', auslauf: 'Auslaufjournal', behandlung: 'Behandlungsjournal', feld: 'Wiesenjournal', zucht: 'Zucht', traenkefass: 'Tränkefass', wasserstand: 'Wasserstand', wasserqualitaet: 'Wasserqualität', ausbringen: 'Gülle / Mist ausbringen', wetter: 'Agrometeo Analyse', kamera: 'Kamera-Meldungen' };
+  const SECT = { lager: 'Lager', auslauf: 'Auslaufjournal', behandlung: 'Behandlungsjournal', feld: 'Wiesenjournal', zucht: 'Zucht', traenkefass: 'Tränkefass', wasserstand: 'Wasserstand', wasserqualitaet: 'Wasserqualität', ausbringen: 'Gülle / Mist ausbringen', wetter: 'Agrometeo', kamera: 'CowCatcher' };
   if (!SECT[UI.jTab]) return anaKacheln();
   const tabs = `<div class="anah"><a class="back" href="#/journale/">‹ Übersicht</a><b>${SECT[UI.jTab]}</b></div>`;
   if (UI.jTab === 'auslauf') return tabs + vAuslauf();
@@ -840,24 +840,25 @@ function chartTap(svg, clientX) {
   const tip = svg.parentElement.querySelector('.tip'); tip.textContent = c.tips[i]; tip.style.display = 'block';
 }
 function anaKacheln() {
-  const L = lager();
-  const sx = id => { const x = S.sensoren.find(s => s.id === id); if (!x || !x.last) return ['-', 'noch keine Daten', '']; const v = x.last.prozent ?? x.last.wert; const p = x.last.prozent !== null && x.last.prozent !== undefined; return [nf(Math.round(v)) + (p ? ' %' : ' cm'), 'Batterie ' + (x.last.batterie ?? '-') + ' %', p && v < 30 ? 'low' : '']; };
-  const [ws, wss, wsc] = sx('wasserstand'), [tf, tfs, tfc] = sx('traenkefass');
-  const k = (v, t, big, sub, cls = '') => SENS.laedt ? `<a class="kachel laedt" href="#/journale/${v}"><span>${t}</span><b><i class="ld"></i></b><small>wird geladen …</small></a>` : `<a class="kachel ${cls}" href="#/journale/${v}"><span>${t}</span><b>${big}</b><small>${sub}</small></a>`;
-  const lk = (t, was, v) => `<a class="kachel k3 ${v <= 5 ? 'low' : ''}" href="#/journale/lager"><span>${t}</span><b>${nf(v)}</b><small>${esc(reichweite(was, v))}</small></a>`;
-  const gb = (v, t, sub, ic) => `<a class="gross" href="#/journale/${v}"><span class="gi">${ic}</span><span><b>${t}</b><small>${sub}</small></span><i>›</i></a>`;
-  return `<div class="kacheln">${k('wasserstand', 'Wasserstand', ws, wss, wsc)}${k('traenkefass', 'Tränkefass', tf, tfs, tfc)}</div>
-  <div class="sec-t">Lager</div>
-  <div class="kacheln drei" style="margin-top:0">${lk('Heu', 'Heu', L.heu)}${lk('Silage', 'Silage', L.silo)}${lk('Stroh', 'Stroh', L.stroh)}</div>
-  <div class="grosse">
-    ${gb('kamera', 'Kamera-Meldungen', `CowCatcher · ${S.meldungen.filter(m => !m.status).length} offen · Timeline Brunst je Tier`, I('<path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/>'))}
-    ${gb('wasserqualitaet', 'Wasserqualität', 'Reservoir: Trübung, Sauerstoff, Leitfähigkeit · Alarm', I('<path d="M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z"/>'))}
-    ${gb('auslauf', 'Auslaufjournal', 'Weide, Laufhof, Alp · PDF', IC.auslauf)}
-    ${gb('lager', 'Lager', 'Heu, Silage, Stroh · Ernte, Kauf, Verbrauch', IC.verbrauch)}
-    ${gb('feld', 'Wiesenjournal', 'Düngung, Ernte · PDF', IC.ernte)}
-    ${gb('behandlung', 'Behandlungsjournal', 'Behandlungen, Absetzfristen · PDF', IC.behandlung)}
-    ${gb('ausbringen', 'Gülle / Mist ausbringen', 'Darf ich heute? Boden, Niederschlag, Vegetationsruhe', IC.duengung || IC.ernte)}
-    ${gb('wetter', 'Agrometeo Analyse', 'Niederschlag und Temperatur', I('<path d="M7 18a4 4 0 0 1-.5-8 6 6 0 0 1 11.5 1.5A3.5 3.5 0 0 1 17.5 18z"/>'))}
+  const kb = (v, t, sub, ic, g) => `<a class="mk ${g}" href="#/journale/${v}"><span class="mk-ic">${ic}</span><b>${t}</b><small>${sub}</small></a>`;
+  const offen = S.meldungen.filter(m => !m.status).length;
+  return `<div class="mkgrid">
+    ${kb('auslauf', 'Auslaufjournal', 'Weide, Laufhof, Alp', IC.auslauf, 'g1')}
+    ${kb('feld', 'Wiesenjournal', 'Düngung, Ernte', IC.ernte, 'g1')}
+    ${kb('behandlung', 'Behandlungsjournal', 'Behandlungen, Absetzfristen', IC.behandlung, 'g1')}
+  </div>
+  <div class="mkgrid">
+    ${kb('wasserstand', 'Wasserstand', 'Reservoir', I('<path d="M2 12c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/><path d="M2 18c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/>'), 'g2')}
+    ${kb('traenkefass', 'Tränkefass', 'Füllstand', I('<path d="M5 4h14l-1.5 16h-11z"/><path d="M6 10h12"/>'), 'g2')}
+    ${kb('wasserqualitaet', 'Wasserqualität', 'Trübung, Sauerstoff, Leitfähigkeit', I('<path d="M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z"/>'), 'g2')}
+    ${kb('wetter', 'Agrometeo', 'Niederschlag, Temperatur', I('<path d="M7 18a4 4 0 0 1-.5-8 6 6 0 0 1 11.5 1.5A3.5 3.5 0 0 1 17.5 18z"/>'), 'g2')}
+  </div>
+  <div class="mkgrid">
+    ${kb('lager', 'Lager', 'Heu, Silage, Stroh', IC.verbrauch, 'g3')}
+    ${kb('kamera', 'CowCatcher', `${offen} offen · Brunst je Tier`, I('<path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/>'), 'g3')}
+  </div>
+  <div class="mkgrid">
+    ${kb('ausbringen', 'Gülle / Mist ausbringen', 'Darf ich heute?', IC.duengung || IC.ernte, 'g4')}
   </div>`;
 }
 function anaLager() {
