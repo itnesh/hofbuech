@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.26.0';
+const VERSION = '1.26.1';
 const DSK = () => window.matchMedia('(min-width:1100px)').matches; // Browser-Layout (Laptop/Monitor), Smartphone unverändert
 
 /* ---------- Helfer ---------- */
@@ -846,18 +846,12 @@ function anaKacheln() {
     ${kb('auslauf', 'Auslaufjournal', 'Weide, Laufhof, Alp', IC.auslauf, 'g1')}
     ${kb('feld', 'Wiesenjournal', 'Düngung, Ernte', IC.ernte, 'g1')}
     ${kb('behandlung', 'Behandlungsjournal', 'Behandlungen, Absetzfristen', IC.behandlung, 'g1')}
-  </div>
-  <div class="mkgrid">
     ${kb('wasserstand', 'Wasserstand', 'Reservoir', I('<path d="M2 12c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/><path d="M2 18c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/>'), 'g2')}
     ${kb('traenkefass', 'Tränkefass', 'Füllstand', I('<path d="M5 4h14l-1.5 16h-11z"/><path d="M6 10h12"/>'), 'g2')}
     ${kb('wasserqualitaet', 'Wasserqualität', 'Trübung, Sauerstoff, Leitfähigkeit', I('<path d="M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z"/>'), 'g2')}
     ${kb('wetter', 'Agrometeo', 'Niederschlag, Temperatur', I('<path d="M7 18a4 4 0 0 1-.5-8 6 6 0 0 1 11.5 1.5A3.5 3.5 0 0 1 17.5 18z"/>'), 'g2')}
-  </div>
-  <div class="mkgrid">
     ${kb('lager', 'Lager', 'Heu, Silage, Stroh', IC.verbrauch, 'g3')}
-    ${kb('kamera', 'CowCatcher', `${offen} offen · Brunst je Tier`, I('<path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/>'), 'g3')}
-  </div>
-  <div class="mkgrid">
+    ${kb('kamera', 'CowCatcher', `${offen} offen · Brunst je Tier`, I('<path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/>'), 'g5')}
     ${kb('ausbringen', 'Gülle / Mist ausbringen', 'Darf ich heute?', IC.duengung || IC.ernte, 'g4')}
   </div>`;
 }
