@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.27.0';
+const VERSION = '1.27.1';
 const DSK = () => window.matchMedia('(min-width:1100px)').matches; // Browser-Layout (Laptop/Monitor), Smartphone unverändert
 
 /* ---------- Helfer ---------- */
@@ -840,14 +840,18 @@ function chartTap(svg, clientX) {
   const tip = svg.parentElement.querySelector('.tip'); tip.textContent = c.tips[i]; tip.style.display = 'block';
 }
 function anaKacheln() {
-  const kb = (v, t, sub, ic, g) => `<a class="mk ${g}" href="#/journale/${v}"><span class="mk-ic">${ic}</span><b>${t}</b><small>${sub}</small></a>`;
+  const kb = (v, t, sub, ic, g, kpi) => `<a class="mk ${g}" href="#/journale/${v}"><span class="mk-ic">${ic}</span><b>${t}</b><small>${sub}</small>${kpi || ''}</a>`;
   const offen = S.meldungen.filter(m => !m.status).length;
+  const kp = (v, s, cls = '') => `<span class="mk-kpi ${cls}"><b>${v}</b>${s ? `<small>${s}</small>` : ''}</span>`;
+  const ha = herdeAm();
+  const ausK = ha ? kp(esc(ha.typ), `seit ${fmtS(ha.datum)} · ${diff(ha.datum, today()) + 1} T.`) : kp('-', 'kein Eintrag');
+  const sensK = id => { const sx = S.sensoren.find(x => x.id === id); if (!sx || !sx.last) return kp('-', 'keine Daten'); const pc = sx.last.prozent !== undefined && sx.last.prozent !== null, v = pc ? sx.last.prozent : sx.last.wert; if (v === null || v === undefined) return kp('-', 'keine Daten'); return kp(`${nf(Math.round(v))} ${pc ? '%' : 'cm'}`, sx.fehlerSeit ? 'Fehlmessungen' : '', (pc && v < 30) || sx.fehlerSeit ? 'low' : ''); };
   return `<div class="mkgrid">
-    ${kb('auslauf', 'Auslaufjournal', 'Weide, Laufhof, Alp', IC.auslauf, 'g1')}
+    ${kb('auslauf', 'Auslaufjournal', 'Weide, Laufhof, Alp', IC.auslauf, 'g1', ausK)}
     ${kb('feld', 'Wiesenjournal', 'Düngung, Ernte', IC.ernte, 'g1')}
     ${kb('behandlung', 'Behandlungsjournal', 'Behandlungen, Absetzfristen', IC.behandlung, 'g1')}
-    ${kb('wasserstand', 'Wasserstand', 'Reservoir', I('<path d="M2 12c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/><path d="M2 18c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/>'), 'g2')}
-    ${kb('traenkefass', 'Tränkefass', 'Füllstand', I('<path d="M5 4h14l-1.5 16h-11z"/><path d="M6 10h12"/>'), 'g2')}
+    ${kb('wasserstand', 'Wasserstand', 'Reservoir', I('<path d="M2 12c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/><path d="M2 18c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/>'), 'g2', sensK('wasserstand'))}
+    ${kb('traenkefass', 'Tränkefass', 'Füllstand', I('<path d="M5 4h14l-1.5 16h-11z"/><path d="M6 10h12"/>'), 'g2', sensK('traenkefass'))}
     ${kb('wasserqualitaet', 'Wasserqualität', 'Trübung, Sauerstoff, Leitfähigkeit', I('<path d="M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z"/>'), 'g2')}
     ${kb('wetter', 'Agrometeo', 'Niederschlag, Temperatur', I('<path d="M7 18a4 4 0 0 1-.5-8 6 6 0 0 1 11.5 1.5A3.5 3.5 0 0 1 17.5 18z"/>'), 'g2')}
     ${kb('lager', 'Lager', 'Heu, Silage, Stroh', IC.verbrauch, 'g3')}
