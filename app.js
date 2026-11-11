@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.27.1';
+const VERSION = '1.27.2';
 const DSK = () => window.matchMedia('(min-width:1100px)').matches; // Browser-Layout (Laptop/Monitor), Smartphone unverändert
 
 /* ---------- Helfer ---------- */
@@ -844,8 +844,8 @@ function anaKacheln() {
   const offen = S.meldungen.filter(m => !m.status).length;
   const kp = (v, s, cls = '') => `<span class="mk-kpi ${cls}"><b>${v}</b>${s ? `<small>${s}</small>` : ''}</span>`;
   const ha = herdeAm();
-  const ausK = ha ? kp(esc(ha.typ), `seit ${fmtS(ha.datum)} · ${diff(ha.datum, today()) + 1} T.`) : kp('-', 'kein Eintrag');
-  const sensK = id => { const sx = S.sensoren.find(x => x.id === id); if (!sx || !sx.last) return kp('-', 'keine Daten'); const pc = sx.last.prozent !== undefined && sx.last.prozent !== null, v = pc ? sx.last.prozent : sx.last.wert; if (v === null || v === undefined) return kp('-', 'keine Daten'); return kp(`${nf(Math.round(v))} ${pc ? '%' : 'cm'}`, sx.fehlerSeit ? 'Fehlmessungen' : '', (pc && v < 30) || sx.fehlerSeit ? 'low' : ''); };
+  const ausK = ha ? kp(esc(ha.typ), `${diff(ha.datum, today()) + 1} T.`) : kp('-');
+  const sensK = id => { const sx = S.sensoren.find(x => x.id === id); if (!sx || !sx.last) return kp('-'); const pc = sx.last.prozent !== undefined && sx.last.prozent !== null, v = pc ? sx.last.prozent : sx.last.wert; if (v === null || v === undefined) return kp('-'); return kp(`${nf(Math.round(v))} ${pc ? '%' : 'cm'}`, '', (pc && v < 30) || sx.fehlerSeit ? 'low' : ''); };
   return `<div class="mkgrid">
     ${kb('auslauf', 'Auslaufjournal', 'Weide, Laufhof, Alp', IC.auslauf, 'g1', ausK)}
     ${kb('feld', 'Wiesenjournal', 'Düngung, Ernte', IC.ernte, 'g1')}

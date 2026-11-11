@@ -509,9 +509,10 @@ video#mvid{cursor:pointer}
 .mk small{font-size:11.5px;color:var(--muted);line-height:1.3}
 .mk-ic{display:inline-flex;margin-bottom:4px;color:var(--green)}
 .mk-ic svg{width:22px;height:22px}
-.mk-kpi{margin-top:auto;padding-top:6px;display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
-.mk-kpi b{font-size:17px;font-weight:750;letter-spacing:-.01em}
-.mk-kpi small{font-size:11px}
+.mk{position:relative}
+.mk-kpi{position:absolute;top:12px;right:12px;display:flex;flex-direction:column;align-items:flex-end;line-height:1.15;text-align:right}
+.mk-kpi b{font-size:13px;font-weight:700}
+.mk-kpi small{font-size:10.5px}
 .mk-kpi.low b{color:var(--warn)}
 .mk.g1{background:#E8F0E4}
 .mk.g2{background:#E6EFF7}.mk.g2 .mk-ic{color:var(--blue)}
