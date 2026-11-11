@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.25.0';
+const VERSION = '1.25.1';
 const DSK = () => window.matchMedia('(min-width:1100px)').matches; // Browser-Layout (Laptop/Monitor), Smartphone unverändert
 
 /* ---------- Helfer ---------- */
@@ -670,7 +670,7 @@ function jahre(listen) { const s = new Set([String(new Date().getFullYear())]); 
 function jahrSel() { return `<select class="sel" data-act="jahr" aria-label="Jahr">${jahre([S.behandlungen, S.auslauf, S.feld]).map(j => `<option ${j === UI.jahr ? 'selected' : ''}>${j}</option>`).join('')}</select>`; }
 
 function vJournale() {
-  const SECT = { lager: 'Lager', auslauf: 'Auslaufjournal', behandlung: 'Behandlungsjournal', feld: 'Feldkalender', zucht: 'Zucht', traenkefass: 'Tränkefass', wasserstand: 'Wasserstand', wasserqualitaet: 'Wasserqualität', ausbringen: 'Gülle / Mist ausbringen', wetter: 'Agrometeo Analyse', kamera: 'Kamera-Meldungen' };
+  const SECT = { lager: 'Lager', auslauf: 'Auslaufjournal', behandlung: 'Behandlungsjournal', feld: 'Wiesenjournal', zucht: 'Zucht', traenkefass: 'Tränkefass', wasserstand: 'Wasserstand', wasserqualitaet: 'Wasserqualität', ausbringen: 'Gülle / Mist ausbringen', wetter: 'Agrometeo Analyse', kamera: 'Kamera-Meldungen' };
   if (!SECT[UI.jTab]) return anaKacheln();
   const tabs = `<div class="anah"><a class="back" href="#/journale/">‹ Übersicht</a><b>${SECT[UI.jTab]}</b></div>`;
   if (UI.jTab === 'auslauf') return tabs + vAuslauf();
@@ -798,7 +798,7 @@ function vKalender() {
   const show = UI.kalTag && UI.kalTag.startsWith(UI.kalMonat) ? (byDay[UI.kalTag] || []) : items;
   const rows = show.map(x => itemRow(x, false)).join('');
   return `<div class="kal-wrap"><div class="kal-l">${kalGrid(byDay)}
-  <div class="chips kf">${[['', 'Alle'], ['zucht', 'Brunst/Besamung'], ['abkalbung', 'Abkalbung'], ['behandlung', 'Behandlung'], ['auslauf', 'Weide / Stall'], ['feld', 'Feldkalender'], ['labiola', 'Labiola'], ['tiere', 'Zu-/Abgang'], ['prognose', 'Prognose']].map(([v, l]) => `<button type="button" class="chip ${KF === v ? 'on' : ''}" data-act="kalfilter" data-v="${v}">${l}</button>`).join('')}</div></div>
+  <div class="chips kf">${[['', 'Alle'], ['zucht', 'Brunst/Besamung'], ['abkalbung', 'Abkalbung'], ['behandlung', 'Behandlung'], ['auslauf', 'Weide / Stall'], ['feld', 'Wiesenjournal'], ['labiola', 'Labiola'], ['tiere', 'Zu-/Abgang'], ['prognose', 'Prognose']].map(([v, l]) => `<button type="button" class="chip ${KF === v ? 'on' : ''}" data-act="kalfilter" data-v="${v}">${l}</button>`).join('')}</div></div>
   <div class="kal-r"><div class="sec-t">${UI.kalTag && UI.kalTag.startsWith(UI.kalMonat) ? fmt(UI.kalTag) + ' <a href="#/kalender" data-act="kaltag" data-v="" style="font-weight:500;text-transform:none;letter-spacing:0">ganzer Monat</a>' : 'Ganzer Monat'}</div>
   <div class="list">${rows || '<div class="empty">Keine Einträge.</div>'}</div></div></div>`;
 }
@@ -854,7 +854,7 @@ function anaKacheln() {
     ${gb('wasserqualitaet', 'Wasserqualität', 'Reservoir: Trübung, Sauerstoff, Leitfähigkeit · Alarm', I('<path d="M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z"/>'))}
     ${gb('auslauf', 'Auslaufjournal', 'Weide, Laufhof, Alp · PDF', IC.auslauf)}
     ${gb('lager', 'Lager', 'Heu, Silage, Stroh · Ernte, Kauf, Verbrauch', IC.verbrauch)}
-    ${gb('feld', 'Feldkalender', 'Düngung, Ernte · PDF', IC.ernte)}
+    ${gb('feld', 'Wiesenjournal', 'Düngung, Ernte · PDF', IC.ernte)}
     ${gb('behandlung', 'Behandlungsjournal', 'Behandlungen, Absetzfristen · PDF', IC.behandlung)}
     ${gb('ausbringen', 'Gülle / Mist ausbringen', 'Darf ich heute? Boden, Niederschlag, Vegetationsruhe', IC.duengung || IC.ernte)}
     ${gb('wetter', 'Agrometeo Analyse', 'Niederschlag und Temperatur', I('<path d="M7 18a4 4 0 0 1-.5-8 6 6 0 0 1 11.5 1.5A3.5 3.5 0 0 1 17.5 18z"/>'))}
@@ -1032,7 +1032,7 @@ function pzMigration() {
   for (const a of S.auslauf) if (a.parzelle && umben[a.parzelle]) put('auslauf', { ...a, parzelle: umben[a.parzelle] });
   for (const o of S.labiola) if (o.parzelle) put('labiola', { ...o, parzelle: '' });
   const n = Object.keys(umben).length;
-  setTimeout(() => openSheet('Parzellen abgeglichen', `<p>${n ? 'Umbenannt: ' + esc(Object.entries(umben).map(([a, b]) => a + ' → ' + b).join(', ')) : 'Keine Umbenennung nötig.'}</p>${weg.length ? `<p>Ausgeblendet (nicht in der Liste): ${esc(weg.join(', '))}</p>` : ''}<p class="small muted">Bestehende Einträge in Feldkalender und Auslaufjournal wurden mit umbenannt.</p>`), 800);
+  setTimeout(() => openSheet('Parzellen abgeglichen', `<p>${n ? 'Umbenannt: ' + esc(Object.entries(umben).map(([a, b]) => a + ' → ' + b).join(', ')) : 'Keine Umbenennung nötig.'}</p>${weg.length ? `<p>Ausgeblendet (nicht in der Liste): ${esc(weg.join(', '))}</p>` : ''}<p class="small muted">Bestehende Einträge in Wiesenjournal und Auslaufjournal wurden mit umbenannt.</p>`), 800);
 }
 // Doppelte Labiola-Pendenzen/-Objekte zusammenführen (entstanden durch mehrfaches Seeding auf mehreren Geräten)
 let labDedupOk = false;
@@ -1523,7 +1523,7 @@ function plusMenu() {
   const a = (k, l) => `<button type="button" class="act" data-act="form" data-f="${k}"${tid ? ` data-tier="${tid}"` : ''}>${IC[k] || ''}<span>${l}</span></button>`;
   const tt = tid ? tierById(tid) : null;
   openSheet('Neuer Eintrag', `<div class="sec-t" style="margin-top:0">Tiere${tt ? ' · ' + esc(tt.name || tt.ohrmarke) : ''}</div><div class="actgrid">${a('geburt', 'Geburt')}${a('brunst', 'Brunst')}${a('besamung', 'Besamung')}${a('behandlung', 'Behandlung')}${a('auslauf', 'Weide / Stall')}${a('zugang', 'Zugang')}${a('abgang', 'Abgang')}</div>
-  <div class="sec-t">Feldkalender</div><div class="actgrid">${a('duengung', 'Düngung')}${a('ernte', 'Ernte')}</div>
+  <div class="sec-t">Wiesenjournal</div><div class="actgrid">${a('duengung', 'Düngung')}${a('ernte', 'Ernte')}</div>
   <div class="sec-t">Lager</div><div class="actgrid">${a('verbrauch', 'Verbrauch')}${a('kauf', 'Kauf')}${a('inventur', 'Inventur')}</div>
   <div class="sec-t">Labiola</div><div class="actgrid">${a('aufgabe', 'Pendenz')}</div>`);
 }
@@ -1844,7 +1844,7 @@ async function pdf(p, id) {
     const GF = [208, 226, 243], MF = [236, 221, 196];
     const pzs = [...new Set([...parzellen(), ...aus.map(f => f.parzelle || '(ohne Parzelle)')])];
     const rows = pzs.map(z => ({ label: z, cell: d => { const e = aus.filter(f => f.datum === d && (f.parzelle || '(ohne Parzelle)') === z); if (!e.length) return null; const g = e.some(f => f.was === 'Gülle'), m = e.some(f => f.was === 'Mist'); return { t: e.map(f => f._id).join(','), fill: g && m ? [225, 225, 225] : g ? GF : MF }; } }));
-    const title = `Feldkalender ${J}`, doc = await pdfQuer();
+    const title = `Wiesenjournal ${J}`, doc = await pdfQuer();
     const inQ = qs => aus.filter(f => qs.some(q => { const [v, b] = qVonBis(J, q); return f.datum >= v && f.datum <= b; }));
     const N = 3; // Einträge pro Legendenzeile
     const legH = qs => { const n = inQ(qs).length; return n ? 6 + (Math.ceil(n / N) + 1) * 4.3 : 6; };
@@ -1858,7 +1858,7 @@ async function pdf(p, id) {
     };
     pdfJahrMatrix(doc, title, J, rows, legende, legH);
     pdfFuss(doc);
-    return pdfAusgabe(doc, title, `Feldkalender_${J}.pdf`);
+    return pdfAusgabe(doc, title, `Wiesenjournal_${J}.pdf`);
   }
 }
 
