@@ -287,9 +287,9 @@ function render() {
   const p = h.split('/');
   const view = $('#view');
   const back = $('#back');
-  let title = 'hofbuech', html = '', tab = p[0], showBack = false;
+  let title = 'Hofpuls', html = '', tab = p[0], showBack = false;
   try {
-    if (p[0] === 'start') { title = S.set.hofname || 'hofbuech'; html = vStart(); }
+    if (p[0] === 'start') { title = S.set.hofname || 'Hofpuls'; html = vStart(); }
     else if (p[0] === 'tiere') { title = 'Tiere'; html = vTiere(); }
     else if (p[0] === 'tier') { const t = tierById(p[1]); showBack = true; tab = 'tiere'; if (!t) { html = '<div class="empty">Tier nicht gefunden.</div>'; } else if (p[2] === 'laktation') { title = 'Laktationsplanung'; html = vLaktation(t); } else if (p[2] === 'nachkommen') { title = 'Nachkommen'; html = vNachkommen(t); } else if (p[2] === 'behandlungen') { title = 'Behandlungen'; html = vTierBeh(t); } else { title = t.name || t.ohrmarke; html = vTier(t); } }
     else if (p[0] === 'journale') { title = 'Mehr'; if (p[1] !== undefined) UI.jTab = p[1]; html = vJournale(); }
@@ -297,7 +297,7 @@ function render() {
     else if (p[0] === 'labiola') { title = 'Labiola'; html = vLabiola(); }
     else if (p[0] === 'notizen') { title = 'Notizen'; html = vNotizen(); }
     else if (p[0] === 'notiz') { const n = S.notizen.find(x => x.id === p[1]); title = n ? n.titel : 'Notiz'; tab = 'notizen'; showBack = true; html = n ? vNotiz(n) : '<div class="empty">Notiz nicht gefunden.</div>'; }
-    else if (p[0] === 'meldung') { title = S.set.hofname || 'hofbuech'; tab = 'start'; html = vStart(); const m = p[1] === 'neu' ? S.meldungen.filter(x => !x.status).sort((x, y) => x.zeit < y.zeit ? 1 : -1)[0] : S.meldungen.find(x => x.id === p[1]); if (m && !UI.mOpen) { UI.mOpen = 1; setTimeout(() => { meldungSheet(m); history.replaceState(null, '', '#/start'); UI.mOpen = 0; }, 50); } }
+    else if (p[0] === 'meldung') { title = S.set.hofname || 'Hofpuls'; tab = 'start'; html = vStart(); const m = p[1] === 'neu' ? S.meldungen.filter(x => !x.status).sort((x, y) => x.zeit < y.zeit ? 1 : -1)[0] : S.meldungen.find(x => x.id === p[1]); if (m && !UI.mOpen) { UI.mOpen = 1; setTimeout(() => { meldungSheet(m); history.replaceState(null, '', '#/start'); UI.mOpen = 0; }, 50); } }
     else if (p[0] === 'kalender') { title = 'Kalender'; html = vKalender(); }
     else if (p[0] === 'analyse') { title = 'Mehr'; tab = 'journale'; html = vJournale(); }
     else if (p[0] === 'einstellungen') { title = 'Einstellungen'; html = vSettings(); showBack = true; tab = 'einst'; }
@@ -1357,7 +1357,7 @@ function vSettings() {
   ${grp('liste', 'Tierliste', `unbesamt ab ${s.unbesamtAb} Mt. · Abkalbung ${s.baldTage} T.`, numf('unbesamtAb', 'Unbesamt markieren ab (Monate)', s.unbesamtAb) + numf('baldTage', 'Abkalbung markieren (Tage vorher)', s.baldTage))}
   ${grp('listen', 'Auswahllisten', 'Gründe, Medikamente', ta('gruende', 'Gründe Stall / Laufhof', (s.gruende || []).join('\n')) + ta('medikamente', 'Medikamente (Name ; Absetzfrist Tage)', (s.medikamente || []).map(m => `${m.name} ; ${m.frist}`).join('\n'), 'Beispielpräparat ; 21'))}
   ${grp('lager', 'Lager', `Heu ${nf(num(s.startHeu))} · Silage ${nf(num(s.startSilo))} · Stroh ${nf(num(s.startStroh))}`, numf('startHeu', 'Startbestand Heuballen', s.startHeu) + numf('startSilo', 'Startbestand Silageballen', s.startSilo) + numf('startStroh', 'Startbestand Strohballen', s.startStroh))}
-  ${grp('sensoren', 'Sensoren & Wetterdaten', s.akenzaKey ? 'akenza verbunden' : 'nicht verbunden', `<p class="small muted" style="margin:0">Die Daten lädt ein Hintergrund-Job stündlich (Agrometeo täglich) in hofbuech. Schlüssel und Passwort liegen nur in deiner Datenbank, nicht im Code.</p>` + fld('akenzaKey', 'akenza API-Key (x-api-key)', s.akenzaKey, 'type="password" autocomplete="off"') + fld('sensWasser', 'Gerät Wasserstand (akenza Device-ID)', s.sensWasser ?? '02bdf0b1b64b4c40') + fld('sensFass', 'Gerät Tränkefass (akenza Device-ID)', s.sensFass ?? '029412d5966ce1d4') + fld('fassLeer', 'Tränkefass: Abstand bei leer (cm)', s.fassLeer, 'inputmode="decimal" placeholder="83"') + fld('fassVoll', 'Tränkefass: Abstand bei voll (cm)', s.fassVoll, 'inputmode="decimal" placeholder="9.3"') + fld('wasserLeer', 'Wasserstand: Abstand bei leer (cm)', s.wasserLeer, 'inputmode="decimal" placeholder="214"') + fld('wasserVoll', 'Wasserstand: Abstand bei voll (cm)', s.wasserVoll, 'inputmode="decimal" placeholder="56"') + fld('sensWqs', 'Gerät Wasserqualität WQS-LB (akenza ID)', s.sensWqs ?? WQ.DEVICE) + fld('wqAb', 'Wasserqualität: Daten ab (JJJJ-MM-TT HH:MM)', s.wqAb ?? WQ.AB) + fld('wqEc', 'Alarm Leitfähigkeit: Abweichung zur Basis (%)', s.wqEc, `inputmode="decimal" placeholder="${WQ.DEF.ec}"`) + fld('wqTu', 'Alarm Trübung: Anstieg zur Basis (NTU)', s.wqTu, `inputmode="decimal" placeholder="${WQ.DEF.tu}"`) + fld('wqDo', 'Alarm Sauerstoff: Abfall zur Basis (mg/L)', s.wqDo, `inputmode="decimal" placeholder="${WQ.DEF.do}"`) + fld('agroUser', 'Agrometeo / vitimeteo Benutzer', s.agroUser ?? 'erdinmatthias') + fld('agroPass', 'Agrometeo / vitimeteo Passwort', s.agroPass, 'type="password" autocomplete="off"') + fld('agroStation', 'Agrometeo Station', s.agroStation ?? '177') + fld('grafanaUrl', 'Grafana-Link zum Einbetten (optional)', s.grafanaUrl, 'placeholder="https://..."'))}
+  ${grp('sensoren', 'Sensoren & Wetterdaten', s.akenzaKey ? 'akenza verbunden' : 'nicht verbunden', `<p class="small muted" style="margin:0">Die Daten lädt ein Hintergrund-Job stündlich (Agrometeo täglich) in Hofpuls. Schlüssel und Passwort liegen nur in deiner Datenbank, nicht im Code.</p>` + fld('akenzaKey', 'akenza API-Key (x-api-key)', s.akenzaKey, 'type="password" autocomplete="off"') + fld('sensWasser', 'Gerät Wasserstand (akenza Device-ID)', s.sensWasser ?? '02bdf0b1b64b4c40') + fld('sensFass', 'Gerät Tränkefass (akenza Device-ID)', s.sensFass ?? '029412d5966ce1d4') + fld('fassLeer', 'Tränkefass: Abstand bei leer (cm)', s.fassLeer, 'inputmode="decimal" placeholder="83"') + fld('fassVoll', 'Tränkefass: Abstand bei voll (cm)', s.fassVoll, 'inputmode="decimal" placeholder="9.3"') + fld('wasserLeer', 'Wasserstand: Abstand bei leer (cm)', s.wasserLeer, 'inputmode="decimal" placeholder="214"') + fld('wasserVoll', 'Wasserstand: Abstand bei voll (cm)', s.wasserVoll, 'inputmode="decimal" placeholder="56"') + fld('sensWqs', 'Gerät Wasserqualität WQS-LB (akenza ID)', s.sensWqs ?? WQ.DEVICE) + fld('wqAb', 'Wasserqualität: Daten ab (JJJJ-MM-TT HH:MM)', s.wqAb ?? WQ.AB) + fld('wqEc', 'Alarm Leitfähigkeit: Abweichung zur Basis (%)', s.wqEc, `inputmode="decimal" placeholder="${WQ.DEF.ec}"`) + fld('wqTu', 'Alarm Trübung: Anstieg zur Basis (NTU)', s.wqTu, `inputmode="decimal" placeholder="${WQ.DEF.tu}"`) + fld('wqDo', 'Alarm Sauerstoff: Abfall zur Basis (mg/L)', s.wqDo, `inputmode="decimal" placeholder="${WQ.DEF.do}"`) + fld('agroUser', 'Agrometeo / vitimeteo Benutzer', s.agroUser ?? 'erdinmatthias') + fld('agroPass', 'Agrometeo / vitimeteo Passwort', s.agroPass, 'type="password" autocomplete="off"') + fld('agroStation', 'Agrometeo Station', s.agroStation ?? '177') + fld('grafanaUrl', 'Grafana-Link zum Einbetten (optional)', s.grafanaUrl, 'placeholder="https://..."'))}
   <button class="btn pri block" type="submit" style="margin-top:6px">Einstellungen speichern</button>
   </form>
   <div class="form" style="gap:8px;margin-top:8px">
@@ -1379,7 +1379,7 @@ const FORMS = {
     { k: 'mutterId', l: 'Mutter (falls im Bestand)', t: 'tier', opt: true, filter: t => t.geschlecht === 'w' },
     { k: 'mutterName', l: 'Mutter (Name, falls nicht im Bestand)', t: 'text' },
     { k: 'rasse', l: 'Rasse', t: 'tag', list: rassen },
-    { k: 'gekalbert', l: 'Schon gekalbert (vor hofbuech)', t: 'seg', o: [['nein', 'nein'], ['ja', 'ja']], def: 'nein', show: v => v.geschlecht === 'w' },
+    { k: 'gekalbert', l: 'Schon gekalbert (vor Hofpuls)', t: 'seg', o: [['nein', 'nein'], ['ja', 'ja']], def: 'nein', show: v => v.geschlecht === 'w' },
     { k: 'notiz', l: 'Notiz', t: 'textarea' }],
     more: true },
   tiere: null,
@@ -1750,7 +1750,7 @@ function pdfKopf(doc, title, tvd) {
 }
 function pdfFuss(doc) {
   const n = doc.internal.getNumberOfPages(), w = doc.internal.pageSize.getWidth(), h = doc.internal.pageSize.getHeight();
-  for (let i = 1; i <= n; i++) { doc.setPage(i); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(120); doc.text(`erstellt ${fmt(today())} · hofbuech`, 10, h - 6); doc.text(`Seite ${i} / ${n}`, w - 10, h - 6, { align: 'right' }); }
+  for (let i = 1; i <= n; i++) { doc.setPage(i); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(120); doc.text(`erstellt ${fmt(today())} · Hofpuls`, 10, h - 6); doc.text(`Seite ${i} / ${n}`, w - 10, h - 6, { align: 'right' }); }
   doc.setTextColor(0);
 }
 const QSTART = ['01-01', '04-01', '07-01', '10-01'];
@@ -1919,7 +1919,7 @@ async function pushAktivieren() {
   if (!AUTH || !window.HB_VAPID) return toast('Push ist noch nicht eingerichtet (VAPID-Schlüssel fehlt in config.js)');
   if (!('Notification' in window) || !('serviceWorker' in navigator)) return toast('Dieser Browser kann keine Push-Nachrichten. iPhone: App zuerst zum Home-Bildschirm hinzufügen.');
   const M = await import(`https://www.gstatic.com/firebasejs/${AUTH.V}/firebase-messaging.js`);
-  if (!(await M.isSupported())) return toast('Push hier nicht unterstützt. iPhone: hofbuech über das Homescreen-Icon öffnen.');
+  if (!(await M.isSupported())) return toast('Push hier nicht unterstützt. iPhone: Hofpuls über das Homescreen-Icon öffnen.');
   const perm = await Notification.requestPermission();
   if (perm !== 'granted') return toast('Benachrichtigungen nicht erlaubt');
   const reg = await navigator.serviceWorker.ready;
@@ -1969,7 +1969,7 @@ async function tvdImport(file) {
     <div class="kpis" style="margin-bottom:12px"><div class="kpi"><span class="v">${neu.length}</span><span class="l">neu</span></div><div class="kpi"><span class="v">${upd.length}</span><span class="l">aktualisieren</span></div><div class="kpi"><span class="v">${gleich.length}</span><span class="l">unverändert</span></div></div>
     ${neu.length ? `<div class="sec-t">Neue Tiere (Zugang = Geburtsdatum)</div><div class="list">${neu.map(t => li(t)).join('')}</div>` : ''}
     ${upd.length ? `<div class="sec-t">Änderungen</div><div class="list">${upd.map(u => li({ ...u.ex, ...u.d }, `<span class="pill blue">${u.diffs.join(', ')}</span>`)).join('')}</div>` : ''}
-    ${fehlt.length ? `<div class="sec-t">Im hofbuech, aber nicht im Export</div><div class="note small">Diese Tiere werden nicht verändert. Abgänge bitte selbst erfassen.</div><div class="list" style="margin-top:8px">${fehlt.map(t => li(t)).join('')}</div>` : ''}
+    ${fehlt.length ? `<div class="sec-t">Im Hofpuls, aber nicht im Export</div><div class="note small">Diese Tiere werden nicht verändert. Abgänge bitte selbst erfassen.</div><div class="list" style="margin-top:8px">${fehlt.map(t => li(t)).join('')}</div>` : ''}
     <p class="small muted">Mutter und Zugangsdatum sind im TVD-Export nicht enthalten und können pro Tier unter "Bearbeiten" ergänzt werden.</p>`,
     {
       saveLabel: 'Importieren', onSave: () => {
@@ -2326,7 +2326,7 @@ document.addEventListener('click', e => {
   else if (a === 'kalfilter') { UI.kalFilter = el.dataset.v; render(); }
   else if (a === 'kalmon') { const [y, m] = UI.kalMonat.split('-').map(Number); const d = new Date(y, m - 1 + Number(el.dataset.v), 1); UI.kalMonat = iso(d).slice(0, 7); UI.kalTag = ''; render(); }
   else if (a === 'pdf') { el.disabled = true; pdf(el.dataset.p, el.dataset.id).catch(showErr).finally(() => el.disabled = false); }
-  else if (a === 'backup') { const d = { version: VERSION, exportiert: new Date().toISOString(), set: S.set }; COLLS.forEach(c => d[c] = S[c]); const b = new Blob([JSON.stringify(d, null, 1)], { type: 'application/json' }); const u = URL.createObjectURL(b); const l = document.createElement('a'); l.href = u; l.download = `hofbuech_backup_${today()}.json`; l.click(); setTimeout(() => URL.revokeObjectURL(u), 2000); }
+  else if (a === 'backup') { const d = { version: VERSION, exportiert: new Date().toISOString(), set: S.set }; COLLS.forEach(c => d[c] = S[c]); const b = new Blob([JSON.stringify(d, null, 1)], { type: 'application/json' }); const u = URL.createObjectURL(b); const l = document.createElement('a'); l.href = u; l.download = `hofpuls_backup_${today()}.json`; l.click(); setTimeout(() => URL.revokeObjectURL(u), 2000); }
   else if (a === 'ausbchart') ausbChart(el.dataset.id);
   else if (a === 'lpz') { UI.lPz = el.dataset.v; render(); }
   else if (a === 'lgrp') { const v = el.dataset.v; UI.lOpen = UI.lPz ? (UI.lOpen === '-' + v ? '' : '-' + v) : (UI.lOpen === v ? '' : v); render(); }
@@ -2397,7 +2397,7 @@ window.addEventListener('hashchange', () => { closeSheet(true); render(); window
 /* ---------- Start ---------- */
 function loginScreen(err) {
   $('#tabbar').classList.add('hidden');
-  $('#title').textContent = 'hofbuech';
+  $('#title').textContent = 'Hofpuls';
   $('#view').innerHTML = `<div class="setup card"><h2 style="margin-top:0">Anmelden</h2><p class="muted">Einmal pro Gerät mit deinem Google-Konto anmelden. Danach bleibst du angemeldet.</p>${err ? `<div class="note small" style="margin-bottom:12px">${esc(err)}</div>` : ''}<button class="btn pri block" id="glogin">Mit Google anmelden</button></div>`;
   $('#glogin').onclick = async () => {
     const { auth, A } = AUTH; const prov = new A.GoogleAuthProvider(); prov.setCustomParameters({ prompt: 'select_account' });

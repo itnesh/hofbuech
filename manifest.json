@@ -1,6 +1,6 @@
 {
-  "name": "hofbuech",
-  "short_name": "hofbuech",
+  "name": "Hofpuls",
+  "short_name": "Hofpuls",
   "start_url": "./#/start",
   "scope": "./",
   "display": "standalone",
