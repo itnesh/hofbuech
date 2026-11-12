@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.27.2';
+const VERSION = '1.27.3';
 const DSK = () => window.matchMedia('(min-width:1100px)').matches; // Browser-Layout (Laptop/Monitor), Smartphone unverändert
 
 /* ---------- Helfer ---------- */
@@ -2026,7 +2026,8 @@ function ausbBew(D, H, t0, hNow) {
   // 6. Nährstoffbedarf: Tagesmittel > 5 °C an 7 aufeinanderfolgenden Tagen (Düngefenster)
   const tm = []; for (let i = iT - 6; i <= iT; i++) tm.push(D.temperature_2m_mean[i]);
   const fenster = tm.every(v => v !== null && v !== undefined && v > 5), unter = tm.filter(v => !(v > 5)).length;
-  K.push({ id: 'temp', k: 'Nährstoffbedarf (Düngefenster)', s: fenster ? 'ja' : 'nein', w: `Tagesmittel letzte 7 Tage: ${tm.map(v => v === null || v === undefined ? '-' : nf(v)).join(' / ')} °C`, e: fenster ? 'Tagesmittel 7 Tage in Folge über 5 °C: Pflanzen nehmen Nährstoffe auf.' : `Vegetationsruhe (${unter} von 7 Tagen nicht über 5 °C). Ausbringen nur bei speziellen Bedürfnissen des Pflanzenbaus, siehe unten.` });
+  let ab = ''; if (!fenster) for (let j = iT + 1; j < D.time.length; j++) { const f7 = D.temperature_2m_mean.slice(j - 6, j + 1); if (f7.length === 7 && f7.every(v => v !== null && v !== undefined && v > 5)) { ab = D.time[j]; break; } }
+  K.push({ id: 'temp', k: 'Wachsen die Pflanzen? (Düngefenster)', s: fenster ? 'ja' : 'nein', w: `Durchschnittstemperatur pro Tag, älteste zuerst: ${tm.map(v => v === null || v === undefined ? '-' : nf(v)).join(' · ')} °C`, e: fenster ? 'Alle 7 Tage im Schnitt über 5 °C: Die Pflanzen wachsen und nehmen Nährstoffe auf. Düngen ist sinnvoll.' : `Die Pflanzen wachsen noch nicht. Dafür müssen alle 7 Tage im Schnitt über 5 °C liegen, hier ${unter === 1 ? 'ist 1 Tag' : 'sind ' + unter + ' Tage'} zu kalt. Gülle und Mist jetzt nur ausbringen, wenn eine Kultur sie wirklich braucht (siehe unten).${ab ? ` Bleibt es laut Prognose so warm, ist Düngen ab ${fmtS(ab)} wieder erlaubt.` : ''}` });
   const res = typ => { const k = K.filter(x => typ === 'guelle' || !x.nurGuelle).map(x => ausbS(x, typ)); return k.includes('nein') ? 'nein' : k.includes('pruefen') ? 'pruefen' : 'ja'; };
   return { K, guelle: res('guelle'), mist: res('mist'), tag: t0 };
 }
