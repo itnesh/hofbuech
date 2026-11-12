@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.28.1';
+const VERSION = '1.28.2';
 const DSK = () => window.matchMedia('(min-width:1100px)').matches; // Browser-Layout (Laptop/Monitor), Smartphone unverändert
 
 /* ---------- Helfer ---------- */
@@ -2106,6 +2106,18 @@ const AUSB_CH = {
   trocken: { t: 'Bodenfeuchte 3-9 cm (Ø pro Tag)', u: 'Vol-%', g: 12, gl: 'ausgetrocknet unter ca. 12 %' },
   temp: { t: 'Tagesmitteltemperatur', u: '°C', g: 5, gl: 'Düngefenster: 7 Tage über 5 °C' }
 };
+// Status je Tag und Kriterium aus den Tageswerten (für die Farben der Tageskacheln); null = nicht genug Daten
+function ausbTagStatus(id, R, i) {
+  const v = R[id] ? R[id][i] : null, rg = (a, b) => R.regen ? R.regen.slice(Math.max(0, a), b + 1).filter(x => x !== null && x !== undefined) : [];
+  if (id === 'regen') { const a = rg(i - 2, i + 3); if (!a.length) return null; return a.some(x => x > 20) ? 'nein' : Math.max(...a) > 12 ? 'pruefen' : 'ja'; }
+  if (id === 'temp') { if (i < 6) return null; const a = R.temp.slice(i - 6, i + 1); return a.every(x => x !== null && x !== undefined && x > 5) ? 'ja' : 'nein'; }
+  if (v === null || v === undefined) return null;
+  if (id === 'schnee') return v >= 1 ? 'nein' : 'ja';
+  if (id === 'frost') return v < 0 ? 'nein' : v < 1.5 ? 'pruefen' : 'ja';
+  if (id === 'nass') { const r3 = i >= 3 ? rg(i - 3, i - 1).reduce((a, b) => a + b, 0) : 0; return v >= 42 || r3 > 40 ? 'nein' : v >= 38 || r3 > 25 ? 'pruefen' : 'ja'; }
+  if (id === 'trocken') return v < 12 ? 'pruefen' : 'ja';
+  return null;
+}
 // Diagramm + Tabelle; t0 = Bezugstag (heute bzw. Ausbringtag), lbl = Beschriftung der Linie, folge = Legende für die Tage danach
 function ausbChartHtml(id, R, t0, lbl = 'heute', folge = 'Prognose', fuss = '') {
   const C = AUSB_CH[id]; if (!C || !R || !R[id]) return '';
@@ -2125,8 +2137,8 @@ function ausbChartHtml(id, R, t0, lbl = 'heute', folge = 'Prognose', fuss = '') 
   g += `<line x1="${pl + hi * cw}" x2="${pl + hi * cw}" y1="${pt}" y2="${H0 - pb}" stroke="#1F4D36" stroke-width="1"/><text x="${pl + hi * cw + 3}" y="${pt + 9}" font-size="9" fill="#1F4D36">${lbl}</text>`;
   g += R.time.map((d, i) => i % 2 === hi % 2 ? `<text x="${x(i)}" y="${H0 - 10}" font-size="8.5" text-anchor="middle" fill="${i === hi ? '#1F4D36' : '#6B726D'}"${i === hi ? ' font-weight="700"' : ''}>${+d.slice(8)}.${+d.slice(5, 7)}.</text>` : '').join('');
   const svg = `<svg viewBox="0 0 ${W} ${H0}" width="100%" style="display:block">${g}</svg>`;
-  const tab = vals.map((v, i) => ({ d: R.time[i], v })).filter(r => r.d >= addDays(t0, -3)).map(r => `<span class="${r.d === t0 ? 'on' : ''}"><small>${['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'][pd(r.d).getDay()]} ${+r.d.slice(8)}.</small><b>${r.v === null ? '-' : nf(r.v)}</b></span>`).join('');
-  return `<div class="card">${svg}<div class="small muted" style="margin-top:6px;display:flex;gap:12px;flex-wrap:wrap"><span><i class="sw" style="background:#E08A1E"></i>${esc(C.gl)}</span><span><i class="sw" style="background:#EEF3F0;border:1px solid #CFDDD5"></i>${folge}</span></div></div>
+  const tab = vals.map((v, i) => ({ d: R.time[i], v, st: ausbTagStatus(id, R, i) })).filter(r => r.d >= addDays(t0, -3)).map(r => `<span class="${r.d === t0 ? 'on' : ''} ${r.st ? 'st-' + r.st : ''}"><small>${['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'][pd(r.d).getDay()]} ${+r.d.slice(8)}.</small><b>${r.v === null ? '-' : nf(r.v)}</b></span>`).join('');
+  return `<div class="card">${svg}<div class="small muted" style="margin-top:6px;display:flex;gap:12px;flex-wrap:wrap"><span><i class="sw" style="background:#E08A1E"></i>${esc(C.gl)}</span><span><i class="sw" style="background:#EEF3F0;border:1px solid #CFDDD5"></i>${folge}</span></div><div class="small muted" style="margin-top:4px;display:flex;gap:12px;flex-wrap:wrap"><span><i class="sw" style="background:#DCEFE3"></i>ok</span><span><i class="sw" style="background:#FBE7CC"></i>prüfen</span><span><i class="sw" style="background:#F6D3CF"></i>nicht möglich</span><span><i class="sw" style="background:#fff;border:2px solid #1F4D36"></i>${lbl}</span></div></div>
     <div class="ausb-tab">${tab}</div><p class="small muted" style="margin:8px 2px">Einheit: ${C.u} · ${fuss || 'letzte 14 Tage und Prognose 7 Tage · Open-Meteo, Modellwerte für den Hof'}</p>`;
 }
 function ausbChart(id) {

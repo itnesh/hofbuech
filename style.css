@@ -317,7 +317,10 @@ html,body{overflow-x:hidden;max-width:100%}
 .sheet.mittel{max-height:70vh}
 .ausb-tab{display:flex;gap:4px;overflow-x:auto;margin-top:10px;padding-bottom:2px}
 .ausb-tab span{flex:1 0 46px;display:flex;flex-direction:column;align-items:center;background:#fff;border-radius:10px;padding:6px 2px;box-shadow:var(--shadow)}
-.ausb-tab span.on{outline:2px solid #2E8B62}
+.ausb-tab span.on{outline:2px solid #1F4D36}
+.ausb-tab span.st-ja{background:#DCEFE3}
+.ausb-tab span.st-pruefen{background:#FBE7CC}
+.ausb-tab span.st-nein{background:#F6D3CF}
 .ausb-tab small{font-size:9.5px;color:var(--muted)}
 .ausb-tab b{font-size:12.5px}
 .lab-mass{font-size:14px;line-height:1.5;white-space:pre-wrap}
