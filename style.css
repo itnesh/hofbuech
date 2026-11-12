@@ -367,7 +367,9 @@ details.acc.ausbk summary .pill{flex-shrink:0}
   .tabbar a.on{background:var(--greenT);color:var(--green);font-weight:650}
   .tabbar a svg{width:20px;height:20px;flex:0 0 auto}
   .sb-brand{order:-2;gap:10px!important;min-height:48px!important;margin:0 0 14px;padding:0 6px!important;color:var(--ink)!important;background:none!important;font-size:19px!important;font-weight:750!important;letter-spacing:-.02em}
-  .sb-brand img{height:38px;width:auto}
+  .sb-brand{justify-content:center!important;min-height:64px!important;margin:4px 0 16px}
+  .sb-brand span{display:none}
+  .sb-brand img{height:56px;width:auto}
   .plus{order:-1;justify-self:auto;width:100%;height:46px;margin:0 0 16px;border-radius:13px;gap:8px;font-weight:650;font-size:14px;box-shadow:0 4px 14px rgba(30,77,43,.22),inset 0 1px 0 rgba(255,255,255,.15)}
   .plus svg{width:20px;height:20px}
   .plus:hover{filter:brightness(1.08)}
