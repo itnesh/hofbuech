@@ -289,7 +289,7 @@ function render() {
   const back = $('#back');
   let title = 'Hofpuls', html = '', tab = p[0], showBack = false;
   try {
-    if (p[0] === 'start') { title = 'Hofpuls'; html = vStart(); }
+    if (p[0] === 'start') { title = DSK() ? 'Dashboard' : 'Hofpuls'; html = vStart(); }
     else if (p[0] === 'tiere') { title = 'Tiere'; html = vTiere(); }
     else if (p[0] === 'tier') { const t = tierById(p[1]); showBack = true; tab = 'tiere'; if (!t) { html = '<div class="empty">Tier nicht gefunden.</div>'; } else if (p[2] === 'laktation') { title = 'Laktationsplanung'; html = vLaktation(t); } else if (p[2] === 'nachkommen') { title = 'Nachkommen'; html = vNachkommen(t); } else if (p[2] === 'behandlungen') { title = 'Behandlungen'; html = vTierBeh(t); } else { title = t.name || t.ohrmarke; html = vTier(t); } }
     else if (p[0] === 'journale') { title = 'Mehr'; if (p[1] !== undefined) UI.jTab = p[1]; html = vJournale(); }
@@ -297,7 +297,7 @@ function render() {
     else if (p[0] === 'labiola') { title = 'Labiola'; html = vLabiola(); }
     else if (p[0] === 'notizen') { title = 'Notizen'; html = vNotizen(); }
     else if (p[0] === 'notiz') { const n = S.notizen.find(x => x.id === p[1]); title = n ? n.titel : 'Notiz'; tab = 'notizen'; showBack = true; html = n ? vNotiz(n) : '<div class="empty">Notiz nicht gefunden.</div>'; }
-    else if (p[0] === 'meldung') { title = 'Hofpuls'; tab = 'start'; html = vStart(); const m = p[1] === 'neu' ? S.meldungen.filter(x => !x.status).sort((x, y) => x.zeit < y.zeit ? 1 : -1)[0] : S.meldungen.find(x => x.id === p[1]); if (m && !UI.mOpen) { UI.mOpen = 1; setTimeout(() => { meldungSheet(m); history.replaceState(null, '', '#/start'); UI.mOpen = 0; }, 50); } }
+    else if (p[0] === 'meldung') { title = DSK() ? 'Dashboard' : 'Hofpuls'; tab = 'start'; html = vStart(); const m = p[1] === 'neu' ? S.meldungen.filter(x => !x.status).sort((x, y) => x.zeit < y.zeit ? 1 : -1)[0] : S.meldungen.find(x => x.id === p[1]); if (m && !UI.mOpen) { UI.mOpen = 1; setTimeout(() => { meldungSheet(m); history.replaceState(null, '', '#/start'); UI.mOpen = 0; }, 50); } }
     else if (p[0] === 'kalender') { title = 'Kalender'; html = vKalender(); }
     else if (p[0] === 'analyse') { title = 'Mehr'; tab = 'journale'; html = vJournale(); }
     else if (p[0] === 'einstellungen') { title = 'Einstellungen'; html = vSettings(); showBack = true; tab = 'einst'; }
