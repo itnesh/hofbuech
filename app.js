@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.27.3';
+const VERSION = '1.28.0';
 const DSK = () => window.matchMedia('(min-width:1100px)').matches; // Browser-Layout (Laptop/Monitor), Smartphone unverändert
 
 /* ---------- Helfer ---------- */
@@ -1984,9 +1984,9 @@ async function tvdImport(file) {
 let ausbLaden = false;
 function ausbDaten() {
   let w = null; try { w = JSON.parse(localStorage.getItem('hb-ausb') || 'null'); } catch (e) { }
-  if ((!w || Date.now() - w.t > 3600e3) && !ausbLaden && navigator.onLine !== false) {
+  if ((!w || !w.d || w.d.time.length < 25 || Date.now() - w.t > 3600e3) && !ausbLaden && navigator.onLine !== false) {
     ausbLaden = true;
-    fetch(`https://api.open-meteo.com/v1/forecast?latitude=${S.set.lat}&longitude=${S.set.lon}&daily=precipitation_sum,temperature_2m_mean&hourly=snow_depth,soil_temperature_6cm,soil_moisture_3_to_9cm&past_days=14&forecast_days=4&timezone=Europe%2FZurich`)
+    fetch(`https://api.open-meteo.com/v1/forecast?latitude=${S.set.lat}&longitude=${S.set.lon}&daily=precipitation_sum,temperature_2m_mean&hourly=snow_depth,soil_temperature_6cm,soil_moisture_3_to_9cm&past_days=14&forecast_days=11&timezone=Europe%2FZurich`)
       .then(r => r.json()).then(j => { if (j.daily) localStorage.setItem('hb-ausb', JSON.stringify({ t: Date.now(), d: j.daily, h: j.hourly })); ausbLaden = false; schedule(); }).catch(() => { ausbLaden = false; });
   }
   return w;
@@ -2026,7 +2026,7 @@ function ausbBew(D, H, t0, hNow) {
   // 6. Nährstoffbedarf: Tagesmittel > 5 °C an 7 aufeinanderfolgenden Tagen (Düngefenster)
   const tm = []; for (let i = iT - 6; i <= iT; i++) tm.push(D.temperature_2m_mean[i]);
   const fenster = tm.every(v => v !== null && v !== undefined && v > 5), unter = tm.filter(v => !(v > 5)).length;
-  let ab = ''; if (!fenster) for (let j = iT + 1; j < D.time.length; j++) { const f7 = D.temperature_2m_mean.slice(j - 6, j + 1); if (f7.length === 7 && f7.every(v => v !== null && v !== undefined && v > 5)) { ab = D.time[j]; break; } }
+  let ab = ''; if (!fenster) for (let j = iT + 1; j <= iT + 7 && j < D.time.length; j++) { const f7 = D.temperature_2m_mean.slice(j - 6, j + 1); if (f7.length === 7 && f7.every(v => v !== null && v !== undefined && v > 5)) { ab = D.time[j]; break; } }
   K.push({ id: 'temp', k: 'Wachsen die Pflanzen? (Düngefenster)', s: fenster ? 'ja' : 'nein', w: `Durchschnittstemperatur pro Tag, älteste zuerst: ${tm.map(v => v === null || v === undefined ? '-' : nf(v)).join(' · ')} °C`, e: fenster ? 'Alle 7 Tage im Schnitt über 5 °C: Die Pflanzen wachsen und nehmen Nährstoffe auf. Düngen ist sinnvoll.' : `Die Pflanzen wachsen noch nicht. Dafür müssen alle 7 Tage im Schnitt über 5 °C liegen, hier ${unter === 1 ? 'ist 1 Tag' : 'sind ' + unter + ' Tage'} zu kalt. Gülle und Mist jetzt nur ausbringen, wenn eine Kultur sie wirklich braucht (siehe unten).${ab ? ` Bleibt es laut Prognose so warm, ist Düngen ab ${fmtS(ab)} wieder erlaubt.` : ''}` });
   const res = typ => { const k = K.filter(x => typ === 'guelle' || !x.nurGuelle).map(x => ausbS(x, typ)); return k.includes('nein') ? 'nein' : k.includes('pruefen') ? 'pruefen' : 'ja'; };
   return { K, guelle: res('guelle'), mist: res('mist'), tag: t0 };
@@ -2046,14 +2046,14 @@ async function ausbArchivieren() {
     const gruppen = [offen.filter(f => f.datum >= grenze), offen.filter(f => f.datum < grenze)];
     for (const [i, g] of gruppen.entries()) {
       if (!g.length) continue;
-      const tage = g.map(f => f.datum).sort(), von = addDays(tage[0], -14), bis = addDays(tage[tage.length - 1], 3);
-      const ende = bis > addDays(heute, 3) ? addDays(heute, 3) : bis;
+      const tage = g.map(f => f.datum).sort(), von = addDays(tage[0], -14), bis = addDays(tage[tage.length - 1], 7);
+      const ende = bis > addDays(heute, 7) ? addDays(heute, 7) : bis;
       const w = i === 0
         ? await holen(`https://api.open-meteo.com/v1/forecast?latitude=${S.set.lat}&longitude=${S.set.lon}&start_date=${von}&end_date=${ende}&${H}`, 'Open-Meteo Prognose/Messung')
         : await holen(`https://historical-forecast-api.open-meteo.com/v1/forecast?latitude=${S.set.lat}&longitude=${S.set.lon}&start_date=${von}&end_date=${bis}&${H}`, 'Open-Meteo historisch');
       for (const f of g) {
         const hNow = f.datum === heute ? (w.H.time || []).findIndex(t => new Date(t) > new Date()) - 1 : (w.H.time || []).indexOf(f.datum + 'T12:00');
-        const RR = ausbReihen(w.D, w.H), i0 = RR.time.indexOf(addDays(f.datum, -14)), i1 = RR.time.indexOf(addDays(f.datum, 3));
+        const RR = ausbReihen(w.D, w.H), i0 = RR.time.indexOf(addDays(f.datum, -14)), i1 = RR.time.indexOf(addDays(f.datum, 7));
         const R = {}; if (i0 >= 0) for (const k of Object.keys(RR)) R[k] = RR[k].slice(i0, i1 < 0 ? undefined : i1 + 1);
         if (f.ausb && f.ausb.tag === f.datum && !f.ausb.R) { if (i0 >= 0) put('feld', { ...f, ausb: { ...f.ausb, R } }); continue; } // bestehende Bewertung bleibt, nur Diagrammdaten ergänzen
         const b = ausbBew(w.D, w.H, f.datum, hNow); if (!b) continue;
@@ -2076,7 +2076,7 @@ function ausbFaktorHtml(f, x) {
   const p = x.p, st = p && p.ok === true ? '<span class="pill green">Bestätigt</span>' : p && p.ok === false ? '<span class="pill red">Nicht ok</span>' : ausbPill(x.s);
   return `<details class="acc ausbk" data-ausbk="${x.id}"><summary><span><b>${esc(x.k)}</b><small>${esc(x.w)}${p && p.notiz ? '<br>' + esc(p.notiz) : ''}</small></span>${st}</summary><div class="acc-b">
     <p class="small muted" style="margin:0">Modell: ${AUSB_L[x.s]}. ${esc(x.e || '')}</p>
-    ${f.ausb.R ? `<div><div class="small" style="font-weight:600;margin-bottom:4px">${esc(AUSB_CH[x.id] ? AUSB_CH[x.id].t : '')}</div>${ausbChartHtml(x.id, f.ausb.R, f.ausb.tag, 'Tag', f.ausb.rueckwirkend ? 'Folgetage (gemessen)' : 'Prognose', `14 Tage vor und 3 Tage nach dem Ausbringen · ${esc(f.ausb.quelle)}`)}</div>` : '<p class="small muted" style="margin:0">Diagramm wird beim nächsten Öffnen mit Internet geladen.</p>'}
+    ${f.ausb.R ? `<div><div class="small" style="font-weight:600;margin-bottom:4px">${esc(AUSB_CH[x.id] ? AUSB_CH[x.id].t : '')}</div>${ausbChartHtml(x.id, f.ausb.R, f.ausb.tag, 'Tag', f.ausb.rueckwirkend ? 'Folgetage (gemessen)' : 'Prognose', `14 Tage vor und ${Math.max(0, f.ausb.R.time.length - 1 - f.ausb.R.time.indexOf(f.ausb.tag))} Tage nach dem Ausbringen · ${esc(f.ausb.quelle)}`)}</div>` : '<p class="small muted" style="margin:0">Diagramm wird beim nächsten Öffnen mit Internet geladen.</p>'}
     <label class="fld"><span>Kommentar (Kontrolle vor Ort)</span><textarea rows="2" data-ausbnotiz>${esc(p && p.notiz || '')}</textarea></label>
     <div class="btns"><button type="button" class="btn pri" data-act="ausbpr" data-id="${f.id}" data-k="${x.id}" data-v="ok">Geprüft, ok</button><button type="button" class="btn" data-act="ausbpr" data-id="${f.id}" data-k="${x.id}" data-v="nok">Nicht ok</button>${p ? `<button type="button" class="btn" data-act="ausbpr" data-id="${f.id}" data-k="${x.id}" data-v="del">Zurücksetzen</button>` : ''}</div>
     ${p ? `<p class="small muted" style="margin:0">${p.ok === true ? 'Bestätigt' : p.ok === false ? 'Als nicht ok markiert' : 'Kommentiert'} ${esc(new Date(p.zeit).toLocaleString('de-CH'))}${p.wer ? ' · ' + esc(p.wer) : ''}</p>` : ''}
@@ -2127,11 +2127,12 @@ function ausbChartHtml(id, R, t0, lbl = 'heute', folge = 'Prognose', fuss = '') 
   const svg = `<svg viewBox="0 0 ${W} ${H0}" width="100%" style="display:block">${g}</svg>`;
   const tab = vals.map((v, i) => ({ d: R.time[i], v })).filter(r => r.d >= addDays(t0, -3)).map(r => `<span class="${r.d === t0 ? 'on' : ''}"><small>${['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'][pd(r.d).getDay()]} ${+r.d.slice(8)}.</small><b>${r.v === null ? '-' : nf(r.v)}</b></span>`).join('');
   return `<div class="card">${svg}<div class="small muted" style="margin-top:6px;display:flex;gap:12px;flex-wrap:wrap"><span><i class="sw" style="background:#E08A1E"></i>${esc(C.gl)}</span><span><i class="sw" style="background:#EEF3F0;border:1px solid #CFDDD5"></i>${folge}</span></div></div>
-    <div class="ausb-tab">${tab}</div><p class="small muted" style="margin:8px 2px">Einheit: ${C.u} · ${fuss || 'letzte 14 Tage und Prognose 3 Tage · Open-Meteo, Modellwerte für den Hof'}</p>`;
+    <div class="ausb-tab">${tab}</div><p class="small muted" style="margin:8px 2px">Einheit: ${C.u} · ${fuss || 'letzte 14 Tage und Prognose 7 Tage · Open-Meteo, Modellwerte für den Hof'}</p>`;
 }
 function ausbChart(id) {
   const w = ausbDaten(); if (!w || !w.d || !AUSB_CH[id]) return;
-  openSheet(AUSB_CH[id].t, ausbChartHtml(id, ausbReihen(w.d, w.h), today()));
+  const R = ausbReihen(w.d, w.h), i1 = R.time.indexOf(addDays(today(), 7)); if (i1 >= 0) for (const k of Object.keys(R)) R[k] = R[k].slice(0, i1 + 1);
+  openSheet(AUSB_CH[id].t, ausbChartHtml(id, R, today()));
   const sh = $('.sheet'); if (sh) sh.classList.add('mittel');
 }
 const AUSB_L = { ja: 'Ja', nein: 'Nein', pruefen: 'Prüfen' }, AUSB_C = { ja: 'ok', nein: 'red', pruefen: 'warn' };
@@ -2147,7 +2148,7 @@ function anaAusbringen() {
   const z = new Date(b.stand);
   return `<div class="stats"><div class="stats-row two"><span class="stats-h">Heute</span><span class="stat ausb ${AUSB_C[b.guelle]}"><b>${AUSB_L[b.guelle]}</b><span>Gülle</span></span><span class="stat ausb ${AUSB_C[b.mist]}"><b>${AUSB_L[b.mist]}</b><span>Mist</span></span></div></div>
   <div class="sec-t">Prognose</div>
-  <div class="list">${[1, 2, 3].map(o => ausbBewertung(o)).filter(Boolean).map(p => `<div class="row"><div class="main"><span class="t">${['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'][pd(p.tag).getDay()]} ${fmt(p.tag)}</span><span class="s wrap">${esc(p.K.filter(x => x.s !== 'ja').map(x => x.k + (x.s === 'pruefen' ? ' (prüfen)' : '')).join(', ') || 'keine Einschränkung')}</span></div><span class="r">Gülle ${pill(p.guelle)}<br>Mist ${pill(p.mist)}</span></div>`).join('')}</div>
+  <div class="list">${[1, 2, 3, 4, 5, 6, 7].map(o => ausbBewertung(o)).filter(Boolean).map(p => `<div class="row"><div class="main"><span class="t">${['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'][pd(p.tag).getDay()]} ${fmt(p.tag)}</span><span class="s wrap">${esc(p.K.filter(x => x.s !== 'ja').map(x => x.k + (x.s === 'pruefen' ? ' (prüfen)' : '')).join(', ') || 'keine Einschränkung')}</span></div><span class="r">Gülle ${pill(p.guelle)}<br>Mist ${pill(p.mist)}</span></div>`).join('')}</div>
   <div class="sec-t">Kriterien heute <span class="small muted" style="text-transform:none;letter-spacing:0;font-weight:400">· antippen für Verlauf</span></div>
   <div class="list">${b.K.map(x => `<button type="button" class="row" data-act="ausbchart" data-id="${x.id}"><div class="main"><span class="t">${esc(x.k)}${x.nurGuelle ? ' <span class="small muted">(nur Gülle)</span>' : ''}</span><span class="s wrap">${esc(x.w)}<br>${esc(x.e)}</span></div><span class="r">${ausbS(x, 'mist') !== x.s ? `Gülle ${pill(x.s)}<br>Mist ${pill(ausbS(x, 'mist'))}` : pill(x.s)}</span></button>`).join('')}</div>
   <p class="small muted" style="margin:8px 4px">Grundlage: Checkliste "Ausbringen von Gülle und Mist im Winter", ALN Kanton Zürich / Strickhof. Wetterdaten Open-Meteo, Stand ${String(z.getHours()).padStart(2, '0')}:${String(z.getMinutes()).padStart(2, '0')} Uhr.</p>`;
