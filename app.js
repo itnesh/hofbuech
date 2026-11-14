@@ -2472,13 +2472,14 @@ $('#tabbar').addEventListener('click', e => {
 });
 $('#plus').addEventListener('click', () => sheetOpen ? closeSheet() : plusMenu());
 function vollbild(an) {
-  document.body.classList.toggle('vollbild', an);
+  document.body.classList.toggle('vollbild', an); try { sessionStorage.setItem('hb-vb', an ? '1' : ''); } catch (e) { }
   const fs = document.fullscreenElement;
   if (an && !fs && document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => { });
   if (!an && fs && document.exitFullscreen) document.exitFullscreen().catch(() => { });
   $('#vollbild').setAttribute('aria-label', an ? 'Vollbild beenden' : 'Vollbild'); $('#vollbild').title = an ? 'Vollbild beenden (Esc)' : 'Vollbild';
   setTimeout(render, 60);
 }
+try { if (sessionStorage.getItem('hb-vb') === '1') document.body.classList.add('vollbild'); } catch (e) { }
 $('#vollbild').addEventListener('click', () => vollbild(!document.body.classList.contains('vollbild')));
 document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && document.body.classList.contains('vollbild')) vollbild(false); });
 $('#back').addEventListener('click', () => history.length > 1 ? history.back() : (location.hash = '#/start'));
@@ -2511,6 +2512,13 @@ const MEIN_V = (document.querySelector('script[src*="app.js"]') || {}).src || ''
 async function updateCheck() { try { const t = await (await fetch('index.html', { cache: 'no-store' })).text(); const m = t.match(/app\.js\?v=(\d+)/); if (m && MEIN_V && !MEIN_V.includes('v=' + m[1]) && !document.querySelector('.sheet.show [data-dirty="1"]')) { if (navigator.serviceWorker) { const r = await navigator.serviceWorker.getRegistration(); if (r) await r.update().catch(() => { }); } location.reload(); } } catch (e) { } }
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') updateCheck(); });
 setInterval(updateCheck, 10 * 60e3);
+// Dashboard läuft offen (Monitor/Vollbild): Tageswechsel, Monatswechsel, Sensoren und Wetter automatisch nachführen
+let TAG_AKT = today();
+setInterval(() => {
+  const t = today();
+  if (t !== TAG_AKT) { if (UI.kalMonat === TAG_AKT.slice(0, 7)) UI.kalMonat = t.slice(0, 7); if (UI.kalTag && UI.kalTag < t.slice(0, 7)) UI.kalTag = ''; TAG_AKT = t; schedule(); }
+  if (document.body.classList.contains('dash-fix') && document.visibilityState === 'visible') { sensorenLaden(); schedule(); }
+}, 60e3);
 if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => { }); navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.nav) { const h = e.data.nav.split('#')[1]; if (h !== undefined && location.hash !== '#' + h) location.hash = h; else render(); } }); }
 window.matchMedia('(min-width:1100px)').addEventListener('change', () => schedule());
 boot();
