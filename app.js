@@ -1516,10 +1516,12 @@ function lockScroll(on) {
   if (on && !b.classList.contains('lock')) { lockY = window.scrollY; b.style.top = -lockY + 'px'; b.classList.add('lock'); }
   if (!on && b.classList.contains('lock')) { b.classList.remove('lock'); b.style.top = ''; window.scrollTo(0, lockY); }
 }
-function openSheet(title, body, { onSave, saveLabel = 'Sichern', onDelete } = {}) {
+function openSheet(title, body, { onSave, saveLabel = 'Sichern', onDelete, onlyClose } = {}) {
   closeSheet(true);
   const wrap = $('#sheets');
-  wrap.innerHTML = `<div class="backdrop"></div><div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="sheet-h"><button type="button" data-x class="${onSave ? '' : 'zurueck'}">${onSave ? 'Abbrechen' : '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>Zurück'}</button><b>${esc(title)}</b>${onSave ? '' : '<button type="button" data-x class="xrund" aria-label="Schliessen"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>'}${onSave ? `<button type="button" class="save" data-s>${saveLabel}</button>` : '<span style="width:70px"></span>'}</div><div class="sheet-b">${body}${onDelete ? '<button type="button" class="btn danger block" data-d style="margin-top:18px">Löschen</button>' : ''}</div></div>`;
+  const xBtn = '<button type="button" data-x class="xrund" aria-label="Schliessen"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>';
+  const kopf = onlyClose ? `<span style="width:36px;flex:0 0 36px"></span><b>${esc(title)}</b>${xBtn}` : null;
+  wrap.innerHTML = `<div class="backdrop"></div><div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="sheet-h">${kopf || `<button type="button" data-x class="${onSave ? '' : 'zurueck'}">${onSave ? 'Abbrechen' : '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>Zurück'}</button><b>${esc(title)}</b>${onSave ? '' : '<button type="button" data-x class="xrund" aria-label="Schliessen"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>'}${onSave ? `<button type="button" class="save" data-s>${saveLabel}</button>` : '<span style="width:70px"></span>'}`}</div><div class="sheet-b">${body}${onDelete ? '<button type="button" class="btn danger block" data-d style="margin-top:18px">Löschen</button>' : ''}</div></div>`;
   const sh = $('.sheet', wrap), bd = $('.backdrop', wrap);
   requestAnimationFrame(() => { sh.classList.add('show'); bd.classList.add('show'); });
   bd.onclick = () => closeSheet(); $$('[data-x]', sh).forEach(b => b.onclick = () => closeSheet());
@@ -1545,7 +1547,7 @@ function plusMenu() {
   openSheet('Neuer Eintrag', `<div class="sec-t" style="margin-top:0">Tiere${tt ? ' · ' + esc(tt.name || tt.ohrmarke) : ''}</div><div class="actgrid">${a('geburt', 'Geburt')}${a('brunst', 'Brunst')}${a('besamung', 'Besamung')}${a('behandlung', 'Behandlung')}${a('auslauf', 'Weide / Stall')}${a('zugang', 'Zugang')}${a('abgang', 'Abgang')}</div>
   <div class="sec-t">Wiesenjournal</div><div class="actgrid">${a('duengung', 'Düngung')}${a('ernte', 'Ernte')}</div>
   <div class="sec-t">Lager</div><div class="actgrid">${a('verbrauch', 'Verbrauch')}${a('kauf', 'Kauf')}${a('inventur', 'Inventur')}</div>
-  <div class="sec-t">Labiola</div><div class="actgrid">${a('aufgabe', 'Pendenz')}</div>`);
+  <div class="sec-t">Labiola</div><div class="actgrid">${a('aufgabe', 'Pendenz')}</div>`, { onlyClose: true });
 }
 function fieldHtml(f, v) {
   const val = v[f.k] ?? '';
