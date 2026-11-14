@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.29.0';
+const VERSION = '1.30.0';
 const DSK = () => window.matchMedia('(min-width:1100px)').matches; // Browser-Layout (Laptop/Monitor), Smartphone unverändert
 
 /* ---------- Helfer ---------- */
@@ -1591,7 +1591,7 @@ function openForm(key, rec = null, pre = {}) {
   if (key === 'tiere' || key === 'zugang') { if (!rec) { v.geburt = ''; v.zugang = ''; } }
   if (key === 'auslauf') { v.bis = ''; if (rec) { const nx = sortedAuslauf().find(a => a.datum > rec.datum); if (nx) v.bis = addDays(nx.datum, -1); } }
   const body = `${def.hint ? `<div class="note blue small" style="margin-bottom:14px">${def.hint}</div>` : ''}<form class="form" data-form>${def.fields.map(f => `<div data-fk="${f.k}">${fieldHtml(f, v)}</div>`).join('')}<div class="calc" data-calc></div>
-  ${def.more && !isEdit ? '<button type="button" class="btn block" data-more>Sichern + nächstes Tier</button>' : ''}</form>${key === 'duengung' && rec ? ausbSnapHtml(rec) : ''}${rec && rec.typ === 'brunst' && meldOf(rec).length ? `<div class="sec-t">Kamera-Videos</div>${meldStrip(meldOf(rec))}` : ''}`;
+  ${def.more && !isEdit ? '<button type="button" class="btn block" data-more>Sichern + nächstes Tier</button>' : ''}</form>${key === 'duengung' ? (rec ? ausbSnapHtml(rec) : '<div data-ausbneu></div>') : ''}${rec && rec.typ === 'brunst' && meldOf(rec).length ? `<div class="sec-t">Kamera-Videos</div>${meldStrip(meldOf(rec))}` : ''}`;
   const sh = openSheet(def.t, body, {
     onSave: () => doSave(false),
     onDelete: isEdit ? () => {
@@ -1663,6 +1663,22 @@ function openForm(key, rec = null, pre = {}) {
     $(`[data-signclear="${k}"]`, form).addEventListener('click', () => { ctx.clearRect(0, 0, cv.width, cv.height); inp.value = ''; form.dataset.dirty = '1'; });
   });
   upd();
+  // Neue Düngung: Tagesbetrachtung sofort zeigen (prüfen/kommentieren vor dem Sichern)
+  if (key === 'duengung' && !isEdit) {
+    AUSB_DRAFT = { id: uid(), typ: 'duengung', was: '', datum: '', ausb: null };
+    const box = $('[data-ausbneu]', sh); let versuche = 0;
+    const neu = () => {
+      const o = read(), D = AUSB_DRAFT; if (!D || !box.isConnected) return;
+      const P = D.ausb && D.ausb.tag === o.datum ? D.ausb.pruef : null;
+      D.was = o.was || 'Gülle'; D.datum = o.datum; D.ausb = o.datum ? ausbSnapNeu(o.datum, P) : null;
+      if (!D.ausb && o.datum && versuche++ < 15 && o.datum >= addDays(today(), -14) && o.datum <= addDays(today(), 10)) setTimeout(neu, 1500);
+      const offen = $$('[data-ausbk][open]', box).map(d => d.dataset.ausbk);
+      box.innerHTML = !o.datum ? '' : D.ausb ? ausbSnapHtml(D) : '<div class="note small" style="margin-top:12px">' + (navigator.onLine === false ? 'Offline: Tagesbetrachtung wird nach dem Sichern mit Internet berechnet.' : o.datum < addDays(today(), -14) ? 'Datum älter als 14 Tage: Tagesbetrachtung wird nach dem Sichern mit gemessenen Wetterdaten berechnet.' : o.datum > addDays(today(), 10) ? 'Datum zu weit in der Zukunft: keine Prognose verfügbar.' : 'Wetterdaten werden geladen …') + '</div>';
+      offen.forEach(k => { const d = $(`[data-ausbk="${k}"]`, box); if (d) d.open = true; });
+    };
+    AUSB_DRAFT.render = neu;
+    form.addEventListener('input', neu); form.addEventListener('change', neu); neu();
+  }
   function doSave(more) {
     const o = read();
     // Pflichtfelder
@@ -1676,6 +1692,7 @@ function openForm(key, rec = null, pre = {}) {
     def.fields.forEach(f => { if (f.show && !f.show(o)) o[f.k] = ''; });
     if (JSON.stringify(o).length > 950000) return toast('Zu viele/grosse Bilder (max. ca. 1 MB pro Notiz)');
     if (def.prep) def.prep(o);
+    if (key === 'duengung' && !isEdit && AUSB_DRAFT) { o.id = AUSB_DRAFT.id; const a = ausbSnapNeu(o.datum, AUSB_DRAFT.ausb && AUSB_DRAFT.ausb.tag === o.datum ? AUSB_DRAFT.ausb.pruef : null); if (a) o.ausb = a; AUSB_DRAFT = null; }
     if (Array.isArray(o.dokIds)) {
       const bez = isEdit ? rec.id : (o.id = o.id || uid());
       o.dokIds.forEach(d => { if (neuDok.has(d)) { const x = neuDok.get(d); DOKC.set(d, x); put('dokumente', { id: d, ...x, bezug: def.coll, refId: bez, datum: today() }); } });
@@ -2083,6 +2100,17 @@ function ausbFaktorHtml(f, x) {
     ${p ? `<p class="small muted" style="margin:0">${p.ok === true ? 'Bestätigt' : p.ok === false ? 'Als nicht ok markiert' : 'Kommentiert'} ${esc(new Date(p.zeit).toLocaleString('de-CH'))}${p.wer ? ' · ' + esc(p.wer) : ''}</p>` : ''}
   </div></details>`;
 }
+let AUSB_DRAFT = null;
+// Tagesbetrachtung aus den geladenen Wetterdaten (Cache), wie sie beim Sichern gespeichert wird
+function ausbSnapNeu(tag, pruef) {
+  const w = ausbDaten(); if (!w || !w.d) return null;
+  const D = w.d, H = w.h || {}, heute = today();
+  const hNow = !H.time ? -1 : tag === heute ? H.time.findIndex(t => new Date(t) > new Date()) - 1 : H.time.indexOf(tag + 'T12:00');
+  const b = ausbBew(D, H, tag, hNow); if (!b) return null;
+  const RR = ausbReihen(D, H), i0 = Math.max(0, RR.time.indexOf(addDays(tag, -14))), i1 = RR.time.indexOf(addDays(tag, 7));
+  const R = {}; for (const k of Object.keys(RR)) R[k] = RR[k].slice(i0, i1 < 0 ? undefined : i1 + 1);
+  return { tag, guelle: b.guelle, mist: b.mist, K: b.K.map(({ id, k, s, w: wert, e, nurGuelle }) => ({ id, k, s, w: wert, e, nurGuelle: !!nurGuelle })), quelle: 'Open-Meteo Prognose/Messung', rueckwirkend: tag !== heute, erstellt: Date.now(), R, ...(pruef && Object.keys(pruef).length ? { pruef } : {}) };
+}
 function ausbSnapHtml(f) {
   const a = f.ausb; if (!a) return f.typ === 'duengung' ? '<div class="note small" style="margin-top:12px">Tagesbetrachtung wird beim nächsten Öffnen mit Internet gespeichert.</div>' : '';
   const E = ausbEff(f);
@@ -2285,8 +2313,10 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 document.addEventListener('change', e => {
   const ta = e.target.closest && e.target.closest('[data-ausbnotiz]'); if (!ta) return;
   const box = ta.closest('[data-ausbk]'), snap = ta.closest('[data-ausbsnap]'); if (!box || !snap) return;
-  const f = S.feld.find(x => x.id === snap.dataset.ausbsnap); if (!f || !f.ausb) return;
+  const dr = AUSB_DRAFT && AUSB_DRAFT.id === snap.dataset.ausbsnap;
+  const f = dr ? AUSB_DRAFT : S.feld.find(x => x.id === snap.dataset.ausbsnap); if (!f || !f.ausb) return;
   const k = box.dataset.ausbk, P = { ...(f.ausb.pruef || {}) }, notiz = ta.value.trim();
+  if (dr) { if (P[k]) P[k] = { ...P[k], notiz }; else if (notiz) P[k] = { ok: null, notiz, zeit: Date.now(), wer: USER ? (USER.displayName || USER.email || '') : '' }; else return; f.ausb = { ...f.ausb, pruef: P }; return; }
   if (P[k]) P[k] = { ...P[k], notiz }; else if (notiz) P[k] = { ok: null, notiz, zeit: Date.now(), wer: USER ? (USER.displayName || USER.email || '') : '' }; else return;
   put('feld', { ...f, ausb: { ...f.ausb, pruef: P } }); toast('Kommentar gespeichert');
 });
@@ -2330,10 +2360,12 @@ document.addEventListener('click', e => {
   const a = el.dataset.act;
   if (a === 'form') { e.preventDefault(); openForm(el.dataset.f, null, { tier: ['zugang', 'auslauf', 'ernte', 'kauf', 'verbrauch', 'inventur', 'duengung'].includes(el.dataset.f) ? '' : el.dataset.tier }); }
   else if (a === 'ausbpr') {
-    const f = S.feld.find(x => x.id === el.dataset.id); if (!f || !f.ausb) return;
+    const dr = AUSB_DRAFT && AUSB_DRAFT.id === el.dataset.id;
+    const f = dr ? AUSB_DRAFT : S.feld.find(x => x.id === el.dataset.id); if (!f || !f.ausb) return;
     const k = el.dataset.k, v = el.dataset.v, box = el.closest('[data-ausbk]'), notiz = box ? box.querySelector('[data-ausbnotiz]').value.trim() : '';
     const P = { ...(f.ausb.pruef || {}) };
     if (v === 'del') delete P[k]; else P[k] = { ok: v === 'ok', notiz, zeit: Date.now(), wer: USER ? (USER.displayName || USER.email || '') : '' };
+    if (dr) { f.ausb = { ...f.ausb, pruef: P }; const snap = document.querySelector(`[data-ausbsnap="${f.id}"]`); if (snap) { snap.outerHTML = ausbSnapHtml(f); const d = document.querySelector(`[data-ausbsnap="${f.id}"] [data-ausbk="${k}"]`); if (d && v === 'del') d.open = true; } toast(v === 'del' ? 'Zurückgesetzt' : v === 'ok' ? 'Geprüft, ok (wird mit Eintrag gesichert)' : 'Nicht ok (wird mit Eintrag gesichert)'); return; }
     const nf2 = put('feld', { ...f, ausb: { ...f.ausb, pruef: P } });
     const snap = document.querySelector(`[data-ausbsnap="${f.id}"]`); if (snap) { snap.outerHTML = ausbSnapHtml(nf2); if (v === 'del') { const d = document.querySelector(`[data-ausbsnap="${f.id}"] [data-ausbk="${k}"]`); if (d) d.open = true; } }
     toast(v === 'del' ? 'Zurückgesetzt' : v === 'ok' ? 'Geprüft, ok gespeichert' : 'Nicht ok gespeichert');
