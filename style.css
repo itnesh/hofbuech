@@ -531,3 +531,5 @@ video#mvid{cursor:pointer}
 
 /* App-Farbe präsenter: Seitentitel in Grün */
 .top h1{color:var(--green)}
+/* Logo und Name untereinander wie Hofverkauf/Datenscheune */
+@media (min-width:1100px){.tabbar .sb-brand{flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:4px!important;min-height:64px!important;margin:4px 0 16px!important;padding:0!important}}
