@@ -479,7 +479,7 @@ function startKal() {
   const byDay = {};
   kalItems(first, last).forEach(x => (byDay[x.d] = byDay[x.d] || []).push(x));
   const tag = UI.kalTag && UI.kalTag.startsWith(UI.kalMonat) ? UI.kalTag : '';
-  const ohne = x => x.cat !== 'auslauf'; // ohne Weide / Auslaufjournal
+  const ohne = x => x.cat !== 'auslauf' && x.k !== 'Erledigt' && x.k !== 'Kamera' && x.ft !== 'duengung'; // ohne Weide/Auslauf, erledigte Labiola-Punkte, Kamera, Düngung
   const show = (tag ? (byDay[tag] || []) : kalItems(addDays(t, -28), addDays(t, 28))).filter(ohne);
   let rows = '', hm = false;
   for (const x of show) {
@@ -789,7 +789,7 @@ function kalItems(from, to) {
   const it = [];
   for (const e of S.ereignisse) { const [a, b] = evLabel(e); it.push({ d: e.datum, k: a, n: tName(e.tierId), s: b, id: e.tierId, c: e.typ === 'abkalbung' ? 'green' : e.typ === 'besamung' ? 'blue' : 'warn', cat: e.typ === 'abkalbung' ? 'abkalbung' : 'zucht' }); }
   for (const b of S.behandlungen) it.push({ d: b.datum, k: 'Behandlung', n: tierListe(b.tierIds), s: [b.medikament, b.grund, b.menge, b.freiAb ? 'frei ab ' + fmtS(b.freiAb) : ''].filter(Boolean).join(' · '), c: 'red', link: '#/journale', cat: 'behandlung' });
-  for (const f of S.feld) if (FELD[f.typ]) it.push({ d: f.datum, k: fL(f), n: fSub(f), s: [num(f.menge) ? nf(num(f.menge)) + ' ' + fE(f) : '', f.notiz].filter(Boolean).join(' · '), c: 'grey', cat: 'feld' });
+  for (const f of S.feld) if (FELD[f.typ]) it.push({ d: f.datum, k: fL(f), n: fSub(f), s: [num(f.menge) ? nf(num(f.menge)) + ' ' + fE(f) : '', f.notiz].filter(Boolean).join(' · '), c: 'grey', cat: 'feld', ft: f.typ });
   for (const a of S.auslauf) it.push({ d: a.datum, k: 'Herde', n: ortTxt(a), s: a.notiz || '', c: 'grey', cat: 'auslauf' });
   for (const t of S.tiere) { if (t.geburt && t.zugang === t.geburt) continue; if (t.zugang) it.push({ d: t.zugang, k: 'Zugang', n: t.name || t.ohrmarke, id: t.id, c: 'grey', cat: 'tiere' }); }
   for (const t of S.tiere) if (t.abgang) it.push({ d: t.abgang, k: 'Abgang', n: t.name || t.ohrmarke, s: t.abgangGrund || '', id: t.id, c: 'grey', cat: 'tiere' });
