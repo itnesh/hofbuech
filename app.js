@@ -479,15 +479,15 @@ function startKal() {
   const byDay = {};
   kalItems(first, last).forEach(x => (byDay[x.d] = byDay[x.d] || []).push(x));
   const tag = UI.kalTag && UI.kalTag.startsWith(UI.kalMonat) ? UI.kalTag : '';
-  const ohne = x => x.cat !== 'auslauf' && x.k !== 'Erledigt' && x.k !== 'Kamera' && x.ft !== 'duengung'; // ohne Weide/Auslauf, erledigte Labiola-Punkte, Kamera, Düngung
+  const ohne = x => x.cat !== 'auslauf' && x.k !== 'Erledigt' && x.k !== 'Labiola-Schnitt' && x.k !== 'Kamera' && x.ft !== 'duengung'; // ohne Weide/Auslauf, erledigte Labiola-Punkte, Kamera, Düngung
   const show = (tag ? (byDay[tag] || []) : kalItems(addDays(t, -28), addDays(t, 28))).filter(ohne);
   let rows = '', hm = false;
   for (const x of show) {
-    if (!tag && !hm && x.d >= t) { rows += '<div class="kal-heute">Heute</div>'; hm = true; }
+    if (!tag && !hm && x.d >= t) { rows += '<div class="kal-heute" title="Heute"></div>'; hm = true; }
     const r = itemRow(x, false); rows += !tag && x.d < t ? r.replace('class="row one"', 'class="row one alt"') : r;
   }
-  if (!tag && !hm) rows += '<div class="kal-heute">Heute</div>';
-  return `<div class="sec-t" style="margin-top:8px">Kalender <a href="#/kalender" style="font-weight:500;text-transform:none;letter-spacing:0;float:right">Kalender öffnen ›</a></div>
+  if (!tag && !hm) rows += '<div class="kal-heute" title="Heute"></div>';
+  return `<div class="sec-t kal-kopf" style="margin-top:8px">Kalender <a href="#/kalender" style="font-weight:500;text-transform:none;letter-spacing:0;float:right">Kalender öffnen ›</a></div>
   ${kalGrid(byDay)}
   <div class="sec-t">${tag ? fmt(tag) + ' <a href="#/start" data-act="kaltag" data-v="" style="font-weight:500;text-transform:none;letter-spacing:0">4 Wochen zurück / voraus</a>' : '4 Wochen zurück / 4 Wochen voraus'}</div>
   <div class="list kal-liste">${rows || '<div class="empty">Keine Einträge.</div>'}</div>`;

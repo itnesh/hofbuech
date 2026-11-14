@@ -534,7 +534,7 @@ video#mvid{cursor:pointer}
 /* Logo und Name untereinander wie Hofverkauf/Datenscheune */
 @media (min-width:1100px){.tabbar .sb-brand{flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:4px!important;min-height:64px!important;margin:4px 0 16px!important;padding:0!important}}
 /* v1.23: Dashboard ohne Scrollen, Vollbild, Wetter kompakt */
-.kal-heute{font-size:10.5px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.06em;padding:6px 14px 4px;border-top:2px solid var(--green);background:var(--card)}
+.kal-heute{height:0;border-top:2px solid var(--green)}
 .row.alt{opacity:.62}
 @media (min-width:1100px){
   .vb-btn{align-items:center;gap:6px;width:auto!important;padding:0 12px!important;height:36px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--green);font:inherit;font-size:13px;font-weight:600;cursor:pointer}
@@ -575,4 +575,8 @@ video#mvid{cursor:pointer}
   body.dash-fix .dsk-r .kal{padding:6px 10px 8px}
   body.dash-fix .dsk-r .kal-w span{padding:2px 0}
   body.dash-fix .kal-liste{flex:1 1 0;min-height:0;overflow:auto;position:relative}
+}
+@media (min-width:1100px){
+  body.vollbild .dsk-r .kal,body.vollbild .dsk-r .kal-kopf{display:none!important}
+  body.vollbild .dsk-r>.sec-t:not(.kal-kopf){margin-top:0}
 }
