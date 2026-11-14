@@ -533,3 +533,46 @@ video#mvid{cursor:pointer}
 .top h1{color:var(--green)}
 /* Logo und Name untereinander wie Hofverkauf/Datenscheune */
 @media (min-width:1100px){.tabbar .sb-brand{flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:4px!important;min-height:64px!important;margin:4px 0 16px!important;padding:0!important}}
+/* v1.23: Dashboard ohne Scrollen, Vollbild, Wetter kompakt */
+.kal-heute{font-size:10.5px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.06em;padding:6px 14px 4px;border-top:2px solid var(--green);background:var(--card)}
+.row.alt{opacity:.62}
+@media (min-width:1100px){
+  .vb-btn{align-items:center;gap:6px;width:auto!important;padding:0 12px!important;height:36px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--green);font:inherit;font-size:13px;font-weight:600;cursor:pointer}
+  .vb-btn:hover{background:var(--greenT)}
+  .vb-btn.hidden{display:none!important}
+  .vb-btn .vb-aus,body.vollbild .vb-btn .vb-an{display:none}
+  body.vollbild .vb-btn .vb-aus{display:block}
+  body.vollbild .vb-t{font-size:0}body.vollbild .vb-t::after{content:"Beenden";font-size:13px}
+  /* Vollbild: Navigation weg, ganze Breite */
+  body.vollbild{--sb:0px;--gut:24px}
+  body.vollbild .tabbar{display:none!important}
+  /* Wetter kompakt: Tag, Symbol, Temperatur, Regen */
+  .wetter-g{gap:5px;margin:2px 0 10px}
+  .wg{padding:5px 2px 6px;gap:0}
+  .wg svg{width:24px;height:24px;margin:1px 0}
+  .wg b{font-size:14.5px}
+  .wg small{font-size:10.5px;line-height:1.3}
+  /* Dashboard passt in den Bildschirm */
+  body.dash-fix main{display:flex;flex-direction:column;height:calc(100dvh - 70px);box-sizing:border-box;padding-bottom:16px;overflow:hidden}
+  body.dash-fix main>*{flex:0 0 auto}
+  body.dash-fix .dsk-start{flex:1 1 0;min-height:0;align-items:stretch;gap:24px}
+  body.dash-fix .dsk-l{display:flex;flex-direction:column;min-height:0;overflow:auto}
+  body.dash-fix .dsk-l>*{flex:0 0 auto}
+  body.dash-fix .dsk-l .stats{margin-top:10px}
+  body.dash-fix .dsk-l .sec-t{margin-top:14px}
+  body.dash-fix .dash{flex:1 1 0;min-height:260px;grid-auto-rows:minmax(0,1fr);gap:10px}
+  body.dash-fix .dash-c{display:flex;flex-direction:column;min-height:0;overflow:hidden;padding:10px 12px 8px}
+  body.dash-fix .dash-c>*{flex:0 0 auto}
+  body.dash-fix .dash-c .chart{flex:1 1 0;min-height:0;display:flex;flex-direction:column;align-items:center}
+  body.dash-fix .dash-c .chart .tip{align-self:stretch}
+  body.dash-fix .dash-c .chart svg{flex:1 1 0;min-height:0;height:100%;width:auto;max-width:100%}
+  body.dash-fix .dash-c>svg{flex:1 1 0;min-height:0;width:auto;max-width:100%;align-self:center}
+  body.dash-fix .dsk-r{position:static;display:flex;flex-direction:column;min-height:0}
+  body.dash-fix .dsk-r>*{flex:0 0 auto}
+  body.dash-fix .dsk-r .sec-t{margin-top:12px}
+  body.dash-fix .dsk-r .kd{height:34px;min-height:34px;aspect-ratio:auto;gap:1px}
+  body.dash-fix .dsk-r .kd.today span{width:24px;height:24px}
+  body.dash-fix .dsk-r .kal{padding:6px 10px 8px}
+  body.dash-fix .dsk-r .kal-w span{padding:2px 0}
+  body.dash-fix .kal-liste{flex:1 1 0;min-height:0;overflow:auto;position:relative}
+}

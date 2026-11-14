@@ -308,9 +308,13 @@ function render() {
   $('#hlogo').classList.toggle('hidden', DSK() || showBack);
   back.classList.toggle('hidden', !showBack);
   $$('#tabbar a').forEach(a => a.classList.toggle('on', a.dataset.tab === tab));
-  const sx = window.scrollY, same = view.dataset.route === h;
+  const sx = window.scrollY, same = view.dataset.route === h, kl = $('.kal-liste'), ks = same && kl ? kl.scrollTop : null;
+  document.body.classList.toggle('dash-fix', tab === 'start' && !showBack);
+  if (document.body.classList.contains('vollbild') && !(tab === 'start' && !showBack)) setTimeout(() => vollbild(false), 0); // Vollbild nur für das Dashboard
+  $('#vollbild').classList.toggle('hidden', !(tab === 'start' && !showBack));
   view.innerHTML = errBanner() + html; view.dataset.route = h;
   if (same) window.scrollTo(0, sx);
+  const kn = $('.kal-liste'); if (kn) { const hh = kn.querySelector('.kal-heute'); kn.scrollTop = ks !== null ? ks : hh ? hh.offsetTop : 0; }
   afterRender();
 }
 let leafletP = null, karteMap = null;
@@ -373,7 +377,7 @@ function kpiBlock(k, link = false, L = null) {
     : `<a class="stat" href="#/tiere" data-act="filtlink" data-v="${key}"><b>${k[key]}</b><span>${label}</span></a>`;
   const ls = (v, l) => `<a class="stat ${v <= 5 ? 'low' : ''}" href="#/journale/lager"><b>${nf(v)}</b><span>${l}</span></a>`;
   const sw = id => { const x = S.sensoren.find(s => s.id === id), p = x && x.last ? x.last.prozent : null; return `<a class="stat ${p !== null && p !== undefined && p < 30 ? 'low' : ''} ${SENS.laedt ? 'laedt' : ''}" href="#/journale/${id}"><b>${SENS.laedt ? '<i class="ld"></i>' : p === null || p === undefined ? '-' : Math.round(p) + '%'}${!SENS.laedt && x && x.fehlerSeit ? '<i class="fx" title="Sensor liefert Fehlmessungen">!</i>' : ''}</b><span>${id === 'wasserstand' ? 'Wasserstand' : 'Tränkefass'}</span></a>`; };
-  if (L) return `<div class="stats"><div class="stats-row"><span class="stats-h">Lager</span>${ls(L.heu, 'Heu')}${ls(L.silo, 'Silage')}${ls(L.stroh, 'Stroh')}</div><div class="stats-row two"><span class="stats-h">Wasser</span>${sw('wasserstand')}${sw('traenkefass')}</div>${wqKpi()}</div>`;
+  if (L) return `<div class="stats"><div class="stats-row"><span class="stats-h">Lager</span>${ls(L.heu, 'Heu')}${ls(L.silo, 'Silage')}${ls(L.stroh, 'Stroh')}</div><div class="stats-row"><span class="stats-h">Wasser</span>${sw('wasserstand')}${sw('traenkefass')}<span></span></div>${wqKpi()}</div>`;
   return `<div class="stats"><div class="stats-row"><span class="stats-h">Bestand</span>${c('Kalb', 'Kälber')}${c('Rind', 'Rinder')}${c('Kuh', 'Kühe')}</div></div>`;
 }
 function wqKpi() {
@@ -459,7 +463,7 @@ function dashChart(k) {
 }
 function dashCharts() {
   const ks = (Array.isArray(S.set.startCharts) ? S.set.startCharts : DASH_STD).filter(k => DASH[k]);
-  CW_OVR = 320; let h = '';
+  CW_OVR = 400; let h = '';
   try { h = ks.map(k => { try { return dashChart(k); } catch (e) { return ''; } }).join(''); } finally { CW_OVR = 0; }
   return `<div class="sec-t">Diagramme <button type="button" class="lnk" data-act="dashcfg">anpassen</button></div>${ks.length ? `<div class="dash">${h}</div>` : '<div class="empty">Keine Diagramme gewählt.</div>'}`;
 }
@@ -472,15 +476,21 @@ function dashCfg() {
 function startKal() {
   const [Y, M] = UI.kalMonat.split('-').map(Number), nDays = new Date(Y, M, 0).getDate();
   const first = `${UI.kalMonat}-01`, last = `${UI.kalMonat}-${String(nDays).padStart(2, '0')}`, t = today();
-  const items = kalItems(first, last), byDay = {};
-  items.forEach(x => (byDay[x.d] = byDay[x.d] || []).push(x));
+  const byDay = {};
+  kalItems(first, last).forEach(x => (byDay[x.d] = byDay[x.d] || []).push(x));
   const tag = UI.kalTag && UI.kalTag.startsWith(UI.kalMonat) ? UI.kalTag : '';
-  let show = tag ? (byDay[tag] || []) : items.filter(x => UI.kalMonat === t.slice(0, 7) ? x.d >= t : true);
-  const mehr = !tag && show.length > 14 ? show.length - 14 : 0; if (mehr) show = show.slice(0, 14);
+  const ohne = x => x.cat !== 'auslauf'; // ohne Weide / Auslaufjournal
+  const show = (tag ? (byDay[tag] || []) : kalItems(addDays(t, -28), addDays(t, 28))).filter(ohne);
+  let rows = '', hm = false;
+  for (const x of show) {
+    if (!tag && !hm && x.d >= t) { rows += '<div class="kal-heute">Heute</div>'; hm = true; }
+    const r = itemRow(x, false); rows += !tag && x.d < t ? r.replace('class="row one"', 'class="row one alt"') : r;
+  }
+  if (!tag && !hm) rows += '<div class="kal-heute">Heute</div>';
   return `<div class="sec-t" style="margin-top:8px">Kalender <a href="#/kalender" style="font-weight:500;text-transform:none;letter-spacing:0;float:right">Kalender öffnen ›</a></div>
   ${kalGrid(byDay)}
-  <div class="sec-t">${tag ? fmt(tag) + ' <a href="#/start" data-act="kaltag" data-v="" style="font-weight:500;text-transform:none;letter-spacing:0">ganzer Monat</a>' : UI.kalMonat === t.slice(0, 7) ? 'Ab heute in diesem Monat' : 'Ganzer Monat'}</div>
-  <div class="list">${show.map(x => itemRow(x, false)).join('') || '<div class="empty">Keine Einträge.</div>'}${mehr ? `<a class="row one" href="#/kalender"><i class="bar grey"></i><div class="main"><span class="t1"><span class="hd">${mehr} weitere im Kalender</span></span></div><small class="rt">›</small></a>` : ''}</div>`;
+  <div class="sec-t">${tag ? fmt(tag) + ' <a href="#/start" data-act="kaltag" data-v="" style="font-weight:500;text-transform:none;letter-spacing:0">4 Wochen zurück / voraus</a>' : '4 Wochen zurück / 4 Wochen voraus'}</div>
+  <div class="list kal-liste">${rows || '<div class="empty">Keine Einträge.</div>'}</div>`;
 }
 function kalGrid(byDay) {
   const [Y, M] = UI.kalMonat.split('-').map(Number), nDays = new Date(Y, M, 0).getDate();
@@ -794,12 +804,12 @@ function kalItems(from, to) {
 function vKalender() {
   const [Y, M] = UI.kalMonat.split('-').map(Number);
   const first = `${UI.kalMonat}-01`, nDays = new Date(Y, M, 0).getDate(), last = `${UI.kalMonat}-${String(nDays).padStart(2, '0')}`;
-  const KF = UI.kalFilter || '', items = kalItems(first, last).filter(x => !KF || (KF === 'prognose' ? x.plan : x.cat === KF)), byDay = {};
+  const KF = Array.isArray(UI.kalFilter) ? UI.kalFilter : [], items = kalItems(first, last).filter(x => !KF.length || KF.some(f => f === 'prognose' ? x.plan : x.cat === f)), byDay = {};
   items.forEach(x => (byDay[x.d] = byDay[x.d] || []).push(x));
   const show = UI.kalTag && UI.kalTag.startsWith(UI.kalMonat) ? (byDay[UI.kalTag] || []) : items;
   const rows = show.map(x => itemRow(x, false)).join('');
   return `<div class="kal-wrap"><div class="kal-l">${kalGrid(byDay)}
-  <div class="chips kf">${[['', 'Alle'], ['zucht', 'Brunst/Besamung'], ['abkalbung', 'Abkalbung'], ['behandlung', 'Behandlung'], ['auslauf', 'Weide / Stall'], ['feld', 'Wiesenjournal'], ['labiola', 'Labiola'], ['tiere', 'Zu-/Abgang'], ['prognose', 'Prognose']].map(([v, l]) => `<button type="button" class="chip ${KF === v ? 'on' : ''}" data-act="kalfilter" data-v="${v}">${l}</button>`).join('')}</div></div>
+  <div class="chips kf">${[['', 'Alle'], ['zucht', 'Brunst/Besamung'], ['abkalbung', 'Abkalbung'], ['behandlung', 'Behandlung'], ['auslauf', 'Weide / Stall'], ['feld', 'Wiesenjournal'], ['labiola', 'Labiola'], ['tiere', 'Zu-/Abgang'], ['prognose', 'Prognose']].map(([v, l]) => `<button type="button" class="chip ${(v ? KF.includes(v) : !KF.length) ? 'on' : ''}" data-act="kalfilter" data-v="${v}" title="Ctrl + Klick: mehrere auswählen">${l}</button>`).join('')}</div></div>
   <div class="kal-r"><div class="sec-t">${UI.kalTag && UI.kalTag.startsWith(UI.kalMonat) ? fmt(UI.kalTag) + ' <a href="#/kalender" data-act="kaltag" data-v="" style="font-weight:500;text-transform:none;letter-spacing:0">ganzer Monat</a>' : 'Ganzer Monat'}</div>
   <div class="list">${rows || '<div class="empty">Keine Einträge.</div>'}</div></div></div>`;
 }
@@ -1193,7 +1203,7 @@ function wetterZeile(gross = false) {
   if (gross) {
     const WL = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'], r = (a, i) => a && a[i] !== null && a[i] !== undefined ? a[i] : null;
     return `<div class="wetter-g" title="Wetter 14 Tage (Open-Meteo)">${D.time.map((t, i) => { const d = pd(t), mm = r(D.precipitation_sum, i), pr = r(D.precipitation_probability_max, i), wi = r(D.wind_speed_10m_max, i), so = r(D.sunshine_duration, i), mn = r(D.temperature_2m_min, i);
-      return `<div class="wg ${i === 0 ? 'heute' : ''} ${d.getDay() === 0 || d.getDay() === 6 ? 'we' : ''}"><small class="wg-d">${i === 0 ? 'Heute' : WL[d.getDay()] + ' ' + d.getDate() + '.'}</small><svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true">${WIC[sym(i)]}</svg><b>${Math.round(D.temperature_2m_max[i])}°<span>${mn === null ? '' : ' ' + Math.round(mn) + '°'}</span></b><i class="wg-l"></i><small class="${mm >= 1 ? 'nass' : ''}" title="Niederschlag">${mm === null ? '-' : nf(Math.round(mm * 10) / 10)} mm</small><small title="Regenwahrscheinlichkeit">${pr === null ? '-' : pr + ' %'}</small><small title="Wind max.">${wi === null ? '-' : Math.round(wi) + ' km/h'}</small><small title="Sonnenstunden">${so === null ? '-' : Math.round(so / 3600) + ' h Sonne'}</small></div>`; }).join('')}</div>`;
+      return `<div class="wg ${i === 0 ? 'heute' : ''} ${d.getDay() === 0 || d.getDay() === 6 ? 'we' : ''}"><small class="wg-d">${i === 0 ? 'Heute' : WL[d.getDay()] + ' ' + d.getDate() + '.'}</small><svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true">${WIC[sym(i)]}</svg><b>${Math.round(D.temperature_2m_max[i])}°<span>${mn === null ? '' : ' ' + Math.round(mn) + '°'}</span></b><small class="${mm >= 1 ? 'nass' : ''}" title="Niederschlag${pr === null ? '' : ', ' + pr + ' %'}${wi === null ? '' : ', Wind ' + Math.round(wi) + ' km/h'}${so === null ? '' : ', ' + Math.round(so / 3600) + ' h Sonne'}">${mm === null ? '-' : nf(Math.round(mm * 10) / 10)} mm</small></div>`; }).join('')}</div>`;
   }
   return `<div class="wetter" title="Wetter 14 Tage (Open-Meteo)">${D.time.map((t, i) => `<span title="${fmt(t)}: ${Math.round(D.temperature_2m_max[i])}°, ${D.precipitation_sum[i]} mm${D.precipitation_probability_max ? ', ' + D.precipitation_probability_max[i] + ' %' : ''}"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">${WIC[sym(i)]}</svg><small>${i === 0 ? 'H' : WT[pd(t).getDay()]}</small></span>`).join('')}</div>`;
 }
@@ -2392,7 +2402,7 @@ document.addEventListener('click', e => {
   else if (a === 'ktage') { UI.kTage = +el.dataset.v; render(); }
   else if (a === 'kfilter') { UI.kFilter = el.dataset.v; UI.kSel = null; render(); }
   else if (a === 'kday') { const d = el.dataset.d; UI.kSel = d && !(UI.kSel && UI.kSel.d === d && UI.kSel.t === el.dataset.t) ? { d, t: el.dataset.t } : null; render(); if (UI.kSel) setTimeout(() => { const k = $('#kliste'); if (k) k.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 30); }
-  else if (a === 'kalfilter') { UI.kalFilter = el.dataset.v; render(); }
+  else if (a === 'kalfilter') { const v = el.dataset.v, cur = Array.isArray(UI.kalFilter) ? UI.kalFilter : []; UI.kalFilter = !v ? [] : (e.ctrlKey || e.metaKey) ? (cur.includes(v) ? cur.filter(x => x !== v) : [...cur, v]) : (cur.length === 1 && cur[0] === v ? [] : [v]); render(); }
   else if (a === 'kalmon') { const [y, m] = UI.kalMonat.split('-').map(Number); const d = new Date(y, m - 1 + Number(el.dataset.v), 1); UI.kalMonat = iso(d).slice(0, 7); UI.kalTag = ''; render(); }
   else if (a === 'pdf') { el.disabled = true; pdf(el.dataset.p, el.dataset.id).catch(showErr).finally(() => el.disabled = false); }
   else if (a === 'backup') { const d = { version: VERSION, exportiert: new Date().toISOString(), set: S.set }; COLLS.forEach(c => d[c] = S[c]); const b = new Blob([JSON.stringify(d, null, 1)], { type: 'application/json' }); const u = URL.createObjectURL(b); const l = document.createElement('a'); l.href = u; l.download = `hofpuls_backup_${today()}.json`; l.click(); setTimeout(() => URL.revokeObjectURL(u), 2000); }
@@ -2461,6 +2471,16 @@ $('#tabbar').addEventListener('click', e => {
   if (location.hash === l.getAttribute('href')) { e.preventDefault(); closeSheet(true); render(); window.scrollTo(0, 0); }
 });
 $('#plus').addEventListener('click', () => sheetOpen ? closeSheet() : plusMenu());
+function vollbild(an) {
+  document.body.classList.toggle('vollbild', an);
+  const fs = document.fullscreenElement;
+  if (an && !fs && document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => { });
+  if (!an && fs && document.exitFullscreen) document.exitFullscreen().catch(() => { });
+  $('#vollbild').setAttribute('aria-label', an ? 'Vollbild beenden' : 'Vollbild'); $('#vollbild').title = an ? 'Vollbild beenden (Esc)' : 'Vollbild';
+  setTimeout(render, 60);
+}
+$('#vollbild').addEventListener('click', () => vollbild(!document.body.classList.contains('vollbild')));
+document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && document.body.classList.contains('vollbild')) vollbild(false); });
 $('#back').addEventListener('click', () => history.length > 1 ? history.back() : (location.hash = '#/start'));
 window.addEventListener('hashchange', () => { closeSheet(true); render(); window.scrollTo(0, 0); });
 
