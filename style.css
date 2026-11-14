@@ -373,7 +373,10 @@ details.acc.ausbk summary .pill{flex-shrink:0}
   .plus{order:-1;justify-self:auto;width:100%;height:46px;margin:0 0 16px;border-radius:13px;gap:8px;font-weight:650;font-size:14px;box-shadow:0 4px 14px rgba(30,77,43,.22),inset 0 1px 0 rgba(255,255,255,.15)}
   .plus svg{width:20px;height:20px}
   .plus:hover{filter:brightness(1.08)}
-  .sb-set{margin-top:auto}
+  .plus{order:1;width:60px;height:60px;border-radius:50%;margin:auto auto 16px;padding:0;justify-content:center;font-size:0;gap:0;box-shadow:0 8px 20px rgba(30,77,43,.30),inset 0 1px 0 rgba(255,255,255,.15)}
+  .plus svg{width:28px;height:28px}
+  .plus span{display:none}
+  .sb-set{order:2;margin-top:0}
   /* Kopf und Inhalt */
   .top{padding:16px var(--gut) 10px calc(var(--sb) + var(--gut))}
   .top h1{font-size:26px}
