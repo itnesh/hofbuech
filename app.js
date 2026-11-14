@@ -303,8 +303,9 @@ function render() {
     else if (p[0] === 'einstellungen') { title = 'Einstellungen'; html = vSettings(); showBack = true; tab = 'einst'; }
     else { html = vStart(); tab = 'start'; }
   } catch (e) { console.error(e); html = `<div class="note">Anzeigefehler: ${esc(e.message)}</div>`; }
+  if (!DSK() && !showBack) title = 'Hofpuls'; // iPhone: App-Name auf allen Hauptseiten (wie Hofverkauf), Detailseiten behalten ihren Titel
   $('#title').textContent = title;
-  $('#hlogo').classList.toggle('hidden', p[0] !== 'start' && h !== 'start');
+  $('#hlogo').classList.toggle('hidden', DSK() || showBack);
   back.classList.toggle('hidden', !showBack);
   $$('#tabbar a').forEach(a => a.classList.toggle('on', a.dataset.tab === tab));
   const sx = window.scrollY, same = view.dataset.route === h;
