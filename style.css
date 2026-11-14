@@ -380,6 +380,7 @@ details.acc.ausbk summary .pill{flex-shrink:0}
   /* Kopf und Inhalt */
   .top{padding:16px var(--gut) 10px calc(var(--sb) + var(--gut))}
   .top h1{font-size:26px}
+  .top{min-height:70px;box-sizing:border-box;align-items:center}
   main{max-width:none;margin:0;padding:6px var(--gut) 56px calc(var(--sb) + var(--gut))}
   .toast{bottom:28px;left:calc(var(--sb) + (100vw - var(--sb)) / 2)}
   .sheet{left:calc(var(--sb) + (100vw - var(--sb)) / 2);width:640px;margin-left:-320px}
