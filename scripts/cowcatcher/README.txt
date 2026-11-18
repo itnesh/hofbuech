@@ -8,3 +8,9 @@ Install/Update   ..\RUN_install_hofbuech_waechter.bat (Admin)
 Test             venv\Scripts\python.exe waechter.py --test
 Log              ..\logs\hofbuech_waechter.log
 Dienst           CowCatcherHofbuech (sc query CowCatcherHofbuech)
+fressgitter.py   Fressgitter Kamera 3: alle 5 Min. Gitter zu/offen (Kuehe links, Kaelber rechts) + Anzahl fressende Tiere -> hofbuech sensoren/fressgitter
+                 Push, wenn ein Gitter > 2 h zu ist, danach alle 30 Min. (waechter.json: "fressgitter": {"alarm_h":2, "alarm_wdh_min":30, "rtsp":"...", "gitter":{...}})
+modelle\         yolo11s.onnx (Tiere zaehlen, CPU)
+fressgitter_ref\ Referenzbilder der Hebel (FRESSGITTER_REF_ZU.bat / FRESSGITTER_REF_OFFEN.bat, je Tag und Nacht)
+Test Fressgitter FRESSGITTER_TEST.bat (sendet nichts, zeigt fressgitter_test.jpg mit Feldern und erkannten Tieren)
+Update           UPDATE_fressgitter.bat (Admin, aus dem entpackten Ordner)

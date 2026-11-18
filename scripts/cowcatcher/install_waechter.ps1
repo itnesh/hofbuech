@@ -16,8 +16,8 @@ if (-not (Test-Path $venvPy)) {
     Write-Host ">> venv mit $base" -ForegroundColor Cyan
     & $base -m venv "$Dir\venv"
 }
-Write-Host ">> Pakete (google-auth, requests, pillow, imageio-ffmpeg)" -ForegroundColor Cyan
-& $venvPy -m pip install -q --disable-pip-version-check google-auth requests pillow imageio-ffmpeg
+Write-Host ">> Pakete (google-auth, requests, pillow, imageio-ffmpeg, numpy, onnxruntime)" -ForegroundColor Cyan
+& $venvPy -m pip install -q --disable-pip-version-check google-auth requests pillow imageio-ffmpeg numpy onnxruntime
 if ($LASTEXITCODE -ne 0) { Write-Host "pip fehlgeschlagen" -ForegroundColor Red; Read-Host "Enter"; exit 1 }
 
 # 2. Live-Test: neuestes approved-Event als TEST an hofbuech

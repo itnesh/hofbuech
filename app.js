@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.30.0';
+const VERSION = '1.31.0';
 const DSK = () => window.matchMedia('(min-width:1100px)').matches; // Browser-Layout (Laptop/Monitor), Smartphone unverändert
 
 /* ---------- Helfer ---------- */
@@ -377,13 +377,36 @@ function kpiBlock(k, link = false, L = null) {
     : `<a class="stat" href="#/tiere" data-act="filtlink" data-v="${key}"><b>${k[key]}</b><span>${label}</span></a>`;
   const ls = (v, l) => `<a class="stat ${v <= 5 ? 'low' : ''}" href="#/journale/lager"><b>${nf(v)}</b><span>${l}</span></a>`;
   const sw = id => { const x = S.sensoren.find(s => s.id === id), p = x && x.last ? x.last.prozent : null; return `<a class="stat ${p !== null && p !== undefined && p < 30 ? 'low' : ''} ${SENS.laedt ? 'laedt' : ''}" href="#/journale/${id}"><b>${SENS.laedt ? '<i class="ld"></i>' : p === null || p === undefined ? '-' : Math.round(p) + '%'}${!SENS.laedt && x && x.fehlerSeit ? '<i class="fx" title="Sensor liefert Fehlmessungen">!</i>' : ''}</b><span>${id === 'wasserstand' ? 'Wasserstand' : 'Tränkefass'}</span></a>`; };
-  if (L) return `<div class="stats"><div class="stats-row"><span class="stats-h">Lager</span>${ls(L.heu, 'Heu')}${ls(L.silo, 'Silage')}${ls(L.stroh, 'Stroh')}</div><div class="stats-row"><span class="stats-h">Wasser</span>${sw('wasserstand')}${sw('traenkefass')}<span></span></div>${wqKpi()}</div>`;
+  if (L) return `<div class="stats"><div class="stats-row"><span class="stats-h">Lager</span>${ls(L.heu, 'Heu')}${ls(L.silo, 'Silage')}${ls(L.stroh, 'Stroh')}</div><div class="stats-row"><span class="stats-h">Wasser</span>${sw('wasserstand')}${sw('traenkefass')}<span></span></div>${wqKpi()}${fgKpi()}</div>`;
   return `<div class="stats"><div class="stats-row"><span class="stats-h">Bestand</span>${c('Kalb', 'Kälber')}${c('Rind', 'Rinder')}${c('Kuh', 'Kühe')}</div></div>`;
 }
 function wqKpi() {
   const x = S.sensoren.find(s => s.id === 'wasserqualitaet'), al = x && x.alarme ? x.alarme.map(a => a.k) : [];
   const c = k => { const v = x && x.last ? x.last[k] : null, f = WQ.F[k]; return `<a class="stat ${al.includes(k) ? 'low' : ''} ${SENS.laedt ? 'laedt' : ''}" href="#/journale/wasserqualitaet"><b>${SENS.laedt && !x ? '<i class="ld"></i>' : v === null || v === undefined ? '-' : nf(v)}${al.includes(k) ? '<i class="fx" title="starke Veränderung">!</i>' : ''}</b><span>${f.kurz} ${f.unit}</span></a>`; };
   return `<div class="stats-row"><span class="stats-h">Wasser&shy;qualität</span>${c('tu')}${c('do')}${c('ec')}</div>`;
+}
+// Fressgitter Kamera 3 (CowCatcher-Laptop schreibt sensoren/fressgitter alle 5 Min.)
+const FG = [['kuehe', 'Kühe'], ['kaelber', 'Kälber']];
+const fgDoc = () => S.sensoren.find(s => s.id === 'fressgitter');
+const fgAlt = x => !x || Date.now() - (x.aktualisiert || 0) > 20 * 60000;
+const fgDauer = ms => { const m = Math.max(0, Math.floor((Date.now() - ms) / 60000)); return m >= 60 ? `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')} h` : `${m} min`; };
+const fgLang = (x, g) => x && x[g + '_zu'] === true && Date.now() - (x[g + '_seit'] || 0) >= (x.alarm_h || 2) * 3600000;
+function fgKpi() {
+  const x = fgDoc(); if (!x) return '';
+  const alt = fgAlt(x);
+  const c = (g, l) => { const zu = x[g + '_zu'], lang = fgLang(x, g); return `<button type="button" class="stat ${lang ? 'low' : ''}" data-act="fgbild"><b>${alt ? '-' : nf(x[g + '_anzahl'] ?? 0)}${lang ? '<i class="fx" title="lange zu">!</i>' : ''}</b><span>${l} · ${alt ? 'keine Daten' : zu === true ? 'zu ' + fgDauer(x[g + '_seit']) : zu === false ? 'offen' : '?'}</span></button>`; };
+  return `<div class="stats-row"><span class="stats-h">Fress&shy;gitter</span>${FG.map(([g, l]) => c(g, l)).join('')}<span></span></div>`;
+}
+function fgBand() {
+  const x = fgDoc(); if (!x || fgAlt(x)) return '';
+  const l = FG.filter(([g]) => fgLang(x, g));
+  return l.length ? `<button type="button" class="band" data-act="fgbild"><b>Fressgitter ${l.map(([, n]) => n).join(' und ')} lange zu</b><span>${l.map(([g, n]) => `${n} seit ${fgDauer(x[g + '_seit'])}`).join(' · ')}</span></button>` : '';
+}
+function fgSheet() {
+  const x = fgDoc(); if (!x) return;
+  const z = (x.zeit || '').replace('T', ' ').slice(0, 16);
+  const zl = ([g, n]) => { const zu = x[g + '_zu']; return `<div class="row one"><i class="bar ${fgLang(x, g) ? 'red' : zu ? 'blue' : 'green'}"></i><div class="main"><span class="t1"><span class="hd">${n}: ${zu === true ? 'Gitter zu' : zu === false ? 'Gitter offen' : 'Status unbekannt'}</span> <span class="ex">${nf(x[g + '_anzahl'] ?? 0)} am Fressen</span></span></div><small class="rt">${zu === true ? fgDauer(x[g + '_seit']) : ''}</small></div>`; };
+  openSheet('Fressgitter', `${x.bild ? `<img class="nbild" src="${x.bild}" alt="">` : ''}<p class="small muted">${esc(x.kamera || 'Kamera 3')} · Stand ${esc(z)}${fgAlt(x) ? ' · veraltet, CowCatcher-Laptop prüfen' : ''}</p><div class="list">${FG.map(zl).join('')}</div><p class="small muted" style="margin:10px 4px">Aktualisierung alle 5 Min. Push, wenn ein Gitter länger als ${nf(x.alarm_h || 2)} h zu ist, danach alle 30 Min.</p>`, { onlyClose: true });
 }
 function wqBand() {
   const x = S.sensoren.find(s => s.id === 'wasserqualitaet');
@@ -415,8 +438,8 @@ function vStart() {
   const lateRow = late.length ? `<a class="row one" href="#/labiola"><i class="bar red"></i><div class="main"><span class="t1"><span class="hd">${late.length} Labiola-Pendenzen überfällig</span></span></div><small class="rt">›</small></a>` : '';
   const dem = `<div class="sec-t">Demnächst (60 Tage)</div>
   <div class="list">${lateRow}${ag.length ? agendaRows(ag) : '<div class="empty">Nichts geplant. Brunst und Besamung erfassen, dann erscheinen hier die nächsten Termine.</div>'}</div>`;
-  if (DSK()) return `${wqBand()}${kam}${wetterZeile(true)}<div class="dsk-start"><div class="dsk-l">${herdeBanner()}${kpiBlock(k, false, L)}${dashCharts()}</div><div class="dsk-r">${startKal()}</div></div>`;
-  return `${wetterZeile()}${wqBand()}${kam}${herdeBanner()}${kpiBlock(k, false, L)}
+  if (DSK()) return `${fgBand()}${wqBand()}${kam}${wetterZeile(true)}<div class="dsk-start"><div class="dsk-l">${herdeBanner()}${kpiBlock(k, false, L)}${dashCharts()}</div><div class="dsk-r">${startKal()}</div></div>`;
+  return `${wetterZeile()}${fgBand()}${wqBand()}${kam}${herdeBanner()}${kpiBlock(k, false, L)}
   ${dem}`;
 }
 // Startseite Browser: frei wählbare Diagramme (Einstellung je nach Jahreszeit)
@@ -2395,6 +2418,7 @@ document.addEventListener('click', e => {
   else if (a === 'aufgabe') { e.preventDefault(); const r = S.aufgaben.find(x => x.id === el.dataset.id); if (r && r.teilwahl && !(r.erledigt || {})[el.dataset.y]) { labTeilSheet(r, el.dataset.y); return; } if (r) { const er = { ...(r.erledigt || {}) }; if (er[el.dataset.y]) delete er[el.dataset.y]; else er[el.dataset.y] = today(); put('aufgaben', { ...r, erledigt: er }); } }
   else if (a === 'kaltag') { e.preventDefault(); UI.kalTag = UI.kalTag === el.dataset.v ? '' : el.dataset.v; render(); }
   else if (a === 'notizkat') { UI.notizKat = el.dataset.v; render(); }
+  else if (a === 'fgbild') fgSheet();
   else if (a === 'meldung') { const m = S.meldungen.find(x => x.id === el.dataset.id); if (m) meldungSheet(m); }
   else if (a === 'meldtier') { const m = S.meldungen.find(x => x.id === el.dataset.id), t = tierById(el.dataset.t); if (m && t) { meldZuordnen(m, t); toast('Brunst erfasst: ' + (t.name || t.ohrmarke || '')); meldWeiter(m); } }
   else if (a === 'meldverwerfen') { const m = S.meldungen.find(x => x.id === el.dataset.id); if (m) { put('meldungen', { ...m, status: 'verworfen' }); meldWeiter(m); } }

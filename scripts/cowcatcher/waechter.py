@@ -8,11 +8,14 @@ hofbuech-Waechter fuer CowCatcher (schlank, ohne firebase-admin).
 - Kein Netz: Event bleibt offen und wird beim naechsten Durchlauf erneut versucht
 - Nebenbei: alte CowCatcher-Logs aufraeumen (Alter + Gesamtgroesse)
 
-Abhaengigkeiten: google-auth, requests, pillow, imageio-ffmpeg
+Abhaengigkeiten: google-auth, requests, pillow, imageio-ffmpeg, numpy, onnxruntime (Fressgitter)
 Aufruf:
   python waechter.py            Dauerbetrieb (Dienst)
   python waechter.py --test     neuestes approved-Event einmal als TEST senden und beenden
   python waechter.py --einmal   ein Durchlauf (alles Neue senden) und beenden
+  python waechter.py --fressgitter-test        Fressgitter einmal pruefen, Bild fressgitter_test.jpg, nichts senden
+  python waechter.py --fressgitter-ref zu|offen  aktuelle Hebelstellung als Referenz speichern
+Fressgitter (Kamera 3) laeuft im Dauerbetrieb alle 5 Min. mit, siehe fressgitter.py
 """
 import base64, datetime, io, json, logging, logging.handlers, os, subprocess, sys, tempfile, time
 
@@ -68,6 +71,7 @@ def fs_url(pfad=''):
 
 
 def fs_wert(v):
+    if v is None: return {'nullValue': None}
     if isinstance(v, bool): return {'booleanValue': v}
     if isinstance(v, int): return {'integerValue': str(v)}
     if isinstance(v, float): return {'doubleValue': v}
@@ -172,7 +176,15 @@ def senden(eid, cam, ordner, test=False):
         r.raise_for_status()
     r = s.patch(fs_url(f'meldungen/{doc_id}'), json={'fields': {k: fs_wert(v) for k, v in doc.items()}}, timeout=30)
     r.raise_for_status()
-    # Push an alle Geraete
+    n = push_alle('CowCatcher: Aufspringen erkannt', f'{kamera} · {zeit[11:16]} Uhr. In hofbuech Tier zuordnen.',
+                  './#/meldung/' + doc_id, 'cowcatcher')
+    log.info('gemeldet %s (%s, Score %s, Video %s kB) Push an %d Geraet(e)', doc_id, kamera, doc.get('score'), len(video or '') * 3 // 4096, n)
+    return doc_id
+
+
+def push_alle(title, body, url, tag):
+    """Push (FCM v1, Daten-Nachricht) an alle registrierten Geraete, liefert Anzahl"""
+    s = sitzung()
     r = s.get(fs_url('geraete'), params={'pageSize': 100}, timeout=30)
     r.raise_for_status()
     n = 0
@@ -180,11 +192,8 @@ def senden(eid, cam, ordner, test=False):
         tok = g.get('fields', {}).get('token', {}).get('stringValue')
         if not tok:
             continue
-        msg = {'message': {'token': tok, 'data': {
-            'title': 'CowCatcher: Aufspringen erkannt',
-            'body': f'{kamera} · {zeit[11:16]} Uhr. In hofbuech Tier zuordnen.',
-            'url': './#/meldung/' + doc_id, 'tag': 'cowcatcher'},
-            'webpush': {'headers': {'Urgency': 'high', 'TTL': '3600'}}}}
+        msg = {'message': {'token': tok, 'data': {'title': title, 'body': body, 'url': url, 'tag': tag},
+                           'webpush': {'headers': {'Urgency': 'high', 'TTL': '3600'}}}}
         p = s.post(f'https://fcm.googleapis.com/v1/projects/{_projekt}/messages:send', json=msg, timeout=30)
         if p.ok:
             n += 1
@@ -193,8 +202,13 @@ def senden(eid, cam, ordner, test=False):
             log.info('Geraet abgemeldet, entfernt: %s', g['name'].rsplit('/', 1)[-1])
         else:
             log.warning('Push-Fehler %s: %s', p.status_code, p.text[:200])
-    log.info('gemeldet %s (%s, Score %s, Video %s kB) Push an %d Geraet(e)', doc_id, kamera, doc.get('score'), len(video or '') * 3 // 4096, n)
-    return doc_id
+    return n
+
+
+def fressgitter(test=False):
+    import fressgitter as fg
+    sitzung()  # Projekt-ID fuer fs_url
+    return fg.lauf(CFG, BASIS, log, sitzung, fs_url, fs_wert, push_alle, test=test)
 
 
 def stand_laden():
@@ -252,6 +266,17 @@ def durchlauf(gesendet):
 
 def main():
     args = sys.argv[1:]
+    if '--fressgitter-test' in args:
+        fressgitter(test=True); return 0
+    if '--fressgitter-ref' in args:
+        import fressgitter as fg
+        z = args[args.index('--fressgitter-ref') + 1]
+        if z not in ('zu', 'offen'):
+            log.error('--fressgitter-ref zu|offen'); return 1
+        c = fg.cfg(CFG)
+        for p in fg.referenz_speichern(fg.standbild(fg.rtsp_url(c, BASIS)), z, c):
+            log.info('Referenz gespeichert: %s', p)
+        return 0
     if '--test' in args:
         ev = sorted(events(), key=lambda x: os.path.basename(x[2]))
         if not ev:
@@ -267,10 +292,18 @@ def main():
     if '--einmal' in args:
         durchlauf(gesendet); return 0
     log.info('Waechter laeuft: %s (Hof %s)', CFG['detections'], CFG['hof'])
-    letzte_pflege = 0
+    letzte_pflege = letzte_fg = 0
+    fg_s = ((CFG.get('fressgitter') or {}).get('intervall_s')) or 300
+    fg_aktiv = (CFG.get('fressgitter') or {}).get('aktiv', True)
     while True:
         try:
             durchlauf(gesendet)
+            if fg_aktiv and time.time() - letzte_fg >= fg_s:
+                letzte_fg = time.time()
+                try:
+                    fressgitter()
+                except Exception as e:
+                    log.warning('Fressgitter: %s', e)
             if time.time() - letzte_pflege > 3600:
                 logs_aufraeumen()
                 letzte_pflege = time.time()
