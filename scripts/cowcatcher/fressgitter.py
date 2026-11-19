@@ -29,8 +29,9 @@ STD = {
     'alarm_h': 2.0,              # Push, wenn Gitter so lange zu
     'alarm_wdh_min': 30,         # danach wiederholen
     'modell': os.path.join(HIER, 'modelle', 'yolo11s.onnx'),
-    'conf': 0.30,
+    'conf': 0.25,
     'bild_px': 640, 'bild_q': 60,
+    'kacheln': [[0.0, 0.30, 0.56, 1.0], [0.44, 0.30, 1.0, 1.0]],  # Futtertisch links/rechts in hoher Aufloesung
     'gitter': {
         # hebel: Ausschnitt um den roten Hebel; zone: Futtertisch vor dem Gitter (x1,y1,x2,y2);
         # linie: y der Gitterunterkante, Tier zaehlt, wenn seine Box unten tiefer reicht
@@ -147,28 +148,79 @@ def hebel_ausschnitt(im, box, rand=0):
     return im.crop((x1 - rand, y1 - rand, x2 + rand, y2 + rand))
 
 
+def farbig(crop):
+    """Tagbild (Farbe) oder Nacht (Infrarot, Graustufen)"""
+    a = np.asarray(crop.convert('RGB'), dtype=np.int16)
+    return float(np.abs(a[..., 0] - a[..., 1]).mean() + np.abs(a[..., 2] - a[..., 1]).mean()) > 4
+
+
+def rot_merkmal(crop):
+    """Lage des roten Hebelgriffs im Ausschnitt: (x, y, Winkel) relativ, oder None wenn kein Rot sichtbar"""
+    a = np.asarray(crop.convert('RGB'), dtype=np.int16)
+    r, g, b = a[..., 0], a[..., 1], a[..., 2]
+    m = (r > 65) & (r - g > 28) & (r - b > 12)
+    if m.sum() < 15:
+        return None
+    ys, xs = np.nonzero(m)
+    h, w = m.shape
+    ang = 0.0
+    if len(xs) > 3:
+        cov = np.cov(np.vstack([xs, ys]).astype(float))
+        ev, vec = np.linalg.eigh(cov)
+        vx, vy = vec[:, 1]
+        ang = float(np.degrees(np.arctan2(vx, vy)))  # 0 = senkrecht
+        ang = (ang + 90) % 180 - 90
+    return (xs.mean() / w, ys.mean() / h, ang)
+
+
+def merkmal_abstand(a, b):
+    da = abs(a[2] - b[2]); da = min(da, 180 - da)
+    return float(np.hypot(np.hypot(a[0] - b[0], a[1] - b[1]), da / 90))
+
+
 def gitter_status(im, gid, g):
+    """True = zu, False = offen, None = unsicher. Tag: Lage/Winkel des roten Griffs, Nacht: Kantenvergleich.
+    Verglichen wird nur mit Referenzen derselben Art (Tag mit Tag, Nacht mit Nacht)."""
+    crop = hebel_ausschnitt(im, g['hebel'])
+    tag = farbig(crop)
     refs = {'zu': [], 'offen': []}
     for f in glob.glob(os.path.join(REF, f'{gid}_*.png')):
         z = os.path.basename(f).split('_')[1]
         if z in refs:
-            refs[z].append(kanten(Image.open(f)))
+            ri = Image.open(f).convert('RGB')
+            if farbig(ri) == tag:
+                refs[z].append(ri)
     if not refs['zu'] or not refs['offen']:
-        return None, {}
+        return None, {'fehlt': 'Referenz ' + ('Tag' if tag else 'Nacht')}
+    if tag:
+        m = rot_merkmal(crop)
+        if m is None:
+            return None, {'rot': 0.0}  # Griff verdeckt
+        d = {}
+        for z, rs in refs.items():
+            mm = [rot_merkmal(r) for r in rs]
+            mm = [x for x in mm if x]
+            d[z] = min(merkmal_abstand(m, x) for x in mm) if mm else 9.0
+        if min(d.values()) > 0.35 or abs(d['zu'] - d['offen']) < 0.05:
+            return None, {'abst_' + k: v for k, v in d.items()}
+        return d['zu'] < d['offen'], {'abst_' + k: v for k, v in d.items()}
     akt = kanten(hebel_ausschnitt(im, g['hebel'], 12))
-    s = {z: max(vergleich(akt, r) for r in rs) for z, rs in refs.items()}
-    if max(s.values()) < 0.30 or abs(s['zu'] - s['offen']) < 0.04:
+    s = {z: max(vergleich(akt, kanten(r)) for r in rs) for z, rs in refs.items()}
+    if max(s.values()) < 0.35 or abs(s['zu'] - s['offen']) < 0.06:
         return None, s  # unsicher (Tier verdeckt Hebel o.ae.) -> letzter Status bleibt
     return s['zu'] > s['offen'], s
 
 
 def referenz_speichern(im, zustand, c):
     os.makedirs(REF, exist_ok=True)
-    ts = datetime.datetime.now().strftime('%Y%m%d-%H%M')
+    ts = datetime.datetime.now().strftime('%Y%m%d-%H%M') + ('-tag' if farbig(im.crop((0, 0, 400, 400))) else '-nacht')
     out = []
     for gid, g in c['gitter'].items():
         p = os.path.join(REF, f'{gid}_{zustand}_{ts}.png')
-        hebel_ausschnitt(im, g['hebel']).save(p)
+        crop = hebel_ausschnitt(im, g['hebel'])
+        if farbig(crop) and rot_merkmal(crop) is None:
+            out.append(f'{gid}: WARNUNG roter Griff nicht sichtbar (verdeckt?), Referenz trotzdem gespeichert: {p}')
+        crop.save(p)
         out.append(p)
     return out
 
@@ -177,7 +229,8 @@ def referenz_speichern(im, zustand, c):
 _sess = None
 
 
-def yolo(im, c):
+def _infer(im, c):
+    """eine YOLO-Auswertung, liefert Boxen in Pixeln von im + Konfidenz"""
     global _sess
     import onnxruntime as ort
     if _sess is None:
@@ -195,11 +248,31 @@ def yolo(im, c):
     kl = sc.argmax(1); cf = sc.max(1)
     keep = (cf >= c['conf']) & np.isin(kl, list(TIERKLASSEN))
     b = out[keep, :4]; cf = cf[keep]
-    if not len(b):
-        return []
     ox, oy = (S - nw) / 2, (S - nh) / 2
     xy = np.stack([(b[:, 0] - b[:, 2] / 2 - ox) / r, (b[:, 1] - b[:, 3] / 2 - oy) / r,
-                   (b[:, 0] + b[:, 2] / 2 - ox) / r, (b[:, 1] + b[:, 3] / 2 - oy) / r], 1)
+                   (b[:, 0] + b[:, 2] / 2 - ox) / r, (b[:, 1] + b[:, 3] / 2 - oy) / r], 1) if len(b) else np.zeros((0, 4))
+    return xy, cf
+
+
+def yolo(im, c):
+    """Ganzes Bild + 2 Kacheln vom Futtertisch in voller Aufloesung (Koepfe/Kaelber sonst zu klein)"""
+    W, H = im.size
+    alle, alle_cf = [], []
+    for k in [None] + c.get('kacheln', []):
+        if k is None:
+            xy, cf = _infer(im, c)
+        else:
+            x0, y0, x1, y1 = px(k, im)
+            xy, cf = _infer(im.crop((x0, y0, x1, y1)), c)
+            xy = xy + [x0, y0, x0, y0]
+            # Boxen am Kachelrand abgeschnitten -> verwerfen (ganzes Bild liefert sie)
+            rand = 6
+            ok = ((xy[:, 0] > x0 + rand) | (x0 == 0)) & ((xy[:, 2] < x1 - rand) | (x1 >= W)) & ((xy[:, 1] > y0 + rand) | (y0 == 0))
+            xy, cf = xy[ok], cf[ok]
+        alle.append(xy); alle_cf.append(cf)
+    xy = np.concatenate(alle); cf = np.concatenate(alle_cf)
+    if not len(xy):
+        return []
     # NMS klassenuebergreifend (ein Tier = eine Box)
     idx = cf.argsort()[::-1]; fertig = []
     while len(idx):
@@ -208,8 +281,10 @@ def yolo(im, c):
         ix = np.clip(np.minimum(a[2], rest[:, 2]) - np.maximum(a[0], rest[:, 0]), 0, None)
         iy = np.clip(np.minimum(a[3], rest[:, 3]) - np.maximum(a[1], rest[:, 1]), 0, None)
         inter = ix * iy
-        u = (a[2] - a[0]) * (a[3] - a[1]) + (rest[:, 2] - rest[:, 0]) * (rest[:, 3] - rest[:, 1]) - inter
-        idx = idx[1:][inter / np.maximum(u, 1) < 0.45]
+        fa = (a[2] - a[0]) * (a[3] - a[1]); fr = (rest[:, 2] - rest[:, 0]) * (rest[:, 3] - rest[:, 1])
+        u = fa + fr - inter
+        # gleiche Box (IoU) oder fast ganz in der staerkeren enthalten
+        idx = idx[1:][(inter / np.maximum(u, 1) < 0.45) & (inter / np.maximum(fr, 1) < 0.8)]
     # Sammelboxen weg: Box, die ein anderes Tier fast ganz enthaelt (2 Tiere als eines erkannt)
     fl = lambda a: (a[2] - a[0]) * (a[3] - a[1])
     weg = set()
@@ -329,6 +404,7 @@ def lauf(CFG, basis, log, sitzung, fs_url, fs_wert, push, test=False):
     felder['bild'] = bild_data_url(im, c)
     if test:
         p = os.path.join(HIER, 'fressgitter_test.jpg')
+        im.save(os.path.join(HIER, 'fressgitter_test_roh.jpg'), quality=92)
         debug_bild(im, c, boxen, zuord, p)
         log.info('FRESSGITTER-TEST %s | %s | Bild: %s', maskiert(url), ' | '.join(info), p)
         return felder
