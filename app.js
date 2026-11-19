@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.32.1';
+const VERSION = '1.32.2';
 const DSK = () => window.matchMedia('(min-width:1100px)').matches; // Browser-Layout (Laptop/Monitor), Smartphone unverändert
 
 /* ---------- Helfer ---------- */
@@ -297,7 +297,7 @@ function render() {
     else if (p[0] === 'labiola') { title = 'Labiola'; html = vLabiola(); }
     else if (p[0] === 'notizen') { title = 'Notizen'; html = vNotizen(); }
     else if (p[0] === 'notiz') { const n = S.notizen.find(x => x.id === p[1]); title = n ? n.titel : 'Notiz'; tab = 'notizen'; showBack = true; html = n ? vNotiz(n) : '<div class="empty">Notiz nicht gefunden.</div>'; }
-    else if (p[0] === 'meldung') { title = DSK() ? 'Dashboard' : 'Hofpuls'; tab = 'start'; html = vStart(); const m = p[1] === 'neu' ? S.meldungen.filter(x => !x.status).sort((x, y) => x.zeit < y.zeit ? 1 : -1)[0] : S.meldungen.find(x => x.id === p[1]); if (m && !UI.mOpen) { UI.mOpen = 1; setTimeout(() => { meldungSheet(m); history.replaceState(null, '', '#/start'); UI.mOpen = 0; }, 50); } }
+    else if (p[0] === 'meldung') { title = DSK() ? 'Dashboard' : 'Hofpuls'; tab = 'start'; html = vStart(); const m = p[1] === 'neu' ? S.meldungen.filter(x => !x.status).sort((x, y) => x.zeit < y.zeit ? 1 : -1)[0] : S.meldungen.find(x => x.id === p[1]); if (m && !UI.mOpen) { UI.mOpen = 1; setTimeout(() => { MELDNAV = S.meldungen.filter(x => !x.status).sort((x, y) => x.zeit < y.zeit ? 1 : -1).map(x => x.id); meldungSheet(m); history.replaceState(null, '', '#/start'); UI.mOpen = 0; }, 50); } }
     else if (p[0] === 'kalender') { title = 'Kalender'; html = vKalender(); }
     else if (p[0] === 'analyse') { title = 'Mehr'; tab = 'journale'; html = vJournale(); }
     else if (p[0] === 'einstellungen') { title = 'Einstellungen'; html = vSettings(); showBack = true; tab = 'einst'; }
@@ -486,7 +486,7 @@ function vStart() {
   }
   const all = agenda(60), late = all.filter(x => x.keep), ag = all.filter(x => !x.keep);
   const neu = S.meldungen.filter(m => !m.status).sort((a, b) => a.zeit < b.zeit ? 1 : -1);
-  const kam = neu.length ? `<button type="button" class="band blue" data-act="meldung" data-id="${neu[0].id}"><b>${neu.length} Kamera-${neu.length === 1 ? 'Meldung' : 'Meldungen'} (CowCatcher)</b><span>${esc(neu[0].kamera || '')} · ${esc((neu[0].zeit || '').replace('T', ' ').slice(0, 16))}</span></button>` : '';
+  const kam = neu.length ? `<button type="button" class="band blue" data-act="meldung" data-nav="offen" data-id="${neu[0].id}"><b>${neu.length} Kamera-${neu.length === 1 ? 'Meldung' : 'Meldungen'} (CowCatcher)</b><span>${esc(neu[0].kamera || '')} · ${esc((neu[0].zeit || '').replace('T', ' ').slice(0, 16))}</span></button>` : '';
   const lateRow = late.length ? `<a class="row one" href="#/labiola"><i class="bar red"></i><div class="main"><span class="t1"><span class="hd">${late.length} Labiola-Pendenzen überfällig</span></span></div><small class="rt">›</small></a>` : '';
   const dem = `<div class="sec-t">Demnächst (60 Tage)</div>
   <div class="list">${lateRow}${ag.length ? agendaRows(ag) : '<div class="empty">Nichts geplant. Brunst und Besamung erfassen, dann erscheinen hier die nächsten Termine.</div>'}</div>`;
@@ -1329,12 +1329,21 @@ function meldungSheet(m) {
   const poster = m.thumb || m.bild || '';
   const media = m.video ? `<video id="mvid" class="nbild" playsinline muted autoplay loop ${poster ? `poster="${poster}"` : ''}></video><p id="mvinfo" class="small muted">Video wird geladen …</p>` : poster ? `<img class="nbild" src="${poster}" alt="">` : '';
   const st = m.status === 'brunst' ? `<div class="note blue small" style="margin-top:10px">Zugeordnet: <b>${esc(m.tierName || '')}</b> (Brunst erfasst)</div>` : m.status === 'verworfen' ? '<div class="note small" style="margin-top:10px">Verworfen</div>' : '';
-  openSheet('Kamera-Meldung', `${media}
+  const nav = MELDNAV && MELDNAV.length > 1 && MELDNAV.includes(m.id) ? MELDNAV : null, pos = nav ? nav.indexOf(m.id) : -1;
+  const navBar = nav ? `<div class="mnav"><button type="button" class="btn" data-mnav="-1" ${pos === 0 ? 'disabled' : ''} aria-label="Vorherige">‹</button><span>${pos + 1} / ${nav.length}</span><button type="button" class="btn" data-mnav="1" ${pos === nav.length - 1 ? 'disabled' : ''} aria-label="Nächste">›</button></div>` : '';
+  const sh = openSheet('Kamera-Meldung', `${navBar}${media}
   <p class="small muted">${meldInfo(m)}${m.video ? ' · antippen für Steuerung' : ''}</p>${st}
   <div class="sec-t">${m.status === 'brunst' ? 'Anderes Tier zuordnen' : 'Welches Tier ist brünstig?'}</div>
   <div class="chips">${kandidaten.map(t => `<button type="button" class="chip ${m.tierId === t.id ? 'on' : ''}" data-act="meldtier" data-id="${m.id}" data-t="${t.id}">${esc(t.name || t.ohrmarke)}</button>`).join('')}</div>
   <div class="btns" style="margin-top:16px">${m.status ? `<button class="btn" data-act="meldreset" data-id="${m.id}">Zurück auf offen</button>` : `<button class="btn" data-act="meldverwerfen" data-id="${m.id}">Kein Brunstverhalten / verwerfen</button>`}</div>`);
   const vv = $('#mvid'); if (vv) vv.onclick = () => { vv.controls = true; };
+  if (nav) {
+    const geh = d => { const n = S.meldungen.find(x => x.id === nav[pos + d]); if (n) { closeSheet(true); meldungSheet(n); } };
+    sh.querySelectorAll('[data-mnav]').forEach(b => b.onclick = () => geh(+b.dataset.mnav));
+    let x0 = null; const mb = sh.querySelector('.sheet-b');
+    mb.addEventListener('touchstart', e => { x0 = e.touches[0].clientX; }, { passive: true });
+    mb.addEventListener('touchend', e => { if (x0 === null) return; const dx = e.changedTouches[0].clientX - x0; x0 = null; if (Math.abs(dx) > 60) geh(dx < 0 ? 1 : -1); }, { passive: true });
+  }
   if (m.video && W.get) W.get('meldvideos', m.id).then(d => { const v = $('#mvid'), i = $('#mvinfo'); if (!v) return; if (d && d.video) { v.src = d.video; i && i.remove(); } else if (i) i.textContent = 'Video nicht verfügbar.'; }).catch(e => { const i = $('#mvinfo'); if (i) i.textContent = 'Video nicht ladbar: ' + e.message; });
 }
 const meldInfo = m => { const z = m.zeit || ''; return esc(`${fmt(z.slice(0, 10))} ${z.slice(11, 16)}${m.dauer_s ? ' · ' + nf(m.dauer_s) + ' s' : ''}`); };
@@ -1356,7 +1365,10 @@ function meldLoesen(m) {
     else { const n = { ...ev, meldungIds: ids }; delete n.meldungId; put('ereignisse', n); }
   }
 }
-function meldWeiter(m) { const n = naechsteOffene(m.id); if (UI.jTab === 'kamera' && location.hash.startsWith('#/journale') && n) { closeSheet(true); meldungSheet(n); } else closeSheet(); }
+let MELDNAV = null; // Meldungen zum Blaettern im Popup (vom Dashboard: alle offenen)
+function meldWeiter(m) {
+  if (MELDNAV && MELDNAV.length > 1) { const rest = MELDNAV.filter(id => id !== m.id && S.meldungen.some(x => x.id === id && !x.status)); if (rest.length) { const i = MELDNAV.indexOf(m.id), n = rest.find(id => MELDNAV.indexOf(id) > i) || rest[0]; MELDNAV = rest; closeSheet(true); meldungSheet(S.meldungen.find(x => x.id === n)); return; } }
+  const n = naechsteOffene(m.id); if (UI.jTab === 'kamera' && location.hash.startsWith('#/journale') && n) { closeSheet(true); meldungSheet(n); } else closeSheet(); }
 function naechsteOffene(nach) { return S.meldungen.filter(x => !x.status && x.id !== nach).sort((a, b) => a.zeit < b.zeit ? 1 : -1)[0]; }
 
 function anaKamera() {
@@ -2474,7 +2486,7 @@ document.addEventListener('click', e => {
   else if (a === 'notizkat') { UI.notizKat = el.dataset.v; render(); }
   else if (a === 'fgbild') fgSheet();
   else if (a === 'fglabel') fgLabel(el.dataset.id);
-  else if (a === 'meldung') { const m = S.meldungen.find(x => x.id === el.dataset.id); if (m) meldungSheet(m); }
+  else if (a === 'meldung') { const m = S.meldungen.find(x => x.id === el.dataset.id); MELDNAV = el.dataset.nav === 'offen' ? S.meldungen.filter(x => !x.status).sort((p, q) => p.zeit < q.zeit ? 1 : -1).map(x => x.id) : null; if (m) meldungSheet(m); }
   else if (a === 'meldtier') { const m = S.meldungen.find(x => x.id === el.dataset.id), t = tierById(el.dataset.t); if (m && t) { meldZuordnen(m, t); toast('Brunst erfasst: ' + (t.name || t.ohrmarke || '')); meldWeiter(m); } }
   else if (a === 'meldverwerfen') { const m = S.meldungen.find(x => x.id === el.dataset.id); if (m) { put('meldungen', { ...m, status: 'verworfen' }); meldWeiter(m); } }
   else if (a === 'meldreset') { const m = S.meldungen.find(x => x.id === el.dataset.id); if (m) { meldLoesen(m); const n = { ...m, status: '' }; delete n.tierId; delete n.tierName; put('meldungen', n); closeSheet(); } }
