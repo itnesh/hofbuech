@@ -586,3 +586,4 @@ video#mvid{cursor:pointer}
 .fg-dot.offen{background:#2FA84F;box-shadow:0 0 0 3px rgba(47,168,79,.22)}
 .fg-dot.zu{background:#D33A2C;box-shadow:0 0 0 3px rgba(211,58,44,.22)}
 @media (min-width:700px){.fg-dot{width:26px;height:26px;vertical-align:-4px}}
+.fgcnt{display:flex;gap:8px;align-items:center}.fgcnt input{flex:1;text-align:center;font-size:20px;font-weight:700;min-height:46px}.fgcnt .btn{min-width:56px;min-height:46px;font-size:22px;font-weight:700}

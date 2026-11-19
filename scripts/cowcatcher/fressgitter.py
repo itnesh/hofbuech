@@ -19,6 +19,7 @@ from PIL import Image, ImageDraw, ImageFilter
 
 HIER = os.path.dirname(os.path.abspath(__file__))
 REF = os.path.join(HIER, 'fressgitter_ref')
+TRAIN = os.path.join(HIER, 'fressgitter_training')
 STAND = os.path.join(HIER, 'fressgitter_stand.json')
 
 STD = {
@@ -31,6 +32,8 @@ STD = {
     'modell': os.path.join(HIER, 'modelle', 'yolo11s.onnx'),
     'conf': 0.25,
     'bild_px': 640, 'bild_q': 60,
+    'training': True,            # stuendlich ein Bild zum Beurteilen in Hofpuls (fgtraining + fgbilder) und lokal
+    'training_px': 1280, 'training_q': 70,
     'kacheln': [[0.0, 0.30, 0.56, 1.0], [0.44, 0.30, 1.0, 1.0]],  # Futtertisch links/rechts in hoher Aufloesung
     'gitter': {
         # hebel: Ausschnitt um den roten Hebel; zone: Futtertisch vor dem Gitter (x1,y1,x2,y2);
@@ -337,11 +340,11 @@ def dauer_txt(sek):
     return f'{m // 60} h {m % 60:02d} min' if m >= 60 else f'{m} min'
 
 
-def bild_data_url(im, c, boxen=None, zuord=None):
+def bild_data_url(im, c, boxen=None, zuord=None, px_=None, q=None):
     im = im.copy()
-    im.thumbnail((c['bild_px'], c['bild_px']))
+    im.thumbnail((px_ or c['bild_px'], px_ or c['bild_px']))
     b = io.BytesIO()
-    im.save(b, 'JPEG', quality=c['bild_q'], optimize=True)
+    im.save(b, 'JPEG', quality=q or c['bild_q'], optimize=True)
     return 'data:image/jpeg;base64,' + base64.b64encode(b.getvalue()).decode()
 
 
@@ -415,4 +418,29 @@ def lauf(CFG, basis, log, sitzung, fs_url, fs_wert, push, test=False):
     r = s.patch(fs_url('sensoren/fressgitter'), json={'fields': {k: fs_wert(v) for k, v in felder.items()}}, timeout=30)
     r.raise_for_status()
     log.info('Fressgitter %s', ' | '.join(info))
+    if c.get('training', True):
+        h = datetime.datetime.now().strftime('%Y%m%d-%H')
+        if st.get('training_h') != h:
+            try:
+                training_speichern(im, felder, boxen, c, s, fs_url, fs_wert, 'fg_' + h)
+                st['training_h'] = h
+                stand_speichern(st)
+                log.info('Fressgitter-Trainingsbild fg_%s gespeichert', h)
+            except Exception as e:
+                log.warning('Fressgitter-Trainingsbild: %s', e)
     return felder
+
+
+def training_speichern(im, felder, boxen, c, s, fs_url, fs_wert, tid):
+    """Bild zum Beurteilen: lokal in voller Aufloesung + Modellboxen, in Hofpuls fgbilder (Bild) + fgtraining (Daten)"""
+    os.makedirs(TRAIN, exist_ok=True)
+    im.save(os.path.join(TRAIN, tid + '.jpg'), quality=90)
+    meta = {'id': tid, 'zeit': felder['zeit'], 'tag': farbig(im.crop((0, int(im.size[1] * 0.3), im.size[0], im.size[1]))),
+            'modell_kuehe': felder['kuehe_anzahl'], 'modell_kaelber': felder['kaelber_anzahl'],
+            'modell_kuehe_zu': felder['kuehe_zu'], 'modell_kaelber_zu': felder['kaelber_zu'], 'geprueft': False}
+    json.dump({**meta, 'boxen': [[round(float(v), 4) for v in b] + [round(cf, 3)] for b, cf in boxen]},
+              open(os.path.join(TRAIN, tid + '.json'), 'w', encoding='utf-8'))
+    r = s.patch(fs_url('fgbilder/' + tid), json={'fields': {'bild': fs_wert(bild_data_url(im, c, px_=c['training_px'], q=c['training_q']))}}, timeout=60)
+    r.raise_for_status()
+    r = s.patch(fs_url('fgtraining/' + tid), json={'fields': {k: fs_wert(v) for k, v in meta.items() if k != 'id'}}, timeout=30)
+    r.raise_for_status()

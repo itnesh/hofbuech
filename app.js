@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.31.1';
+const VERSION = '1.32.0';
 const DSK = () => window.matchMedia('(min-width:1100px)').matches; // Browser-Layout (Laptop/Monitor), Smartphone unverändert
 
 /* ---------- Helfer ---------- */
@@ -63,8 +63,8 @@ const DEF = {
 };
 
 /* ---------- Datenhaltung ---------- */
-const COLLS = ['tiere', 'ereignisse', 'behandlungen', 'auslauf', 'feld', 'parzellen', 'labiola', 'aufgaben', 'lprotokoll', 'meldungen', 'notizen', 'sensoren'];
-const S = { loaded: {}, dokumente: [], tiere: [], ereignisse: [], behandlungen: [], auslauf: [], feld: [], parzellen: [], labiola: [], aufgaben: [], lprotokoll: [], meldungen: [], notizen: [], sensoren: [], set: { ...DEF } };
+const COLLS = ['tiere', 'ereignisse', 'behandlungen', 'auslauf', 'feld', 'parzellen', 'labiola', 'aufgaben', 'lprotokoll', 'meldungen', 'notizen', 'sensoren', 'fgtraining'];
+const S = { loaded: {}, dokumente: [], tiere: [], ereignisse: [], behandlungen: [], auslauf: [], feld: [], parzellen: [], labiola: [], aufgaben: [], lprotokoll: [], meldungen: [], notizen: [], sensoren: [], fgtraining: [], set: { ...DEF } };
 let W = null; // writer
 let mode = 'local';
 const HOF = window.HB_HOF || 'bannhalde';
@@ -408,6 +408,46 @@ function fgSheet() {
   const zl = ([g, n]) => { const zu = x[g + '_zu']; return `<div class="row one"><i class="bar ${fgLang(x, g) ? 'red' : zu ? 'blue' : 'green'}"></i><div class="main"><span class="t1"><span class="hd">${n}: ${zu === true ? 'Gitter zu' : zu === false ? 'Gitter offen' : 'Status unbekannt'}</span> <span class="ex">${nf(x[g + '_anzahl'] ?? 0)} am Fressen</span></span></div><small class="rt">${zu === true ? fgDauer(x[g + '_seit']) : ''}</small></div>`; };
   openSheet('Fressgitter', `${x.bild ? `<img class="nbild" src="${x.bild}" alt="">` : ''}<p class="small muted">${esc(x.kamera || 'Kamera 3')} · Stand ${esc(z)}${fgAlt(x) ? ' · veraltet, CowCatcher-Laptop prüfen' : ''}</p><div class="list">${FG.map(zl).join('')}</div><p class="small muted" style="margin:10px 4px">Aktualisierung alle 5 Min. Push, wenn ein Gitter länger als ${nf(x.alarm_h || 2)} h zu ist, danach alle 30 Min.</p>`, { onlyClose: true });
 }
+// Fressgitter-Training: stuendliches Bild, Matthias erfasst Kuehe/Kaelber am Fressen + Gitterstatus (Abgleich mit Modell)
+const fgOffen = () => S.fgtraining.filter(x => !x.geprueft).sort((a, b) => a.id < b.id ? 1 : -1);
+function anaFgTraining() {
+  const alle = [...S.fgtraining].sort((a, b) => a.id < b.id ? 1 : -1), ok = alle.filter(x => x.geprueft === true), offen = fgOffen();
+  const q = (f, n) => n ? Math.round(100 * f / n) + '%' : '-';
+  const tr = k => ok.filter(x => x['modell_' + k] === x['label_' + k]).length;
+  const zr = k => { const l = ok.filter(x => x['modell_' + k + '_zu'] !== null && x['modell_' + k + '_zu'] !== undefined); return [l.filter(x => x['modell_' + k + '_zu'] === x['label_' + k + '_zu']).length, l.length]; };
+  const [zk, nk] = zr('kuehe'), [zc, nc] = zr('kaelber');
+  const st = x => x === true ? 'zu' : x === false ? 'offen' : '?';
+  const row = x => `<button type="button" class="row" data-act="fglabel" data-id="${x.id}"><i class="bar ${x.geprueft === true ? 'green' : x.geprueft ? '' : 'blue'}"></i><div class="main"><span class="t1"><span class="hd">${esc((x.zeit || '').replace('T', ' ').slice(0, 16))}</span> <span class="ex">${x.tag === false ? 'Nacht' : 'Tag'}</span></span><span class="t2">${x.geprueft === true ? `Kühe ${x.label_kuehe} (${st(x.label_kuehe_zu)}) · Kälber ${x.label_kaelber} (${st(x.label_kaelber_zu)})` : x.geprueft ? 'unbrauchbar' : `Modell: Kühe ${x.modell_kuehe} (${st(x.modell_kuehe_zu)}) · Kälber ${x.modell_kaelber} (${st(x.modell_kaelber_zu)})`}</span></div><small class="rt">${x.geprueft === true ? 'geprüft' : x.geprueft ? '' : 'offen'}</small></button>`;
+  return `<div class="stats"><div class="stats-row"><span class="stats-h">Bilder</span><span class="stat"><b>${alle.length}</b><span>total</span></span><span class="stat ${offen.length ? 'low' : ''}"><b>${offen.length}</b><span>offen</span></span><span class="stat"><b>${ok.length}</b><span>geprüft</span></span></div>
+  <div class="stats-row"><span class="stats-h">Modell richtig</span><span class="stat"><b>${q(tr('kuehe'), ok.length)}</b><span>Anzahl Kühe</span></span><span class="stat"><b>${q(tr('kaelber'), ok.length)}</b><span>Anzahl Kälber</span></span><span class="stat"><b>${q(zk + zc, nk + nc)}</b><span>Gitterstatus</span></span></div></div>
+  <div class="toolbar">${offen.length ? `<button class="btn pri" data-act="fglabel" data-id="${offen[0].id}">Offene prüfen (${offen.length})</button>` : '<span class="small muted">Alles geprüft</span>'}</div>
+  <p class="small muted" style="margin:4px 4px 10px">Jede Stunde ein Bild von Kamera 3. Zählen: Tiere, die mit dem Kopf durchs Gitter fressen. Vorausgefüllt ist, was das Modell erkannt hat.</p>
+  <div class="list">${alle.map(row).join('') || '<div class="empty">Noch keine Bilder - das erste kommt zur nächsten vollen Stunde.</div>'}</div>`;
+}
+function fgLabel(id) {
+  const x = S.fgtraining.find(y => y.id === id); if (!x) return;
+  const g = x.geprueft === true, v = k => g ? x['label_' + k] : x['modell_' + k];
+  const cnt = (k, l) => `<div class="fld"><span>${l} am Fressen</span><div class="fgcnt"><button type="button" class="btn" data-cnt="-1" data-k="${k}">−</button><input name="${k}" type="number" inputmode="numeric" min="0" max="30" value="${v(k) ?? 0}"><button type="button" class="btn" data-cnt="1" data-k="${k}">+</button></div></div>`;
+  const zu = (k, l) => { const w = v(k + '_zu'); return `<div class="fld"><span>Fressgitter ${l}</span><div class="seg" role="radiogroup">${[['1', 'Zu'], ['0', 'Offen']].map(([o, t]) => `<label><input type="radio" name="${k}_zu" value="${o}" ${(w === true && o === '1') || (w === false && o === '0') ? 'checked' : ''}>${t}</label>`).join('')}</div></div>`; };
+  const sh = openSheet('Fressgitter ' + (x.zeit || '').replace('T', ' ').slice(5, 16), `<div id="fgimg" class="nbild" style="aspect-ratio:16/9;background:#E8E6E0;display:flex;align-items:center;justify-content:center"><span class="small muted">Bild lädt …</span></div>
+    <p class="small muted" style="margin:8px 4px">Modell: Kühe ${x.modell_kuehe} · Kälber ${x.modell_kaelber}${x.tag === false ? ' · Nacht' : ''}</p>
+    ${cnt('kuehe', 'Kühe')}${cnt('kaelber', 'Kälber')}${zu('kuehe', 'Kühe')}${zu('kaelber', 'Kälber')}
+    <button type="button" class="btn block" data-fgweg style="margin-top:14px">Bild unbrauchbar</button>`, {
+    saveLabel: 'Sichern', onSave: () => {
+      const f = n => sh.querySelector(`[name="${n}"]`), r = n => { const c = sh.querySelector(`[name="${n}"]:checked`); return c ? c.value === '1' : null; };
+      if (r('kuehe_zu') === null || r('kaelber_zu') === null) { toast('Bitte Gitterstatus Kühe und Kälber wählen'); return; }
+      fgSichern(x, { label_kuehe: Math.max(0, parseInt(f('kuehe').value, 10) || 0), label_kaelber: Math.max(0, parseInt(f('kaelber').value, 10) || 0), label_kuehe_zu: r('kuehe_zu'), label_kaelber_zu: r('kaelber_zu'), geprueft: true });
+    }
+  });
+  sh.querySelectorAll('[data-cnt]').forEach(b => b.onclick = () => { const i = sh.querySelector(`[name="${b.dataset.k}"]`); i.value = Math.max(0, (parseInt(i.value, 10) || 0) + Number(b.dataset.cnt)); });
+  sh.querySelector('[data-fgweg]').onclick = () => fgSichern(x, { geprueft: 'unbrauchbar' });
+  W.get('fgbilder', id).then(d => { const e = $('#fgimg'); if (!e) return; if (d && d.bild) e.outerHTML = `<img id="fgimg" class="nbild" src="${d.bild}" alt="">`; else e.innerHTML = '<span class="small muted">Bild nicht verfügbar</span>'; }).catch(err => { const e = $('#fgimg'); if (e) e.innerHTML = `<span class="small muted">Bild nicht ladbar: ${esc(err.message)}</span>`; });
+}
+function fgSichern(x, l) {
+  put('fgtraining', { ...x, ...l, geprueftAm: Date.now() });
+  const n = fgOffen().find(y => y.id !== x.id);
+  if (n) fgLabel(n.id); else { closeSheet(); toast('Alle Bilder geprüft'); }
+}
 function wqBand() {
   const x = S.sensoren.find(s => s.id === 'wasserqualitaet');
   return x && x.alarme && x.alarme.length ? `<a class="band" href="#/journale/wasserqualitaet"><b>Wasserqualität: starke Veränderung</b><span>${esc(x.alarme.map(a => a.text).join(' · '))}</span></a>` : '';
@@ -704,7 +744,7 @@ function jahre(listen) { const s = new Set([String(new Date().getFullYear())]); 
 function jahrSel() { return `<select class="sel" data-act="jahr" aria-label="Jahr">${jahre([S.behandlungen, S.auslauf, S.feld]).map(j => `<option ${j === UI.jahr ? 'selected' : ''}>${j}</option>`).join('')}</select>`; }
 
 function vJournale() {
-  const SECT = { lager: 'Lager', auslauf: 'Auslaufjournal', behandlung: 'Behandlungsjournal', feld: 'Wiesenjournal', zucht: 'Zucht', traenkefass: 'Tränkefass', wasserstand: 'Wasserstand', wasserqualitaet: 'Wasserqualität', ausbringen: 'Gülle / Mist ausbringen', wetter: 'Agrometeo', kamera: 'CowCatcher' };
+  const SECT = { lager: 'Lager', auslauf: 'Auslaufjournal', behandlung: 'Behandlungsjournal', feld: 'Wiesenjournal', zucht: 'Zucht', traenkefass: 'Tränkefass', wasserstand: 'Wasserstand', wasserqualitaet: 'Wasserqualität', ausbringen: 'Gülle / Mist ausbringen', wetter: 'Agrometeo', kamera: 'CowCatcher', fgtraining: 'Fressgitter-Training' };
   if (!SECT[UI.jTab]) return anaKacheln();
   const tabs = `<div class="anah"><a class="back" href="#/journale/">‹ Übersicht</a><b>${SECT[UI.jTab]}</b></div>`;
   if (UI.jTab === 'auslauf') return tabs + vAuslauf();
@@ -716,6 +756,7 @@ function vJournale() {
   if (UI.jTab === 'wetter') return tabs + anaWetter();
   if (UI.jTab === 'ausbringen') return tabs + anaAusbringen();
   if (UI.jTab === 'kamera') return tabs + anaKamera();
+  if (UI.jTab === 'fgtraining') return tabs + anaFgTraining();
   const list = S.behandlungen.filter(b => (b.datum || '').startsWith(UI.jahr)).sort((a, b) => a.datum < b.datum ? 1 : -1);
   const offen = S.behandlungen.filter(b => b.freiAb && b.freiAb > today());
   return `${tabs}
@@ -890,6 +931,7 @@ function anaKacheln() {
     ${kb('wetter', 'Agrometeo', 'Niederschlag, Temperatur', I('<path d="M7 18a4 4 0 0 1-.5-8 6 6 0 0 1 11.5 1.5A3.5 3.5 0 0 1 17.5 18z"/>'), 'g2')}
     ${kb('lager', 'Lager', 'Heu, Silage, Stroh', IC.verbrauch, 'g3')}
     ${kb('kamera', 'CowCatcher', `${offen} offen · Brunst je Tier`, I('<path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/>'), 'g5')}
+    ${kb('fgtraining', 'Fressgitter-Training', `${S.fgtraining.filter(x => !x.geprueft).length} offen · stündliche Bilder`, I('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 5v14M11 5v14M15 5v14"/>'), 'g5')}
     ${kb('ausbringen', 'Gülle / Mist ausbringen', 'Darf ich heute?', IC.duengung || IC.ernte, 'g4')}
   </div>`;
 }
@@ -2419,6 +2461,7 @@ document.addEventListener('click', e => {
   else if (a === 'kaltag') { e.preventDefault(); UI.kalTag = UI.kalTag === el.dataset.v ? '' : el.dataset.v; render(); }
   else if (a === 'notizkat') { UI.notizKat = el.dataset.v; render(); }
   else if (a === 'fgbild') fgSheet();
+  else if (a === 'fglabel') fgLabel(el.dataset.id);
   else if (a === 'meldung') { const m = S.meldungen.find(x => x.id === el.dataset.id); if (m) meldungSheet(m); }
   else if (a === 'meldtier') { const m = S.meldungen.find(x => x.id === el.dataset.id), t = tierById(el.dataset.t); if (m && t) { meldZuordnen(m, t); toast('Brunst erfasst: ' + (t.name || t.ohrmarke || '')); meldWeiter(m); } }
   else if (a === 'meldverwerfen') { const m = S.meldungen.find(x => x.id === el.dataset.id); if (m) { put('meldungen', { ...m, status: 'verworfen' }); meldWeiter(m); } }
