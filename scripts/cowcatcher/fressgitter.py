@@ -400,7 +400,7 @@ def lauf(CFG, basis, log, sitzung, fs_url, fs_wert, push, test=False):
         felder[f'{gid}_seit'] = int(alt['seit'] * 1000)
         felder[f'{gid}_anzahl'] = anz[gid]
         info.append(f'{gid}: {"zu" if zu else "offen" if zu is False else "?"} '
-                    f'({", ".join(f"{k} {v:.2f}" for k, v in s.items()) or "keine Referenz"}), {anz[gid]} Tier(e)')
+                    f'({", ".join(f"{k} {v:.2f}" if isinstance(v, float) else f"{k} {v}" for k, v in s.items()) or "keine Referenz"}), {anz[gid]} Tier(e)')
     felder['bild'] = bild_data_url(im, c)
     if test:
         p = os.path.join(HIER, 'fressgitter_test.jpg')
