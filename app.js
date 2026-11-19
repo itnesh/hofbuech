@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.31.0';
+const VERSION = '1.31.1';
 const DSK = () => window.matchMedia('(min-width:1100px)').matches; // Browser-Layout (Laptop/Monitor), Smartphone unverändert
 
 /* ---------- Helfer ---------- */
@@ -394,7 +394,7 @@ const fgLang = (x, g) => x && x[g + '_zu'] === true && Date.now() - (x[g + '_sei
 function fgKpi() {
   const x = fgDoc(); if (!x) return '';
   const alt = fgAlt(x);
-  const c = (g, l) => { const zu = x[g + '_zu'], lang = fgLang(x, g); return `<button type="button" class="stat ${lang ? 'low' : ''}" data-act="fgbild"><b>${alt ? '-' : nf(x[g + '_anzahl'] ?? 0)}${lang ? '<i class="fx" title="lange zu">!</i>' : ''}</b><span>${l} · ${alt ? 'keine Daten' : zu === true ? 'zu ' + fgDauer(x[g + '_seit']) : zu === false ? 'offen' : '?'}</span></button>`; };
+  const c = (g, l) => { const zu = x[g + '_zu'], lang = fgLang(x, g); return `<button type="button" class="stat ${lang ? 'low' : ''}" data-act="fgbild"><b><i class="fg-dot ${alt || zu == null ? '' : zu ? 'zu' : 'offen'}" title="${alt || zu == null ? 'unbekannt' : zu ? 'Gitter zu' : 'Gitter offen'}"></i>${alt ? '-' : nf(x[g + '_anzahl'] ?? 0)}${lang ? '<i class="fx" title="lange zu">!</i>' : ''}</b><span>${l} · ${alt ? 'keine Daten' : zu === true ? 'zu ' + fgDauer(x[g + '_seit']) : zu === false ? 'offen' : '?'}</span></button>`; };
   return `<div class="stats-row"><span class="stats-h">Fress&shy;gitter</span>${FG.map(([g, l]) => c(g, l)).join('')}<span></span></div>`;
 }
 function fgBand() {

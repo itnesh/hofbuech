@@ -580,3 +580,9 @@ video#mvid{cursor:pointer}
   body.vollbild .dsk-r .kal,body.vollbild .dsk-r .kal-kopf{display:none!important}
   body.vollbild .dsk-r>.sec-t:not(.kal-kopf){margin-top:0}
 }
+
+/* Fressgitter-Ampel: gruen offen, rot zu, grau unbekannt */
+.fg-dot{display:inline-block;width:22px;height:22px;border-radius:50%;margin-right:9px;vertical-align:-3px;background:#B9BDB5;box-shadow:0 0 0 3px rgba(185,189,181,.25)}
+.fg-dot.offen{background:#2FA84F;box-shadow:0 0 0 3px rgba(47,168,79,.22)}
+.fg-dot.zu{background:#D33A2C;box-shadow:0 0 0 3px rgba(211,58,44,.22)}
+@media (min-width:700px){.fg-dot{width:26px;height:26px;vertical-align:-4px}}
