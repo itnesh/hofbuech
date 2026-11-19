@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.32.0';
+const VERSION = '1.32.1';
 const DSK = () => window.matchMedia('(min-width:1100px)').matches; // Browser-Layout (Laptop/Monitor), Smartphone unverändert
 
 /* ---------- Helfer ---------- */
@@ -409,6 +409,7 @@ function fgSheet() {
   openSheet('Fressgitter', `${x.bild ? `<img class="nbild" src="${x.bild}" alt="">` : ''}<p class="small muted">${esc(x.kamera || 'Kamera 3')} · Stand ${esc(z)}${fgAlt(x) ? ' · veraltet, CowCatcher-Laptop prüfen' : ''}</p><div class="list">${FG.map(zl).join('')}</div><p class="small muted" style="margin:10px 4px">Aktualisierung alle 5 Min. Push, wenn ein Gitter länger als ${nf(x.alarm_h || 2)} h zu ist, danach alle 30 Min.</p>`, { onlyClose: true });
 }
 // Fressgitter-Training: stuendliches Bild, Matthias erfasst Kuehe/Kaelber am Fressen + Gitterstatus (Abgleich mit Modell)
+const FGHEBEL = [[[0.656, 0.408, 0.720, 0.668], 'Kühe'], [[0.945, 0.453, 1.0, 0.566], 'Kälber']];
 const fgOffen = () => S.fgtraining.filter(x => !x.geprueft).sort((a, b) => a.id < b.id ? 1 : -1);
 function anaFgTraining() {
   const alle = [...S.fgtraining].sort((a, b) => a.id < b.id ? 1 : -1), ok = alle.filter(x => x.geprueft === true), offen = fgOffen();
@@ -429,7 +430,9 @@ function fgLabel(id) {
   const g = x.geprueft === true, v = k => g ? x['label_' + k] : x['modell_' + k];
   const cnt = (k, l) => `<div class="fld"><span>${l} am Fressen</span><div class="fgcnt"><button type="button" class="btn" data-cnt="-1" data-k="${k}">−</button><input name="${k}" type="number" inputmode="numeric" min="0" max="30" value="${v(k) ?? 0}"><button type="button" class="btn" data-cnt="1" data-k="${k}">+</button></div></div>`;
   const zu = (k, l) => { const w = v(k + '_zu'); return `<div class="fld"><span>Fressgitter ${l}</span><div class="seg" role="radiogroup">${[['1', 'Zu'], ['0', 'Offen']].map(([o, t]) => `<label><input type="radio" name="${k}_zu" value="${o}" ${(w === true && o === '1') || (w === false && o === '0') ? 'checked' : ''}>${t}</label>`).join('')}</div></div>`; };
-  const sh = openSheet('Fressgitter ' + (x.zeit || '').replace('T', ' ').slice(5, 16), `<div id="fgimg" class="nbild" style="aspect-ratio:16/9;background:#E8E6E0;display:flex;align-items:center;justify-content:center"><span class="small muted">Bild lädt …</span></div>
+  const sh = openSheet('Fressgitter ' + (x.zeit || '').replace('T', ' ').slice(5, 16), `<div class="fgzoomw"><div id="fgimg" class="nbild" style="aspect-ratio:16/9;background:#E8E6E0;display:flex;align-items:center;justify-content:center"><span class="small muted">Bild lädt …</span></div></div>
+    <p class="small muted" style="margin:6px 4px 0">Bild antippen = vergrössern, dann seitlich verschieben</p>
+    <div class="fgheb" id="fgheb"></div>
     <p class="small muted" style="margin:8px 4px">Modell: Kühe ${x.modell_kuehe} · Kälber ${x.modell_kaelber}${x.tag === false ? ' · Nacht' : ''}</p>
     ${cnt('kuehe', 'Kühe')}${cnt('kaelber', 'Kälber')}${zu('kuehe', 'Kühe')}${zu('kaelber', 'Kälber')}
     <button type="button" class="btn block" data-fgweg style="margin-top:14px">Bild unbrauchbar</button>`, {
@@ -441,7 +444,16 @@ function fgLabel(id) {
   });
   sh.querySelectorAll('[data-cnt]').forEach(b => b.onclick = () => { const i = sh.querySelector(`[name="${b.dataset.k}"]`); i.value = Math.max(0, (parseInt(i.value, 10) || 0) + Number(b.dataset.cnt)); });
   sh.querySelector('[data-fgweg]').onclick = () => fgSichern(x, { geprueft: 'unbrauchbar' });
-  W.get('fgbilder', id).then(d => { const e = $('#fgimg'); if (!e) return; if (d && d.bild) e.outerHTML = `<img id="fgimg" class="nbild" src="${d.bild}" alt="">`; else e.innerHTML = '<span class="small muted">Bild nicht verfügbar</span>'; }).catch(err => { const e = $('#fgimg'); if (e) e.innerHTML = `<span class="small muted">Bild nicht ladbar: ${esc(err.message)}</span>`; });
+  W.get('fgbilder', id).then(d => {
+    const e = $('#fgimg'); if (!e) return;
+    if (!d || !d.bild) { e.innerHTML = '<span class="small muted">Bild nicht verfügbar</span>'; return; }
+    e.outerHTML = `<img id="fgimg" class="nbild" src="${d.bild}" alt="">`;
+    const img = $('#fgimg'), w = img.closest('.fgzoomw'); img.onclick = () => w.classList.toggle('on');
+    const hb = $('#fgheb'), zeig = (src, l) => `<figure><img src="${src}" alt=""><figcaption>Hebel ${l}</figcaption></figure>`;
+    if (d.hebel_kuehe) { hb.innerHTML = zeig(d.hebel_kuehe, 'Kühe') + zeig(d.hebel_kaelber, 'Kälber'); return; }
+    // aeltere Bilder ohne Ausschnitt: aus dem Bild schneiden (Lage wie fressgitter.py, mit Rand)
+    img.decode().then(() => { hb.innerHTML = FGHEBEL.map(([b, l]) => { const W0 = img.naturalWidth, H0 = img.naturalHeight, m = 0.025, x0 = Math.max(0, b[0] - m) * W0, y0 = Math.max(0, b[1] - m) * H0, x1 = Math.min(1, b[2] + m) * W0, y1 = Math.min(1, b[3] + m) * H0, cv = document.createElement('canvas'); cv.width = (x1 - x0) * 3; cv.height = (y1 - y0) * 3; cv.getContext('2d').drawImage(img, x0, y0, x1 - x0, y1 - y0, 0, 0, cv.width, cv.height); return zeig(cv.toDataURL('image/jpeg', .9), l); }).join(''); }).catch(() => {});
+  }).catch(err => { const e = $('#fgimg'); if (e) e.innerHTML = `<span class="small muted">Bild nicht ladbar: ${esc(err.message)}</span>`; });
 }
 function fgSichern(x, l) {
   put('fgtraining', { ...x, ...l, geprueftAm: Date.now() });

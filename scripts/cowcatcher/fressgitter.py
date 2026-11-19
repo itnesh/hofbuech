@@ -39,7 +39,8 @@ STD = {
         # hebel: Ausschnitt um den roten Hebel; zone: Futtertisch vor dem Gitter (x1,y1,x2,y2);
         # linie: y der Gitterunterkante, Tier zaehlt, wenn seine Box unten tiefer reicht
         'kuehe':   {'name': 'Kühe',   'hebel': [0.656, 0.408, 0.720, 0.668], 'zone': [0.08, 0.0, 0.707, 1.0], 'linie': 0.645},
-        'kaelber': {'name': 'Kälber', 'hebel': [0.945, 0.453, 1.000, 0.566], 'zone': [0.707, 0.0, 1.00, 1.0], 'linie': 0.645},
+        'kaelber': {'name': 'Kälber', 'hebel': [0.945, 0.453, 1.000, 0.566], 'zone': [0.707, 0.0, 1.00, 1.0], 'linie': 0.645,
+                   'nacht': False},  # Griff bei Infrarot unsichtbar -> nachts letzter Tagesstatus (bis Reflektor)
     },
 }
 TIERKLASSEN = set(range(14, 24))  # COCO: bird..giraffe (Kaelber von oben landen teils bei dog/sheep/horse)
@@ -186,6 +187,8 @@ def gitter_status(im, gid, g):
     Verglichen wird nur mit Referenzen derselben Art (Tag mit Tag, Nacht mit Nacht)."""
     crop = hebel_ausschnitt(im, g['hebel'])
     tag = farbig(crop)
+    if not tag and not g.get('nacht', True):
+        return None, {'nacht': 'aus'}
     refs = {'zu': [], 'offen': []}
     for f in glob.glob(os.path.join(REF, f'{gid}_*.png')):
         z = os.path.basename(f).split('_')[1]
@@ -207,6 +210,8 @@ def gitter_status(im, gid, g):
         if min(d.values()) > 0.35 or abs(d['zu'] - d['offen']) < 0.05:
             return None, {'abst_' + k: v for k, v in d.items()}
         return d['zu'] < d['offen'], {'abst_' + k: v for k, v in d.items()}
+    if not g.get('nacht', True):
+        return None, {'nacht': 'aus'}
     akt = kanten(hebel_ausschnitt(im, g['hebel'], 12))
     s = {z: max(vergleich(akt, kanten(r)) for r in rs) for z, rs in refs.items()}
     if max(s.values()) < 0.35 or abs(s['zu'] - s['offen']) < 0.06:
@@ -440,7 +445,13 @@ def training_speichern(im, felder, boxen, c, s, fs_url, fs_wert, tid):
             'modell_kuehe_zu': felder['kuehe_zu'], 'modell_kaelber_zu': felder['kaelber_zu'], 'geprueft': False}
     json.dump({**meta, 'boxen': [[round(float(v), 4) for v in b] + [round(cf, 3)] for b, cf in boxen]},
               open(os.path.join(TRAIN, tid + '.json'), 'w', encoding='utf-8'))
-    r = s.patch(fs_url('fgbilder/' + tid), json={'fields': {'bild': fs_wert(bild_data_url(im, c, px_=c['training_px'], q=c['training_q']))}}, timeout=60)
+    bf = {'bild': bild_data_url(im, c, px_=c['training_px'], q=c['training_q'])}
+    for gid, g in c['gitter'].items():  # Hebel in voller Aufloesung mit etwas Umgebung, zum Beurteilen in der App
+        hc = hebel_ausschnitt(im, g['hebel'], 60)
+        hc = hc.resize((hc.width * 2, hc.height * 2), Image.LANCZOS) if hc.height < 300 else hc
+        b = io.BytesIO(); hc.save(b, 'JPEG', quality=85)
+        bf['hebel_' + gid] = 'data:image/jpeg;base64,' + base64.b64encode(b.getvalue()).decode()
+    r = s.patch(fs_url('fgbilder/' + tid), json={'fields': {k: fs_wert(v) for k, v in bf.items()}}, timeout=60)
     r.raise_for_status()
     r = s.patch(fs_url('fgtraining/' + tid), json={'fields': {k: fs_wert(v) for k, v in meta.items() if k != 'id'}}, timeout=30)
     r.raise_for_status()
