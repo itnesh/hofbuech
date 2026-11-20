@@ -335,6 +335,13 @@ def main():
             log.info('Waechter-Code/Modell geaendert: Neustart durch Dienst')
             os._exit(3)
         auftraege()
+        if fg_aktiv:
+            try:
+                import fressgitter as fg
+                sitzung()
+                fg.anfrage(CFG, BASIS, log, sitzung, fs_url, fs_wert, push_alle)
+            except Exception as e:
+                log.warning('Fressgitter-Anfrage: %s', e)
         try:
             durchlauf(gesendet)
             if fg_aktiv and time.time() - letzte_fg >= fg_s:

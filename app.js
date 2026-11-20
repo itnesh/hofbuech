@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.32.2';
+const VERSION = '1.33.0';
 const DSK = () => window.matchMedia('(min-width:1100px)').matches; // Browser-Layout (Laptop/Monitor), Smartphone unverändert
 
 /* ---------- Helfer ---------- */
@@ -281,6 +281,7 @@ const UI = { tierFilter: { kat: '', lakt: '', q: '', sort: 'alter', abg: false }
 
 function render() {
   if (mode === 'firebase' && !USER) return;
+  fgWarteCheck();
   feldMigration(); auslaufBereinigen(); lagerKorrektur(); behFreiKorr(); labiolaSeed(); setTimeout(ausbArchivieren, 0); if (!SENS.zuletzt) setTimeout(() => sensorenLaden(), 0);
   if (document.querySelector('.sheet.show [data-dirty="1"]')) return; // Formular offen und bearbeitet: nicht neu zeichnen
   const h = location.hash.replace(/^#\/?/, '') || 'start';
@@ -406,7 +407,7 @@ function fgSheet() {
   const x = fgDoc(); if (!x) return;
   const z = (x.zeit || '').replace('T', ' ').slice(0, 16);
   const zl = ([g, n]) => { const zu = x[g + '_zu']; return `<div class="row one"><i class="bar ${fgLang(x, g) ? 'red' : zu ? 'blue' : 'green'}"></i><div class="main"><span class="t1"><span class="hd">${n}: ${zu === true ? 'Gitter zu' : zu === false ? 'Gitter offen' : 'Status unbekannt'}</span> <span class="ex">${nf(x[g + '_anzahl'] ?? 0)} am Fressen</span></span></div><small class="rt">${zu === true ? fgDauer(x[g + '_seit']) : ''}</small></div>`; };
-  openSheet('Fressgitter', `${x.bild ? `<img class="nbild" src="${x.bild}" alt="">` : ''}<p class="small muted">${esc(x.kamera || 'Kamera 3')} · Stand ${esc(z)}${fgAlt(x) ? ' · veraltet, CowCatcher-Laptop prüfen' : ''}</p><div class="list">${FG.map(zl).join('')}</div><p class="small muted" style="margin:10px 4px">Aktualisierung alle 5 Min. Push, wenn ein Gitter länger als ${nf(x.alarm_h || 2)} h zu ist, danach alle 30 Min.</p>`, { onlyClose: true });
+  openSheet('Fressgitter', `${x.bild ? `<img class="nbild" src="${x.bild}" alt="">` : ''}<p class="small muted">${esc(x.kamera || 'Kamera 3')} · Stand ${esc(z)}${fgAlt(x) ? ' · veraltet, CowCatcher-Laptop prüfen' : ''}</p><div class="list">${FG.map(zl).join('')}</div><button class="btn block" data-act="fganfrage" style="margin-top:12px">Bild jetzt aufnehmen und beurteilen</button><p class="small muted" style="margin:10px 4px">Aktualisierung alle 5 Min. Push, wenn ein Gitter länger als ${nf(x.alarm_h || 2)} h zu ist, danach alle 30 Min.</p>`, { onlyClose: true });
 }
 // Fressgitter-Training: stuendliches Bild, Matthias erfasst Kuehe/Kaelber am Fressen + Gitterstatus (Abgleich mit Modell)
 const FGHEBEL = [[[0.656, 0.408, 0.720, 0.668], 'Kühe'], [[0.945, 0.453, 1.0, 0.566], 'Kälber']];
@@ -421,9 +422,9 @@ function anaFgTraining() {
   const row = x => `<button type="button" class="row" data-act="fglabel" data-id="${x.id}"><i class="bar ${x.geprueft === true ? 'green' : x.geprueft ? '' : 'blue'}"></i><div class="main"><span class="t1"><span class="hd">${esc((x.zeit || '').replace('T', ' ').slice(0, 16))}</span> <span class="ex">${x.tag === false ? 'Nacht' : 'Tag'}</span></span><span class="t2">${x.geprueft === true ? `Kühe ${x.label_kuehe} (${st(x.label_kuehe_zu)}) · Kälber ${x.label_kaelber} (${st(x.label_kaelber_zu)})` : x.geprueft ? 'unbrauchbar' : `Modell: Kühe ${x.modell_kuehe} (${st(x.modell_kuehe_zu)}) · Kälber ${x.modell_kaelber} (${st(x.modell_kaelber_zu)})`}</span></div><small class="rt">${x.geprueft === true ? 'geprüft' : x.geprueft ? '' : 'offen'}</small></button>`;
   return `<div class="stats"><div class="stats-row"><span class="stats-h">Bilder</span><span class="stat"><b>${alle.length}</b><span>total</span></span><span class="stat ${offen.length ? 'low' : ''}"><b>${offen.length}</b><span>offen</span></span><span class="stat"><b>${ok.length}</b><span>geprüft</span></span></div>
   <div class="stats-row"><span class="stats-h">Modell richtig</span><span class="stat"><b>${q(tr('kuehe'), ok.length)}</b><span>Anzahl Kühe</span></span><span class="stat"><b>${q(tr('kaelber'), ok.length)}</b><span>Anzahl Kälber</span></span><span class="stat"><b>${q(zk + zc, nk + nc)}</b><span>Gitterstatus</span></span></div></div>
-  <div class="toolbar">${offen.length ? `<button class="btn pri" data-act="fglabel" data-id="${offen[0].id}">Offene prüfen (${offen.length})</button>` : '<span class="small muted">Alles geprüft</span>'}</div>
-  <p class="small muted" style="margin:4px 4px 10px">Jede Stunde ein Bild von Kamera 3. Zählen: Tiere, die mit dem Kopf durchs Gitter fressen. Vorausgefüllt ist, was das Modell erkannt hat.</p>
-  <div class="list">${alle.map(row).join('') || '<div class="empty">Noch keine Bilder - das erste kommt zur nächsten vollen Stunde.</div>'}</div>`;
+  <div class="toolbar"><button class="btn pri" data-act="fganfrage">Bild jetzt aufnehmen</button>${offen.length ? `<button class="btn" data-act="fglabel" data-id="${offen[0].id}">Offene prüfen (${offen.length})</button>` : ''}</div>
+  <p class="small muted" style="margin:4px 4px 10px">Auf Knopfdruck ein Bild von Kamera 3. Zählen: Tiere, die mit dem Kopf durchs Gitter fressen (8 Plätze links Kühe, 4 rechts Kälber). Vorausgefüllt ist, was das Modell erkannt hat.</p>
+  <div class="list">${alle.map(row).join('') || '<div class="empty">Noch keine Bilder - „Bild jetzt aufnehmen“ drücken.</div>'}</div>`;
 }
 function fgLabel(id) {
   const x = S.fgtraining.find(y => y.id === id); if (!x) return;
@@ -454,6 +455,20 @@ function fgLabel(id) {
     // aeltere Bilder ohne Ausschnitt: aus dem Bild schneiden (Lage wie fressgitter.py, mit Rand)
     img.decode().then(() => { hb.innerHTML = FGHEBEL.map(([b, l]) => { const W0 = img.naturalWidth, H0 = img.naturalHeight, m = 0.025, x0 = Math.max(0, b[0] - m) * W0, y0 = Math.max(0, b[1] - m) * H0, x1 = Math.min(1, b[2] + m) * W0, y1 = Math.min(1, b[3] + m) * H0, cv = document.createElement('canvas'); cv.width = (x1 - x0) * 3; cv.height = (y1 - y0) * 3; cv.getContext('2d').drawImage(img, x0, y0, x1 - x0, y1 - y0, 0, 0, cv.width, cv.height); return zeig(cv.toDataURL('image/jpeg', .9), l); }).join(''); }).catch(() => {});
   }).catch(err => { const e = $('#fgimg'); if (e) e.innerHTML = `<span class="small muted">Bild nicht ladbar: ${esc(err.message)}</span>`; });
+}
+// Bild auf Anfrage: Hofpuls schreibt fgauftrag/aktuell, der CowCatcher-Laptop nimmt innert ~10-30 s auf (fgtraining)
+let FGW = null;
+function fgAnfrage() {
+  put('fgauftrag', { id: 'aktuell', status: 'offen', angefragt: Date.now() });
+  FGW = { seit: Date.now(), ids: new Set(S.fgtraining.map(x => x.id)) };
+  openSheet('Fressgitter jetzt', '<div class="nbild" style="aspect-ratio:16/9;background:#E8E6E0;display:flex;align-items:center;justify-content:center"><span class="small muted">Bild wird aufgenommen und ausgewertet …<br>dauert ca. 10 bis 40 Sekunden</span></div>', { onlyClose: true });
+  setTimeout(() => { if (FGW && Date.now() - FGW.seit >= 90000) { FGW = null; closeSheet(); toast('Keine Antwort vom CowCatcher-Laptop'); } }, 91000);
+}
+function fgWarteCheck() {
+  if (!FGW) return;
+  if (!sheetOpen) { FGW = null; return; }
+  const n = S.fgtraining.find(x => !FGW.ids.has(x.id));
+  if (n) { FGW = null; closeSheet(true); fgLabel(n.id); }
 }
 function fgSichern(x, l) {
   put('fgtraining', { ...x, ...l, geprueftAm: Date.now() });
@@ -2486,6 +2501,7 @@ document.addEventListener('click', e => {
   else if (a === 'notizkat') { UI.notizKat = el.dataset.v; render(); }
   else if (a === 'fgbild') fgSheet();
   else if (a === 'fglabel') fgLabel(el.dataset.id);
+  else if (a === 'fganfrage') fgAnfrage();
   else if (a === 'meldung') { const m = S.meldungen.find(x => x.id === el.dataset.id); MELDNAV = el.dataset.nav === 'offen' ? S.meldungen.filter(x => !x.status).sort((p, q) => p.zeit < q.zeit ? 1 : -1).map(x => x.id) : null; if (m) meldungSheet(m); }
   else if (a === 'meldtier') { const m = S.meldungen.find(x => x.id === el.dataset.id), t = tierById(el.dataset.t); if (m && t) { meldZuordnen(m, t); toast('Brunst erfasst: ' + (t.name || t.ohrmarke || '')); meldWeiter(m); } }
   else if (a === 'meldverwerfen') { const m = S.meldungen.find(x => x.id === el.dataset.id); if (m) { put('meldungen', { ...m, status: 'verworfen' }); meldWeiter(m); } }

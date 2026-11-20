@@ -39,7 +39,7 @@ STD = {
     'trennung': 0.707,                                    # x Mittelpfosten: links 8 Plaetze Kuehe, rechts 4 Kaelber
     'conf': 0.25,
     'bild_px': 640, 'bild_q': 60,
-    'training': True,            # stuendlich ein Bild zum Beurteilen in Hofpuls (fgtraining + fgbilder) und lokal
+    'training': False,           # True = stuendlich ein Bild zum Beurteilen; sonst nur auf Anfrage aus Hofpuls (fgauftrag/aktuell)
     'training_px': 1280, 'training_q': 70,
     'kacheln': [[0.0, 0.30, 0.56, 1.0], [0.44, 0.30, 1.0, 1.0]],  # Futtertisch links/rechts in hoher Aufloesung
     'gitter': {
@@ -427,7 +427,7 @@ def debug_bild(im, c, boxen, zuord, pfad):
     d.save(pfad, quality=85)
 
 
-def lauf(CFG, basis, log, sitzung, fs_url, fs_wert, push, test=False):
+def lauf(CFG, basis, log, sitzung, fs_url, fs_wert, push, test=False, training_id=None):
     c = cfg(CFG)
     url = rtsp_url(c, basis)
     im = standbild(url)
@@ -486,7 +486,10 @@ def lauf(CFG, basis, log, sitzung, fs_url, fs_wert, push, test=False):
     r = s.patch(fs_url('sensoren/fressgitter'), json={'fields': {k: fs_wert(v) for k, v in felder.items()}}, timeout=30)
     r.raise_for_status()
     log.info('Fressgitter %s', ' | '.join(info))
-    if c.get('training', True):
+    if training_id:  # auf Anfrage aus Hofpuls
+        training_speichern(im, felder, boxen, c, s, fs_url, fs_wert, training_id)
+        log.info('Fressgitter-Bild auf Anfrage %s gespeichert', training_id)
+    elif c.get('training'):
         h = datetime.datetime.now().strftime('%Y%m%d-%H')
         if st.get('training_h') != h:
             try:
@@ -505,7 +508,8 @@ def training_speichern(im, felder, boxen, c, s, fs_url, fs_wert, tid):
     im.save(os.path.join(TRAIN, tid + '.jpg'), quality=90)
     meta = {'id': tid, 'zeit': felder['zeit'], 'tag': farbig(im.crop((0, int(im.size[1] * 0.3), im.size[0], im.size[1]))),
             'modell_kuehe': felder['kuehe_anzahl'], 'modell_kaelber': felder['kaelber_anzahl'],
-            'modell_kuehe_zu': felder['kuehe_zu'], 'modell_kaelber_zu': felder['kaelber_zu'], 'geprueft': False}
+            'modell_kuehe_zu': felder['kuehe_zu'], 'modell_kaelber_zu': felder['kaelber_zu'], 'geprueft': False,
+            'erstellt': int(time.time() * 1000)}
     json.dump({**meta, 'boxen': [[round(float(v), 4) for v in b] + [round(cf, 3)] for b, cf in boxen]},
               open(os.path.join(TRAIN, tid + '.json'), 'w', encoding='utf-8'))
     bf = {'bild': bild_data_url(im, c, px_=c['training_px'], q=c['training_q'])}
@@ -518,3 +522,24 @@ def training_speichern(im, felder, boxen, c, s, fs_url, fs_wert, tid):
     r.raise_for_status()
     r = s.patch(fs_url('fgtraining/' + tid), json={'fields': {k: fs_wert(v) for k, v in meta.items() if k != 'id'}}, timeout=30)
     r.raise_for_status()
+
+
+def anfrage(CFG, basis, log, sitzung, fs_url, fs_wert, push):
+    """Hofpuls-Button 'Bild aufnehmen': fgauftrag/aktuell mit status 'offen' -> Bild + Erkennung -> fgtraining"""
+    s = sitzung()
+    r = s.get(fs_url('fgauftrag/aktuell'), timeout=20)
+    if r.status_code == 404:
+        return
+    r.raise_for_status()
+    f = r.json().get('fields', {})
+    if f.get('status', {}).get('stringValue') != 'offen':
+        return
+    tid = 'fg_' + datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
+    try:
+        lauf(CFG, basis, log, sitzung, fs_url, fs_wert, push, training_id=tid)
+        neu = {'status': 'erledigt', 'id': tid}
+    except Exception as e:
+        log.warning('Fressgitter-Anfrage fehlgeschlagen: %s', e)
+        neu = {'status': 'fehler', 'fehler': str(e)[:200]}
+    neu['erledigt'] = int(time.time() * 1000)
+    s.patch(fs_url('fgauftrag/aktuell'), json={'fields': {k: fs_wert(v) for k, v in {**{k: list(v.values())[0] for k, v in f.items() if k not in neu}, **neu}.items()}}, timeout=20).raise_for_status()
