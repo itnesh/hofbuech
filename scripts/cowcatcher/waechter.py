@@ -330,10 +330,17 @@ def main():
     fg_s = ((CFG.get('fressgitter') or {}).get('intervall_s')) or 300
     fg_aktiv = (CFG.get('fressgitter') or {}).get('aktiv', True)
     while True:
-        if code_stand() != stand_code:
-            # Code oder Modell ersetzt -> beenden, nssm startet den Dienst nach 10 s neu (kein Admin noetig)
-            log.info('Waechter-Code/Modell geaendert: Neustart durch Dienst')
-            os._exit(3)
+        neu = code_stand()
+        if neu != stand_code:
+            # fressgitter.py / Modelle ersetzt -> im laufenden Dienst neu laden (kein Neustart, kein Admin noetig)
+            geaendert = {f for f, t in set(neu) ^ set(stand_code)}
+            if any(f.endswith('waechter.py') for f in geaendert):
+                log.warning('waechter.py geaendert: wirkt erst nach Dienst-Neustart (STOPP.bat / START.bat)')
+            if 'fressgitter' in sys.modules:
+                import importlib
+                importlib.reload(sys.modules['fressgitter'])
+            log.info('Fressgitter-Code/Modell neu geladen')
+            stand_code = neu
         auftraege()
         if fg_aktiv:
             try:
