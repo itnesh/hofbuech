@@ -30,6 +30,13 @@ STD = {
     'alarm_h': 2.0,              # Push, wenn Gitter so lange zu
     'alarm_wdh_min': 30,         # danach wiederholen
     'modell': os.path.join(HIER, 'modelle', 'yolo11s.onnx'),
+    # eigenes Kopf-Modell (auf Bannhalde-Bildern trainiert): zaehlt Koepfe durchs Gitter, hat Vorrang
+    'kopfmodell': os.path.join(HIER, 'modelle', 'fg_kopf.onnx'),
+    'kopf_conf': 0.25,
+    'kopf_band': [0.4167, 0.868],                         # y-Bereich Gitter + Futtertisch
+    'kopf_kacheln': [[0.0, 0.5156], [0.4844, 1.0]],       # x-Bereiche, je halbe Aufloesung
+    'kopf_skala': 0.5,
+    'trennung': 0.707,                                    # x Mittelpfosten: links 8 Plaetze Kuehe, rechts 4 Kaelber
     'conf': 0.25,
     'bild_px': 640, 'bild_q': 60,
     'training': True,            # stuendlich ein Bild zum Beurteilen in Hofpuls (fgtraining + fgbilder) und lokal
@@ -306,6 +313,59 @@ def yolo(im, c):
     return [(xy[i] / [W, H, W, H], float(cf[i])) for i in fertig if i not in weg]
 
 
+_ksess = None
+
+
+def koepfe(im, c):
+    """Eigenes Modell: Boxen der Koepfe, die durchs Gitter reichen (rel. Koordinaten, Konfidenz)"""
+    global _ksess
+    import onnxruntime as ort
+    if _ksess is None:
+        _ksess = ort.InferenceSession(c['kopfmodell'], providers=['CPUExecutionProvider'])
+    inp = _ksess.get_inputs()[0]
+    S = inp.shape[2] if isinstance(inp.shape[2], int) else 640
+    W, H = im.size
+    y0, y1 = int(c['kopf_band'][0] * H), int(c['kopf_band'][1] * H)
+    alle, cfs = [], []
+    for kx0, kx1 in c['kopf_kacheln']:
+        x0, x1 = int(kx0 * W), int(kx1 * W)
+        t = im.crop((x0, y0, x1, y1))
+        t = t.resize((max(1, int(t.width * c['kopf_skala'])), max(1, int(t.height * c['kopf_skala']))), Image.BILINEAR)
+        r = S / max(t.size)
+        nw, nh = int(t.width * r), int(t.height * r)
+        can = Image.new('RGB', (S, S), (114, 114, 114))
+        ox, oy = (S - nw) // 2, (S - nh) // 2
+        can.paste(t.resize((nw, nh), Image.BILINEAR), (ox, oy))
+        x = np.asarray(can, dtype=np.float32).transpose(2, 0, 1)[None] / 255.0
+        out = _ksess.run(None, {inp.name: x})[0][0].T  # (N, 5)
+        cf = out[:, 4]; k = cf >= c['kopf_conf']
+        b = out[k, :4]; cf = cf[k]
+        f = 1 / (r * c['kopf_skala'])
+        xy = np.stack([(b[:, 0] - b[:, 2] / 2 - ox) * f + x0, (b[:, 1] - b[:, 3] / 2 - oy) * f + y0,
+                       (b[:, 0] + b[:, 2] / 2 - ox) * f + x0, (b[:, 1] + b[:, 3] / 2 - oy) * f + y0], 1) if len(b) else np.zeros((0, 4))
+        alle.append(xy); cfs.append(cf)
+    xy = np.concatenate(alle); cf = np.concatenate(cfs)
+    idx = cf.argsort()[::-1]; fertig = []
+    while len(idx):
+        i = idx[0]; fertig.append(i)
+        a = xy[i]; rest = xy[idx[1:]]
+        ix = np.clip(np.minimum(a[2], rest[:, 2]) - np.maximum(a[0], rest[:, 0]), 0, None)
+        iy = np.clip(np.minimum(a[3], rest[:, 3]) - np.maximum(a[1], rest[:, 1]), 0, None)
+        inter = ix * iy
+        fr = (rest[:, 2] - rest[:, 0]) * (rest[:, 3] - rest[:, 1])
+        u = (a[2] - a[0]) * (a[3] - a[1]) + fr - inter
+        idx = idx[1:][(inter / np.maximum(u, 1) < 0.4) & (inter / np.maximum(fr, 1) < 0.7)]
+    return [(xy[i] / [W, H, W, H], float(cf[i])) for i in fertig]
+
+
+def koepfe_zaehlen(boxen, c):
+    n = {'kuehe': 0, 'kaelber': 0}; zu = {}
+    for b, cf in boxen:
+        gid = 'kuehe' if (b[0] + b[2]) / 2 < c['trennung'] else 'kaelber'
+        n[gid] += 1; zu[tuple(b)] = gid
+    return n, zu
+
+
 def zaehlen(boxen, c):
     """Tier zaehlt, wenn es mit dem Kopf durchs Gitter reicht (Box unten tiefer als die Gitterlinie).
     Nur-Kopf-Boxen im Futter (ganz unter der Linie) zaehlen nicht doppelt, wenn darueber schon ein Tier zaehlt."""
@@ -373,15 +433,18 @@ def lauf(CFG, basis, log, sitzung, fs_url, fs_wert, push, test=False):
     im = standbild(url)
     jetzt = time.time()
     st = stand_laden()
-    boxen = []
-    if os.path.exists(c['modell']):
+    boxen, kopf = [], False
+    if os.path.exists(c['kopfmodell']):
+        try:
+            boxen = koepfe(im, c); kopf = True
+        except Exception as e:
+            log.warning('Fressgitter: Kopfmodell fehlgeschlagen: %s', e)
+    if not kopf and os.path.exists(c['modell']):
         try:
             boxen = yolo(im, c)
         except Exception as e:
             log.warning('Fressgitter: Zaehlung fehlgeschlagen: %s', e)
-    else:
-        log.warning('Fressgitter: Modell fehlt (%s), nur Gitterstatus', c['modell'])
-    anz, zuord = zaehlen(boxen, c)
+    anz, zuord = koepfe_zaehlen(boxen, c) if kopf else zaehlen(boxen, c)
     felder = {'typ': 'fressgitter', 'name': 'Fressgitter', 'kamera': CFG['kameras'].get(c['kamera'], c['kamera']),
               'zeit': datetime.datetime.now().isoformat(timespec='seconds'), 'aktualisiert': int(jetzt * 1000),
               'quelle': 'cowcatcher', 'alarm_h': float(c['alarm_h'])}

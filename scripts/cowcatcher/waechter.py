@@ -17,7 +17,7 @@ Aufruf:
   python waechter.py --fressgitter-ref zu|offen  aktuelle Hebelstellung als Referenz speichern
 Fressgitter (Kamera 3) laeuft im Dauerbetrieb alle 5 Min. mit, siehe fressgitter.py
 """
-import base64, datetime, io, json, logging, logging.handlers, os, subprocess, sys, tempfile, time
+import glob, base64, datetime, io, json, logging, logging.handlers, os, subprocess, sys, tempfile, time
 
 HIER = os.path.dirname(os.path.abspath(__file__))
 BASIS = os.path.dirname(HIER)  # C:\CowCatcher
@@ -205,6 +205,39 @@ def push_alle(title, body, url, tag):
     return n
 
 
+def code_stand():
+    """Aenderungszeiten von Code und Modellen (Selbst-Neustart bei Update)"""
+    h = os.path.dirname(os.path.abspath(__file__))
+    fs = [os.path.join(h, f) for f in ('waechter.py', 'fressgitter.py', 'waechter.json')]
+    fs += glob.glob(os.path.join(h, 'modelle', '*.onnx'))
+    return tuple(sorted((f, os.path.getmtime(f)) for f in fs if os.path.exists(f)))
+
+
+def auftraege():
+    """Auftragsdatei auftrag.json (z.B. von Claude abgelegt): {"fressgitter_ref": "zu"|"offen"} oder {"fressgitter_test": true}"""
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'auftrag.json')
+    if not os.path.exists(p):
+        return
+    try:
+        a = json.load(open(p, encoding='utf-8'))
+        os.remove(p)
+    except Exception as e:
+        log.warning('auftrag.json unlesbar: %s', e)
+        try: os.remove(p)
+        except OSError: pass
+        return
+    try:
+        import fressgitter as fg
+        c = fg.cfg(CFG)
+        if a.get('fressgitter_ref') in ('zu', 'offen'):
+            for r in fg.referenz_speichern(fg.standbild(fg.rtsp_url(c, BASIS)), a['fressgitter_ref'], c):
+                log.info('Auftrag: Referenz gespeichert: %s', r)
+        if a.get('fressgitter_test'):
+            fressgitter(test=True)
+    except Exception as e:
+        log.warning('Auftrag fehlgeschlagen: %s', e)
+
+
 def fressgitter(test=False):
     import fressgitter as fg
     sitzung()  # Projekt-ID fuer fs_url
@@ -293,9 +326,15 @@ def main():
         durchlauf(gesendet); return 0
     log.info('Waechter laeuft: %s (Hof %s)', CFG['detections'], CFG['hof'])
     letzte_pflege = letzte_fg = 0
+    stand_code = code_stand()
     fg_s = ((CFG.get('fressgitter') or {}).get('intervall_s')) or 300
     fg_aktiv = (CFG.get('fressgitter') or {}).get('aktiv', True)
     while True:
+        if code_stand() != stand_code:
+            # Code oder Modell ersetzt -> beenden, nssm startet den Dienst nach 10 s neu (kein Admin noetig)
+            log.info('Waechter-Code/Modell geaendert: Neustart durch Dienst')
+            os._exit(3)
+        auftraege()
         try:
             durchlauf(gesendet)
             if fg_aktiv and time.time() - letzte_fg >= fg_s:
