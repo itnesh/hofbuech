@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.33.0';
+const VERSION = '1.33.1';
 const DSK = () => window.matchMedia('(min-width:1100px)').matches; // Browser-Layout (Laptop/Monitor), Smartphone unverändert
 
 /* ---------- Helfer ---------- */
@@ -391,7 +391,7 @@ const FG = [['kuehe', 'Kühe'], ['kaelber', 'Kälber']];
 const fgDoc = () => S.sensoren.find(s => s.id === 'fressgitter');
 const fgAlt = x => !x || Date.now() - (x.aktualisiert || 0) > 20 * 60000;
 const fgDauer = ms => { const m = Math.max(0, Math.floor((Date.now() - ms) / 60000)); return m >= 60 ? `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')} h` : `${m} min`; };
-const fgLang = (x, g) => x && x[g + '_zu'] === true && Date.now() - (x[g + '_seit'] || 0) >= (x.alarm_h || 2) * 3600000;
+const fgLang = (x, g) => x && x.alarm !== false && x[g + '_zu'] === true && Date.now() - (x[g + '_seit'] || 0) >= (x.alarm_h || 2) * 3600000;
 function fgKpi() {
   const x = fgDoc(); if (!x) return '';
   const alt = fgAlt(x);
@@ -407,7 +407,7 @@ function fgSheet() {
   const x = fgDoc(); if (!x) return;
   const z = (x.zeit || '').replace('T', ' ').slice(0, 16);
   const zl = ([g, n]) => { const zu = x[g + '_zu']; return `<div class="row one"><i class="bar ${fgLang(x, g) ? 'red' : zu ? 'blue' : 'green'}"></i><div class="main"><span class="t1"><span class="hd">${n}: ${zu === true ? 'Gitter zu' : zu === false ? 'Gitter offen' : 'Status unbekannt'}</span> <span class="ex">${nf(x[g + '_anzahl'] ?? 0)} am Fressen</span></span></div><small class="rt">${zu === true ? fgDauer(x[g + '_seit']) : ''}</small></div>`; };
-  openSheet('Fressgitter', `${x.bild ? `<img class="nbild" src="${x.bild}" alt="">` : ''}<p class="small muted">${esc(x.kamera || 'Kamera 3')} · Stand ${esc(z)}${fgAlt(x) ? ' · veraltet, CowCatcher-Laptop prüfen' : ''}</p><div class="list">${FG.map(zl).join('')}</div><button class="btn block" data-act="fganfrage" style="margin-top:12px">Bild jetzt aufnehmen und beurteilen</button><p class="small muted" style="margin:10px 4px">Aktualisierung alle 5 Min. Push, wenn ein Gitter länger als ${nf(x.alarm_h || 2)} h zu ist, danach alle 30 Min.</p>`, { onlyClose: true });
+  openSheet('Fressgitter', `${x.bild ? `<img class="nbild" src="${x.bild}" alt="">` : ''}<p class="small muted">${esc(x.kamera || 'Kamera 3')} · Stand ${esc(z)}${fgAlt(x) ? ' · veraltet, CowCatcher-Laptop prüfen' : ''}</p><div class="list">${FG.map(zl).join('')}</div><button class="btn block" data-act="fganfrage" style="margin-top:12px">Bild jetzt aufnehmen und beurteilen</button><p class="small muted" style="margin:10px 4px">Aktualisierung alle 5 Min. ${x.alarm === false ? 'Alarm (Push) zurzeit ausgeschaltet.' : `Push, wenn ein Gitter länger als ${nf(x.alarm_h || 2)} h zu ist, danach alle 30 Min.`}</p>`, { onlyClose: true });
 }
 // Fressgitter-Training: stuendliches Bild, Matthias erfasst Kuehe/Kaelber am Fressen + Gitterstatus (Abgleich mit Modell)
 const FGHEBEL = [[[0.656, 0.408, 0.720, 0.668], 'Kühe'], [[0.945, 0.453, 1.0, 0.566], 'Kälber']];

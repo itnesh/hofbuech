@@ -55,7 +55,13 @@ TIERKLASSEN = set(range(14, 24))  # COCO: bird..giraffe (Kaelber von oben landen
 
 def cfg(CFG):
     c = json.loads(json.dumps(STD))
-    eig = CFG.get('fressgitter') or {}
+    eig = dict(CFG.get('fressgitter') or {})
+    try:  # fressgitter.json wirkt sofort (ohne Neustart), z.B. {"alarm": false}
+        eig.update(json.load(open(os.path.join(HIER, 'fressgitter.json'), encoding='utf-8')))
+    except FileNotFoundError:
+        pass
+    except Exception:
+        pass
     for k, v in eig.items():
         if k == 'gitter':
             for g, w in v.items():
@@ -447,7 +453,7 @@ def lauf(CFG, basis, log, sitzung, fs_url, fs_wert, push, test=False, training_i
     anz, zuord = koepfe_zaehlen(boxen, c) if kopf else zaehlen(boxen, c)
     felder = {'typ': 'fressgitter', 'name': 'Fressgitter', 'kamera': CFG['kameras'].get(c['kamera'], c['kamera']),
               'zeit': datetime.datetime.now().isoformat(timespec='seconds'), 'aktualisiert': int(jetzt * 1000),
-              'quelle': 'cowcatcher', 'alarm_h': float(c['alarm_h'])}
+              'quelle': 'cowcatcher', 'alarm_h': float(c['alarm_h']), 'alarm': bool(c.get('alarm', True))}
     info = []
     for gid, g in c['gitter'].items():
         zu, s = gitter_status(im, gid, g)
@@ -456,7 +462,7 @@ def lauf(CFG, basis, log, sitzung, fs_url, fs_wert, push, test=False, training_i
             zu = alt.get('zu')  # unsicher/nicht kalibriert: letzter Stand
         if zu != alt.get('zu') or 'seit' not in alt:
             alt = {'zu': zu, 'seit': jetzt}
-        if zu and jetzt - alt['seit'] >= c['alarm_h'] * 3600 and \
+        if zu and c.get('alarm', True) and jetzt - alt['seit'] >= c['alarm_h'] * 3600 and \
                 jetzt - alt.get('alarm', 0) >= c['alarm_wdh_min'] * 60 - 30 and not test:
             dt = dauer_txt(jetzt - alt['seit'])
             try:
