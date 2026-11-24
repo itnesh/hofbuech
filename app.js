@@ -672,7 +672,7 @@ function timeline(tiere) {
   tiere.forEach((t, i) => {
     const cy = head + i * rowH + rowH / 2;
     g += `<line x1="0" x2="${W}" y1="${head + (i + 1) * rowH}" y2="${head + (i + 1) * rowH}" stroke="#EEF0EC" stroke-width=".6"/><a href="#/tier/${t.id}"><text x="${BIG ? 8 : 4}" y="${cy + (BIG ? 5 : 3.5)}" font-size="${BIG ? 14 : 10}" font-weight="600" fill="#16201B">${esc((t.name || kurzOM(t.ohrmarke)).slice(0, BIG ? 14 : 11))}</text></a>`;
-    const evs = evOf(t.id), tz = S.set.tragzeit || 285;
+    const evs = evOf(t.id), tz = S.set.tragzeit || 285, go = id => ` data-go="${t.id}" data-ev="${id || ''}" style="cursor:pointer"`;
     for (const k of evs) {
       if (k.typ !== 'abkalbung' || k.datum < start) continue;
       const calc = addDays(k.datum, -tz);
@@ -680,19 +680,19 @@ function timeline(tiere) {
       const bes = evs.filter(e => e.typ === 'besamung' && e.datum >= addDays(calc, -30) && e.datum <= addDays(calc, 30)).sort((a, b) => a.datum < b.datum ? 1 : -1)[0];
       const von = bes ? bes.datum : calc, [a, b] = clip(von, k.datum);
       g += `<line x1="${x(a)}" x2="${x(b)}" y1="${cy}" y2="${cy}" stroke="#1F4D36" stroke-dasharray="2 2" opacity=".6" pointer-events="none"/>`;
-      if (!bes && calc >= start) g += `<circle cx="${x(calc)}" cy="${cy}" r="3.2" fill="#fff" stroke="#1D4F91" stroke-width="1.3" stroke-dasharray="1.5 1.5"${tip('Besamung berechnet ca. ' + fmt(calc) + ' (Abkalbung ' + fmt(k.datum) + ' - ' + tz + ' T.)')}/>`;
+      if (!bes && calc >= start) g += `<circle cx="${x(calc)}" cy="${cy}" r="3.2" fill="#fff" stroke="#1D4F91" stroke-width="1.3" stroke-dasharray="1.5 1.5"${go(k.id)}/>`;
     }
     for (const e of evs) {
       if (e.datum < start || e.datum > end) continue;
       const xx = x(e.datum);
-      if (e.typ === 'brunst') g += `<rect x="${xx - 3}" y="${cy - 7}" width="6" height="14" fill="transparent"${tip('Brunst ' + fmt(e.datum) + (e.phase ? ' · ' + BR_PH_TXT[e.phase] : ''))}/><line x1="${xx}" x2="${xx}" y1="${cy - 6}" y2="${cy + 6}" stroke="#B8641A" stroke-width="1.8" pointer-events="none"/>`;
-      if (e.typ === 'besamung') g += `<circle cx="${xx}" cy="${cy}" r="3.6" fill="${imVerbot(e.datum) ? '#A12A1F' : '#1D4F91'}"${tip('Besamung ' + fmt(e.datum) + (e.stier ? ' · ' + e.stier : '') + (imVerbot(e.datum) ? ' (im Besamungsverbot)' : ''))}/>`;
-      if (e.typ === 'abkalbung') g += `<path d="M${xx} ${cy - 5.5}L${xx + 5.5} ${cy + 4.5}L${xx - 5.5} ${cy + 4.5}Z" fill="#1F4D36"${tip('Abkalbung ' + fmt(e.datum))}/>`;
+      if (e.typ === 'brunst') g += `<rect x="${xx - 3}" y="${cy - 7}" width="6" height="14" fill="transparent"${go(e.id)}/><line x1="${xx}" x2="${xx}" y1="${cy - 6}" y2="${cy + 6}" stroke="#B8641A" stroke-width="1.8" pointer-events="none"/>`;
+      if (e.typ === 'besamung') g += `<circle cx="${xx}" cy="${cy}" r="3.6" fill="${imVerbot(e.datum) ? '#A12A1F' : '#1D4F91'}"${go(e.id)}/>`;
+      if (e.typ === 'abkalbung') g += `<path d="M${xx} ${cy - 5.5}L${xx + 5.5} ${cy + 4.5}L${xx - 5.5} ${cy + 4.5}Z" fill="#1F4D36"${go(e.id)}/>`;
     }
     const l = lakt(t);
     if (l && l.status === 'Besamt' && l.erwartet <= end) {
       const xx = x(l.erwartet), bad = inAlp(l.erwartet);
-      g += `<line x1="${x(l.bes.datum)}" x2="${xx}" y1="${cy}" y2="${cy}" stroke="${bad ? '#A12A1F' : '#1D4F91'}" stroke-dasharray="2 2" opacity=".6" pointer-events="none"/><path d="M${xx} ${cy - 5.5}L${xx + 5.5} ${cy + 4.5}L${xx - 5.5} ${cy + 4.5}Z" fill="#fff" stroke="${bad ? '#A12A1F' : '#1F4D36'}" stroke-width="1.6"${tip('Erwartete Abkalbung ' + fmt(l.erwartet) + (bad ? ' (während Alp!)' : ''))}/>`;
+      g += `<line x1="${x(l.bes.datum)}" x2="${xx}" y1="${cy}" y2="${cy}" stroke="${bad ? '#A12A1F' : '#1D4F91'}" stroke-dasharray="2 2" opacity=".6" pointer-events="none"/><path d="M${xx} ${cy - 5.5}L${xx + 5.5} ${cy + 4.5}L${xx - 5.5} ${cy + 4.5}Z" fill="#fff" stroke="${bad ? '#A12A1F' : '#1F4D36'}" stroke-width="1.6"${go(l.bes.id)}/>`;
     }
   });
   const tx = x(d);
@@ -767,7 +767,7 @@ function vLaktation(t) {
   ${l && l.status === 'Besamt' ? `<div class="note ${inAlp(l.erwartet) ? '' : 'green'}">Erwartete Abkalbung <b>${fmt(l.erwartet)}</b> (besamt ${fmt(l.bes.datum)}, ${S.set.tragzeit} T.)${inAlp(l.erwartet) ? '<br><b>Fällt in die Alpzeit.</b>' : ''}</div>` : l ? `<div class="note blue">Status: ${l.status}${imVerbot(today()) ? '<br>Heute im Besamungsverbot (Abkalbung würde in Alpzeit fallen).' : ''}</div>` : ''}
   ${zkz}
   <div style="height:10px"></div>
-  <div class="list">${ev.length ? ev.map(e => { const [a, b] = evLabel(e); return `<button type="button" class="row" data-act="edit" data-c="ereignisse" data-id="${e.id}"><div class="main"><span class="t">${a}</span><span class="s">${esc(b)}</span></div><span class="r">${fmt(e.datum)}</span></button>${e.typ === 'brunst' ? meldStrip(meldOf(e)) : ''}`; }).join('') : '<div class="empty">Keine Meldungen.</div>'}</div>`;
+  <div class="list">${ev.length ? ev.map(e => { const [a, b] = evLabel(e); return `<button type="button" class="row${e.id === UI.hlEv ? ' hl-ev' : ''}" data-act="edit" data-c="ereignisse" data-id="${e.id}"><div class="main"><span class="t">${a}</span><span class="s">${esc(b)}</span></div><span class="r">${fmt(e.datum)}</span></button>${e.typ === 'brunst' ? meldStrip(meldOf(e)) : ''}`; }).join('') : '<div class="empty">Keine Meldungen.</div>'}</div>`;
 }
 function vNachkommen(t) {
   const k = S.tiere.filter(x => x.mutterId === t.id).sort((a, b) => (a.geburt || '') < (b.geburt || '') ? 1 : -1);
@@ -2488,7 +2488,8 @@ async function behImport(file) {
 /* ---------- Events ---------- */
 document.addEventListener('pointerdown', e => { const svg = e.target.closest && e.target.closest('svg[data-chart]'); if (svg) chartTap(svg, e.clientX); });
 document.addEventListener('pointermove', e => { if (!e.buttons && e.pointerType !== 'mouse') return; const svg = e.target.closest && e.target.closest('svg[data-chart]'); if (svg) chartTap(svg, e.clientX); });
-document.addEventListener('click', e => { const tp = e.target.closest && e.target.closest('[data-tip]'); if (tp) { toast(tp.getAttribute('data-tip')); return; }
+document.addEventListener('click', e => { const gz = e.target.closest && e.target.closest('[data-go]'); if (gz) { UI.hlEv = gz.dataset.ev; location.hash = '#/tier/' + gz.dataset.go + '/laktation'; setTimeout(() => { const r = document.querySelector('.row.hl-ev'); if (r) r.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 200); setTimeout(() => { UI.hlEv = ''; }, 1500); return; }
+  const tp = e.target.closest && e.target.closest('[data-tip]'); if (tp) { toast(tp.getAttribute('data-tip')); return; }
 }, true);
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]'); if (!el) return;

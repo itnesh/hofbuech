@@ -608,3 +608,6 @@ video#mvid{cursor:pointer}
   .kal-multi.quartal .kd i{height:5px!important}.kal-multi.quartal .kd i b{width:5px!important;height:5px!important}
   .kal-wrap .kal-multi.jahr .kd{height:30px!important;min-height:30px!important}
 }
+
+.row.hl-ev{animation:hlEv 3s ease-out}
+@keyframes hlEv{0%,40%{background:var(--greenT)}100%{background:var(--card)}}
