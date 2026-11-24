@@ -666,7 +666,17 @@ function timeline(tiere) {
   tiere.forEach((t, i) => {
     const cy = head + i * rowH + rowH / 2;
     g += `<line x1="0" x2="${W}" y1="${head + (i + 1) * rowH}" y2="${head + (i + 1) * rowH}" stroke="#EEF0EC" stroke-width=".6"/><a href="#/tier/${t.id}"><text x="${BIG ? 8 : 4}" y="${cy + (BIG ? 5 : 3.5)}" font-size="${BIG ? 14 : 10}" font-weight="600" fill="#16201B">${esc((t.name || kurzOM(t.ohrmarke)).slice(0, BIG ? 14 : 11))}</text></a>`;
-    for (const e of evOf(t.id)) {
+    const evs = evOf(t.id), tz = S.set.tragzeit || 285;
+    for (const k of evs) {
+      if (k.typ !== 'abkalbung' || k.datum < start) continue;
+      const calc = addDays(k.datum, -tz);
+      if (calc > end) continue;
+      const bes = evs.filter(e => e.typ === 'besamung' && e.datum >= addDays(calc, -30) && e.datum <= addDays(calc, 30)).sort((a, b) => a.datum < b.datum ? 1 : -1)[0];
+      const von = bes ? bes.datum : calc, [a, b] = clip(von, k.datum);
+      g += `<line x1="${x(a)}" x2="${x(b)}" y1="${cy}" y2="${cy}" stroke="#1F4D36" stroke-dasharray="2 2" opacity=".6" pointer-events="none"/>`;
+      if (!bes && calc >= start) g += `<circle cx="${x(calc)}" cy="${cy}" r="3.2" fill="#fff" stroke="#1D4F91" stroke-width="1.3" stroke-dasharray="1.5 1.5"${tip('Besamung berechnet ca. ' + fmt(calc) + ' (Abkalbung ' + fmt(k.datum) + ' - ' + tz + ' T.)')}/>`;
+    }
+    for (const e of evs) {
       if (e.datum < start || e.datum > end) continue;
       const xx = x(e.datum);
       if (e.typ === 'brunst') g += `<rect x="${xx - 3}" y="${cy - 7}" width="6" height="14" fill="transparent"${tip('Brunst ' + fmt(e.datum) + (e.phase ? ' · ' + BR_PH_TXT[e.phase] : ''))}/><line x1="${xx}" x2="${xx}" y1="${cy - 6}" y2="${cy + 6}" stroke="#B8641A" stroke-width="1.8" pointer-events="none"/>`;
