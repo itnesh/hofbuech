@@ -582,20 +582,26 @@ function startKal() {
   <div class="sec-t">${tag ? fmt(tag) + ' <a href="#/start" data-act="kaltag" data-v="" style="font-weight:500;text-transform:none;letter-spacing:0">4 Wochen zurück / voraus</a>' : '4 Wochen zurück / 4 Wochen voraus'}</div>
   <div class="list kal-liste">${rows || '<div class="empty">Keine Einträge.</div>'}</div>`;
 }
-function kalGrid(byDay) {
-  const [Y, M] = UI.kalMonat.split('-').map(Number), nDays = new Date(Y, M, 0).getDate();
-  const off = (new Date(Y, M - 1, 1).getDay() + 6) % 7, t = today();
+const MON_L = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
+function kalMonCells(Y, M, byDay, mini) {
+  const nDays = new Date(Y, M, 0).getDate(), off = (new Date(Y, M - 1, 1).getDay() + 6) % 7, t = today(), mm = `${Y}-${String(M).padStart(2, '0')}`;
   let cells = '';
   for (let i = 0; i < off; i++) cells += '<span class="kd empty"></span>';
   for (let d = 1; d <= nDays; d++) {
-    const ds = `${UI.kalMonat}-${String(d).padStart(2, '0')}`, ev = byDay[ds] || [];
-    cells += `<button type="button" class="kd ${ds === t ? 'today' : ''} ${ds === UI.kalTag ? 'sel' : ''} ${inAlp(ds) ? 'alp' : ''}" data-act="kaltag" data-v="${ds}"><span>${d}</span><i>${ev.slice(0, 4).map(x => `<b class="${x.c}${x.plan ? ' plan' : ''}"></b>`).join('')}</i></button>`;
+    const ds = `${mm}-${String(d).padStart(2, '0')}`, ev = byDay[ds] || [];
+    cells += `<button type="button" class="kd ${ds === t ? 'today' : ''} ${ds === UI.kalTag ? 'sel' : ''} ${inAlp(ds) ? 'alp' : ''}" data-act="kaltag" data-v="${ds}"><span>${d}</span><i>${ev.slice(0, mini ? 3 : 4).map(x => `<b class="${x.c}${x.plan ? ' plan' : ''}"></b>`).join('')}</i></button>`;
   }
-  return `<div class="kal">
-    <div class="kal-h"><button type="button" class="iconbtn" data-act="kalmon" data-v="-1" aria-label="Vormonat">‹</button><b>${['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'][M - 1]} ${Y}</b><button type="button" class="iconbtn" data-act="kalmon" data-v="1" aria-label="Folgemonat">›</button></div>
-    <div class="kal-w"><span>Mo</span><span>Di</span><span>Mi</span><span>Do</span><span>Fr</span><span>Sa</span><span>So</span></div>
-    <div class="kal-g">${cells}</div>
-  </div>`;
+  return cells;
+}
+function kalGrid(byDay, Z = 'monat') {
+  const [Y, M] = UI.kalMonat.split('-').map(Number);
+  const nav = (titel, lbl) => `<div class="kal-h"><button type="button" class="iconbtn" data-act="kalmon" data-v="-1" aria-label="${lbl} zurück">‹</button><b>${titel}</b><button type="button" class="iconbtn" data-act="kalmon" data-v="1" aria-label="${lbl} vor">›</button></div>`;
+  const wk = '<div class="kal-w"><span>Mo</span><span>Di</span><span>Mi</span><span>Do</span><span>Fr</span><span>Sa</span><span>So</span></div>';
+  if (Z === 'monat') return `<div class="kal">${nav(MON_L[M - 1] + ' ' + Y, 'Monat')}${wk}<div class="kal-g">${kalMonCells(Y, M, byDay)}</div></div>`;
+  const m0 = Z === 'jahr' ? 1 : Math.floor((M - 1) / 3) * 3 + 1, n = Z === 'jahr' ? 12 : 3;
+  let mons = '';
+  for (let m = m0; m < m0 + n; m++) mons += `<div class="kal-mm"><a href="#/kalender" class="kal-mt" data-act="kalzu" data-v="${Y}-${String(m).padStart(2, '0')}">${MON_L[m - 1]}</a>${wk}<div class="kal-g">${kalMonCells(Y, m, byDay, true)}</div></div>`;
+  return `<div class="kal kal-multi ${Z}">${nav(Z === 'jahr' ? String(Y) : `Q${(m0 + 2) / 3} ${Y}`, Z === 'jahr' ? 'Jahr' : 'Quartal')}<div class="kal-mg">${mons}</div></div>`;
 }
 function lagerKpi(L) {
   const c = (v, l) => `<span class="stat ${v <= 5 ? 'low' : ''}"><b>${nf(v)}</b><span>${l}</span></span>`;
@@ -912,7 +918,7 @@ function vKalender() {
   const rows = show.map(x => itemRow(x, false)).join('');
   const titel = Z === 'jahr' ? 'Jahr ' + Y : Z === 'quartal' ? `Q${(m0 + 2) / 3} ${Y}` : 'Ganzer Monat';
   const zchips = `<div class="chips kz" style="margin:0 0 8px">${[['monat', 'Monat'], ['quartal', 'Quartal'], ['jahr', 'Jahr']].map(([v, l]) => `<button type="button" class="chip ${Z === v ? 'on' : ''}" data-act="kalzeit" data-v="${v}">${l}</button>`).join('')}</div>`;
-  return `<div class="kal-wrap"><div class="kal-l">${kalGrid(byDay)}
+  return `<div class="kal-wrap"><div class="kal-l">${kalGrid(byDay, Z)}
   <div class="chips kf">${[['', 'Alle'], ['zucht', 'Brunst/Besamung'], ['abkalbung', 'Abkalbung'], ['behandlung', 'Behandlung'], ['auslauf', 'Weide / Stall'], ['feld', 'Wiesenjournal'], ['labiola', 'Labiola'], ['tiere', 'Zu-/Abgang'], ['prognose', 'Prognose']].map(([v, l]) => `<button type="button" class="chip ${(v ? KF.includes(v) : !KF.length) ? 'on' : ''}" data-act="kalfilter" data-v="${v}" title="Ctrl + Klick: mehrere auswählen">${l}</button>`).join('')}</div></div>
   <div class="kal-r">${zchips}<div class="sec-t">${tagOk ? fmt(UI.kalTag) + ` <a href="#/kalender" data-act="kaltag" data-v="" style="font-weight:500;text-transform:none;letter-spacing:0">${titel}</a>` : titel}</div>
   <div class="list">${rows || '<div class="empty">Keine Einträge.</div>'}</div></div></div>`;
@@ -2524,7 +2530,8 @@ document.addEventListener('click', e => {
   else if (a === 'kday') { const d = el.dataset.d; UI.kSel = d && !(UI.kSel && UI.kSel.d === d && UI.kSel.t === el.dataset.t) ? { d, t: el.dataset.t } : null; render(); if (UI.kSel) setTimeout(() => { const k = $('#kliste'); if (k) k.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 30); }
   else if (a === 'kalfilter') { const v = el.dataset.v, cur = Array.isArray(UI.kalFilter) ? UI.kalFilter : []; UI.kalFilter = !v ? [] : (e.ctrlKey || e.metaKey) ? (cur.includes(v) ? cur.filter(x => x !== v) : [...cur, v]) : (cur.length === 1 && cur[0] === v ? [] : [v]); render(); }
   else if (a === 'kalzeit') { UI.kalZeit = el.dataset.v; UI.kalTag = ''; render(); }
-  else if (a === 'kalmon') { const [y, m] = UI.kalMonat.split('-').map(Number); const d = new Date(y, m - 1 + Number(el.dataset.v), 1); UI.kalMonat = iso(d).slice(0, 7); UI.kalTag = ''; render(); }
+  else if (a === 'kalzu') { e.preventDefault(); UI.kalMonat = el.dataset.v; UI.kalZeit = 'monat'; UI.kalTag = ''; render(); }
+  else if (a === 'kalmon') { const [y, m] = UI.kalMonat.split('-').map(Number); const st = location.hash.startsWith('#/kalender') ? ({ quartal: 3, jahr: 12 })[UI.kalZeit] || 1 : 1; const d = new Date(y, m - 1 + Number(el.dataset.v) * st, 1); UI.kalMonat = iso(d).slice(0, 7); UI.kalTag = ''; render(); }
   else if (a === 'pdf') { el.disabled = true; pdf(el.dataset.p, el.dataset.id).catch(showErr).finally(() => el.disabled = false); }
   else if (a === 'backup') { const d = { version: VERSION, exportiert: new Date().toISOString(), set: S.set }; COLLS.forEach(c => d[c] = S[c]); const b = new Blob([JSON.stringify(d, null, 1)], { type: 'application/json' }); const u = URL.createObjectURL(b); const l = document.createElement('a'); l.href = u; l.download = `hofpuls_backup_${today()}.json`; l.click(); setTimeout(() => URL.revokeObjectURL(u), 2000); }
   else if (a === 'ausbchart') ausbChart(el.dataset.id, el.dataset.tag || '');

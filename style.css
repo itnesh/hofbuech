@@ -590,3 +590,21 @@ video#mvid{cursor:pointer}
 .fgzoomw{overflow:auto;border-radius:14px;-webkit-overflow-scrolling:touch}.fgzoomw img{cursor:zoom-in;margin-top:0}.fgzoomw.on img{width:260%;max-width:none;border-radius:0;cursor:zoom-out}
 .fgheb{display:flex;gap:10px;margin:10px 0 4px}.fgheb figure{flex:1;margin:0;background:#E8E6E0;border-radius:12px;overflow:hidden;display:flex;flex-direction:column}.fgheb img{width:100%;height:220px;object-fit:contain;background:#222}.fgheb figcaption{font-size:12px;text-align:center;padding:5px;color:var(--muted,#666)}
 .mnav{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 10px}.mnav .btn{min-width:64px;min-height:42px;font-size:24px;font-weight:700;line-height:1}.mnav .btn:disabled{opacity:.35}.mnav span{font-weight:700;font-size:15px}
+
+/* Kalender Quartal / Jahr */
+.kal-mg{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px}
+.kal-multi.quartal .kal-mg{grid-template-columns:1fr}
+.kal-mm{min-width:0}
+.kal-mt{display:block;font-size:12.5px;font-weight:700;color:var(--green);text-decoration:none;padding:4px 2px 2px}
+.kal-multi .kal-w,.kal-multi .kal-g{gap:1px}
+.kal-multi .kal-w span{font-size:8px;padding:1px 0}
+.kal-multi .kd,.kal-wrap .kal-multi .kd{height:26px!important;min-height:26px!important;font-size:10.5px;border-radius:6px;gap:1px}
+.kal-multi .kd.today span{width:18px;height:18px}
+.kal-multi .kd i{height:4px!important;gap:1px}.kal-multi .kd i b{width:4px!important;height:4px!important}
+@media (min-width:1100px){
+  .kal-multi.quartal .kal-mg{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .kal-multi.jahr .kal-mg{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .kal-wrap .kal-multi.quartal .kd{height:40px!important;min-height:40px!important;font-size:12px}
+  .kal-multi.quartal .kd i{height:5px!important}.kal-multi.quartal .kd i b{width:5px!important;height:5px!important}
+  .kal-wrap .kal-multi.jahr .kd{height:30px!important;min-height:30px!important}
+}
