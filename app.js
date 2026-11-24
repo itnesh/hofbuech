@@ -896,22 +896,25 @@ function kalItems(from, to) {
   for (const t of S.tiere) if (t.abgang) it.push({ d: t.abgang, k: 'Abgang', n: t.name || t.ohrmarke, s: t.abgangGrund || '', id: t.id, c: 'grey', cat: 'tiere' });
   for (const a of labUnik()) for (const [y, dt] of Object.entries(a.erledigt || {})) it.push({ d: dt, k: 'Erledigt', n: a.titel, s: a.objekt || '', c: 'green', link: '#/labiola', cat: 'labiola' });
   for (const p of S.lprotokoll) it.push({ d: p.datum, k: 'Labiola-Schnitt', n: p.objekt, s: [p.teil, p.art, p.notiz].filter(Boolean).join(' · '), c: 'green', link: '#/labiola', cat: 'labiola' });
-  for (const m of S.meldungen) it.push({ d: (m.zeit || '').slice(0, 10), k: 'Kamera', n: m.kamera || 'CowCatcher', s: m.tierName ? 'Brunst ' + m.tierName : '', c: 'blue', cat: 'zucht' });
   it.push(...agenda(800).map(x => ({ ...x, plan: true })));
   const cy = +today().slice(0, 4);
   for (let y = +from.slice(0, 4); y <= +to.slice(0, 4); y++) if (y < cy) it.push(...pzRegeln(y).map(x => ({ ...x, plan: true })));
   return it.filter(x => x.d && x.d >= from && x.d <= to).sort((a, b) => a.d < b.d ? -1 : a.d > b.d ? 1 : 0);
 }
 function vKalender() {
-  const [Y, M] = UI.kalMonat.split('-').map(Number);
-  const first = `${UI.kalMonat}-01`, nDays = new Date(Y, M, 0).getDate(), last = `${UI.kalMonat}-${String(nDays).padStart(2, '0')}`;
+  const [Y, M] = UI.kalMonat.split('-').map(Number), Z = UI.kalZeit || 'monat';
+  const m0 = Z === 'jahr' ? 1 : Z === 'quartal' ? Math.floor((M - 1) / 3) * 3 + 1 : M, m1 = Z === 'jahr' ? 12 : Z === 'quartal' ? m0 + 2 : M;
+  const first = `${Y}-${String(m0).padStart(2, '0')}-01`, last = `${Y}-${String(m1).padStart(2, '0')}-${String(new Date(Y, m1, 0).getDate()).padStart(2, '0')}`;
   const KF = Array.isArray(UI.kalFilter) ? UI.kalFilter : [], items = kalItems(first, last).filter(x => !KF.length || KF.some(f => f === 'prognose' ? x.plan : x.cat === f)), byDay = {};
   items.forEach(x => (byDay[x.d] = byDay[x.d] || []).push(x));
-  const show = UI.kalTag && UI.kalTag.startsWith(UI.kalMonat) ? (byDay[UI.kalTag] || []) : items;
+  const tagOk = UI.kalTag && UI.kalTag >= first && UI.kalTag <= last;
+  const show = tagOk ? (byDay[UI.kalTag] || []) : items;
   const rows = show.map(x => itemRow(x, false)).join('');
+  const titel = Z === 'jahr' ? 'Jahr ' + Y : Z === 'quartal' ? `Q${(m0 + 2) / 3} ${Y}` : 'Ganzer Monat';
+  const zchips = `<div class="chips kz" style="margin:0 0 8px">${[['monat', 'Monat'], ['quartal', 'Quartal'], ['jahr', 'Jahr']].map(([v, l]) => `<button type="button" class="chip ${Z === v ? 'on' : ''}" data-act="kalzeit" data-v="${v}">${l}</button>`).join('')}</div>`;
   return `<div class="kal-wrap"><div class="kal-l">${kalGrid(byDay)}
   <div class="chips kf">${[['', 'Alle'], ['zucht', 'Brunst/Besamung'], ['abkalbung', 'Abkalbung'], ['behandlung', 'Behandlung'], ['auslauf', 'Weide / Stall'], ['feld', 'Wiesenjournal'], ['labiola', 'Labiola'], ['tiere', 'Zu-/Abgang'], ['prognose', 'Prognose']].map(([v, l]) => `<button type="button" class="chip ${(v ? KF.includes(v) : !KF.length) ? 'on' : ''}" data-act="kalfilter" data-v="${v}" title="Ctrl + Klick: mehrere auswählen">${l}</button>`).join('')}</div></div>
-  <div class="kal-r"><div class="sec-t">${UI.kalTag && UI.kalTag.startsWith(UI.kalMonat) ? fmt(UI.kalTag) + ' <a href="#/kalender" data-act="kaltag" data-v="" style="font-weight:500;text-transform:none;letter-spacing:0">ganzer Monat</a>' : 'Ganzer Monat'}</div>
+  <div class="kal-r">${zchips}<div class="sec-t">${tagOk ? fmt(UI.kalTag) + ` <a href="#/kalender" data-act="kaltag" data-v="" style="font-weight:500;text-transform:none;letter-spacing:0">${titel}</a>` : titel}</div>
   <div class="list">${rows || '<div class="empty">Keine Einträge.</div>'}</div></div></div>`;
 }
 
@@ -2520,6 +2523,7 @@ document.addEventListener('click', e => {
   else if (a === 'kfilter') { UI.kFilter = el.dataset.v; UI.kSel = null; render(); }
   else if (a === 'kday') { const d = el.dataset.d; UI.kSel = d && !(UI.kSel && UI.kSel.d === d && UI.kSel.t === el.dataset.t) ? { d, t: el.dataset.t } : null; render(); if (UI.kSel) setTimeout(() => { const k = $('#kliste'); if (k) k.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 30); }
   else if (a === 'kalfilter') { const v = el.dataset.v, cur = Array.isArray(UI.kalFilter) ? UI.kalFilter : []; UI.kalFilter = !v ? [] : (e.ctrlKey || e.metaKey) ? (cur.includes(v) ? cur.filter(x => x !== v) : [...cur, v]) : (cur.length === 1 && cur[0] === v ? [] : [v]); render(); }
+  else if (a === 'kalzeit') { UI.kalZeit = el.dataset.v; UI.kalTag = ''; render(); }
   else if (a === 'kalmon') { const [y, m] = UI.kalMonat.split('-').map(Number); const d = new Date(y, m - 1 + Number(el.dataset.v), 1); UI.kalMonat = iso(d).slice(0, 7); UI.kalTag = ''; render(); }
   else if (a === 'pdf') { el.disabled = true; pdf(el.dataset.p, el.dataset.id).catch(showErr).finally(() => el.disabled = false); }
   else if (a === 'backup') { const d = { version: VERSION, exportiert: new Date().toISOString(), set: S.set }; COLLS.forEach(c => d[c] = S[c]); const b = new Blob([JSON.stringify(d, null, 1)], { type: 'application/json' }); const u = URL.createObjectURL(b); const l = document.createElement('a'); l.href = u; l.download = `hofpuls_backup_${today()}.json`; l.click(); setTimeout(() => URL.revokeObjectURL(u), 2000); }
