@@ -1033,15 +1033,17 @@ function anaWq() {
   const wsTol = R === '365t' ? 864e5 : R === '30t' ? 6 * 3600e3 : 2 * 3600e3;
   const wsAm = t => { let b = null, bd = Infinity; for (const p of wsSer) { const d = Math.abs(p[0] - t); if (d < bd) { bd = d; b = p; } } return b && bd <= wsTol ? b[1] : null; };
   const wsTxt = t => { const v = wsAm(t); return v === null ? '' : ` · Wasserstand ${Math.round(v)} %`; };
-  const wsChart = () => { const v = ser.map(x => wsAm(x.t)); return v.filter(x => x !== null).length > 1 ? `<div class="small muted">Wasserstand (%)</div>${svgLines([v], ser.map(x => lab(x.t)), ['#3E7CB1'], 90, ser.map((x, i) => `${ft(x.t)} · ${v[i] === null ? '-' : Math.round(v[i]) + ' %'}`), 'frei')}` : ''; };
-  const chart = k => { const f = WQ.F[k], p = ser.filter(x => x[k] !== null && x[k] !== undefined); return `<div class="small muted" style="margin-top:8px">${f.label} (${f.unit})${B && B[k] !== null ? ` · Basis ${nf(B[k])}` : ''}</div>${p.length > 1 ? svgLines([p.map(x => x[k])], p.map(x => lab(x.t)), [f.col], 120, p.map(x => `${ft(x.t)} · ${nf(x[k])} ${f.unit}${wsTxt(x.t)}`), 'frei') : '<div class="empty">Noch zu wenige Messungen.</div>'}`; };
+  const gWs = GER[S.set.sensWasser || '02bdf0b1b64b4c40'], gWq = GER[S.set.sensWqs || WQ.DEVICE];
+  const gn = n => n ? ` · <span title="Sensor">${esc(n)}</span>` : '';
+  const wsChart = () => { const v = ser.map(x => wsAm(x.t)); return v.filter(x => x !== null).length > 1 ? `<div class="small muted">Wasserstand (%)${gn(gWs)}</div>${svgLines([v], ser.map(x => lab(x.t)), ['#3E7CB1'], 90, ser.map((x, i) => `${ft(x.t)} · ${v[i] === null ? '-' : Math.round(v[i]) + ' %'}`), 'frei')}` : ''; };
+  const chart = k => { const f = WQ.F[k], p = ser.filter(x => x[k] !== null && x[k] !== undefined); return `<div class="small muted" style="margin-top:8px">${f.label} (${f.unit})${B && B[k] !== null ? ` · Basis ${nf(B[k])}` : ''}${gn(gWq)}</div>${p.length > 1 ? svgLines([p.map(x => x[k])], p.map(x => lab(x.t)), [f.col], 120, p.map(x => `${ft(x.t)} · ${nf(x[k])} ${f.unit}${wsTxt(x.t)}`), 'frei') : '<div class="empty">Noch zu wenige Messungen.</div>'}`; };
   const temp = ser.filter(x => x.te !== null && x.te !== undefined);
   return `${ban}${(sx.alarme || []).length ? `<div class="note" style="margin:8px 0"><b>Starke Veränderung:</b> ${esc(sx.alarme.map(a => a.text).join(' · '))}. Reservoir und Zulauf prüfen.</div>` : ''}${alt ? `<div class="note small" style="margin:8px 0">Letzte Messung ${zt(L.zeit)}, seither keine Daten. Funk/Batterie prüfen.</div>` : ''}
   <div class="stats"><div class="stats-row"><span class="stats-h">Aktuell</span>${st('tu')}${st('do')}${st('ec')}</div>
   <div class="stats-row"><span class="stats-h">Basis 7 T.</span>${bs('tu')}${bs('do')}${bs('ec')}</div>
   <div class="stats-row"><span class="stats-h">Weitere</span><span class="stat"><b>${L.te === null || L.te === undefined ? '-' : nf(L.te)}</b><span>Wasser °C</span></span><span class="stat"><b>${L.bat === null || L.bat === undefined ? '-' : nf(L.bat)}</b><span>Batterie V</span></span><span class="stat"><b class="zeit">${zt(L.zeit)}</b><span>Messung</span></span></div></div>
   <div class="chips" style="margin:12px 0 4px">${[['48h', '48 Std.'], ['30t', '30 Tage'], ['365t', '365 Tage']].map(([v, l]) => `<button type="button" class="chip ${R === v ? 'on' : ''}" data-act="wqr" data-v="${v}">${l}</button>`).join('')}</div>
-  <div class="card">${wsChart()}${chart('tu')}${chart('do')}${chart('ec')}${temp.length > 1 ? `<div class="small muted" style="margin-top:8px">Wassertemperatur (°C)</div>${svgLines([temp.map(x => x.te)], temp.map(x => lab(x.t)), ['#E0A35C'], 100, temp.map(x => `${ft(x.t)} · ${nf(x.te)} °C`), 'frei')}` : ''}</div>
+  <div class="card">${wsChart()}${chart('tu')}${chart('do')}${chart('ec')}${temp.length > 1 ? `<div class="small muted" style="margin-top:8px">Wassertemperatur (°C)${gn(gWq)}</div>${svgLines([temp.map(x => x.te)], temp.map(x => lab(x.t)), ['#E0A35C'], 100, temp.map(x => `${ft(x.t)} · ${nf(x.te)} °C`), 'frei')}` : ''}</div>
   <p class="small muted" style="margin:8px 4px">Alarm bei Leitfähigkeit ±${nf(G.ec)} %, Trübung +${nf(G.tu)} NTU oder Sauerstoff -${nf(G.do)} mg/L gegenüber der Basis (Median der letzten 7 Tage ohne die letzten 6 Std., Daten ab ${esc(S.set.wqAb || WQ.AB)}). ${B ? `Basis aus ${B.n} Messungen.` : 'Basis wird aufgebaut (mind. 12 Messungen nötig), bis dahin kein Alarm.'} Push stündlich über den Hintergrund-Job. Trübungssonde mit Offset ca. 20-25 NTU, nur als Trend nutzbar. Leitfähigkeit noch unkalibriert.</p>
   <div class="small muted" style="margin:0 4px">Aktualisiert ${sx.aktualisiert ? esc(new Date(sx.aktualisiert).toLocaleString('de-CH')) : '-'}</div>`;
 }
@@ -2352,6 +2354,17 @@ function anaAusbringen() {
 
 /* ---------- Sensoren direkt aus der App (akenza bei jedem Öffnen, Agrometeo 1x pro Tag) ---------- */
 const SENS = { laedt: false, fehler: '', zuletzt: 0 };
+// Gerätenamen aus akenza (für Diagrammtitel), lokal zwischengespeichert
+const GER = (() => { try { return JSON.parse(localStorage.getItem('hpGeraete') || '{}') || {}; } catch (e) { return {}; } })();
+async function akGeraet(id) {
+  if (!id) return;
+  try {
+    const r = await fetch(`https://api.akenza.io/v3/devices/${id}`, { headers: { 'x-api-key': S.set.akenzaKey, accept: 'application/json' } });
+    if (!r.ok) return;
+    const j = await r.json(), n = j && (j.name || (j.data && j.data.name));
+    if (n && GER[id] !== n) { GER[id] = String(n); try { localStorage.setItem('hpGeraete', JSON.stringify(GER)); } catch (e) { } }
+  } catch (e) { }
+}
 // Tekelek: Fehlecho = SRSSI < 4, SRC 0 (kein Echo) oder SRC 1-2 mit schwachem Echo (SRSSI < 8)
 const echoOk = d => { const c = typeof d.src === 'number' ? d.src : 10, r = typeof d.srssi === 'number' ? d.srssi : 10; return r >= 4 && c !== 0 && !(c <= 2 && r < 8); };
 async function akenzaWeb(id, deviceId, leer, voll) {
@@ -2404,6 +2417,8 @@ async function sensorenLaden(force = false) {
   const tasks = [];
   if (S.set.sensWasser !== '') tasks.push(akenzaWeb('wasserstand', S.set.sensWasser || '02bdf0b1b64b4c40', S.set.wasserLeer || 214, S.set.wasserVoll || 56));
   if (S.set.sensWqs !== '') tasks.push(wqWeb());
+  if (S.set.sensWasser !== '') tasks.push(akGeraet(S.set.sensWasser || '02bdf0b1b64b4c40'));
+  if (S.set.sensWqs !== '') tasks.push(akGeraet(S.set.sensWqs || WQ.DEVICE));
   if (S.set.sensFass !== '') tasks.push(akenzaWeb('traenkefass', S.set.sensFass || '029412d5966ce1d4', S.set.fassLeer || 83, S.set.fassVoll || 9.3));
   const res = await Promise.allSettled(tasks);
   const err = res.find(r => r.status === 'rejected'); if (err) { SENS.fehler = err.reason && err.reason.message === 'Failed to fetch' ? 'Browser blockiert die Abfrage' : String(err.reason && err.reason.message || err.reason); console.warn('akenza', err.reason); }
