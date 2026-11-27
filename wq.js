@@ -1,14 +1,14 @@
 // Wasserqualität (Dragino WQS-LB, Reservoir): gemeinsame Logik für App (Browser) und Hintergrund-Job (Node).
-// Werte: Trübung (turbidity, NTU), gelöster Sauerstoff (dissolved_oxygen, mg/L), Leitfähigkeit (EC_K1, µS/cm), Wassertemperatur (DO_temp, °C).
+// Werte: Trübung (turbidity, NTU), pH (DR-PH01, liefert akenza als dissolved_oxygen), Leitfähigkeit (EC_K1, µS/cm), Wassertemperatur (DO_temp, °C).
 // Alarm: Vergleich der letzten Messung mit einer Basis (Median der letzten 7 Tage, ohne die letzten 6 Stunden, erst ab Echtbetrieb).
 (function (g) {
   const WQ = {};
   WQ.DEVICE = '02c610145b1f4644';
   WQ.AB = '2026-11-08 16:17'; // erste gültige Messung im Reservoir, alles davor (Test) wird ignoriert
-  WQ.DEF = { ec: 30, tu: 20, do: 2 }; // Alarmgrenzen: EC ±%, Trübung +NTU, Sauerstoff -mg/L gegenüber Basis
+  WQ.DEF = { ec: 30, tu: 20, do: 0.5 }; // Alarmgrenzen: EC ±%, Trübung +NTU, pH ± gegenüber Basis (Schlüssel 'do' bleibt wegen gespeicherter Daten)
   WQ.F = {
     tu: { label: 'Trübung', kurz: 'Trübung', unit: 'NTU', dec: 1, sensor: 'DR-TS1', col: '#B8A04A' },
-    do: { label: 'Sauerstoff', kurz: 'O₂', unit: 'mg/L', dec: 2, col: '#5B8FD6' },
+    do: { label: 'pH', kurz: 'pH', unit: '', dec: 2, sensor: 'DR-PH01', col: '#5B8FD6' },
     ec: { label: 'Leitfähigkeit', kurz: 'EC', unit: 'µS/cm', dec: 0, sensor: 'DR-ECK10.0', col: '#2E8B62' }
   };
   const fin = v => typeof v === 'number' && isFinite(v);
@@ -16,7 +16,7 @@
   const med = a => { const b = a.filter(fin).sort((x, y) => x - y), n = b.length; return n ? (n % 2 ? b[(n - 1) / 2] : (b[n / 2 - 1] + b[n / 2]) / 2) : null; };
   const mean = a => { const b = a.filter(fin); return b.length ? b.reduce((x, y) => x + y, 0) / b.length : null; };
   WQ.abMs = s => { const t = Date.parse(String(s || WQ.AB).trim().replace(' ', 'T') + ':00+01:00'); return isFinite(t) ? t : Date.parse(WQ.AB.replace(' ', 'T') + ':00+01:00'); };
-  WQ.grenzen = set => ({ ec: +set.wqEc || WQ.DEF.ec, tu: +set.wqTu || WQ.DEF.tu, do: +set.wqDo || WQ.DEF.do });
+  WQ.grenzen = set => ({ ec: +set.wqEc || WQ.DEF.ec, tu: +set.wqTu || WQ.DEF.tu, do: +set.wqPh || WQ.DEF.do });
 
   // akenza: Messungen seitenweise rückwärts laden
   WQ.laden = async (fetchFn, key, deviceId, tage) => {
@@ -59,7 +59,7 @@
     if (basis && last && last.t >= now - 3 * 3600e3) {
       if (akt.ec !== null && basis.ec) { const p = (akt.ec - basis.ec) / basis.ec * 100; if (Math.abs(p) > G.ec) alarme.push({ k: 'ec', text: `Leitfähigkeit ${akt.ec} µS/cm (${p > 0 ? '+' : ''}${Math.round(p)} % zur Basis ${basis.ec})` }); }
       if (akt.tu !== null && basis.tu !== null && akt.tu - basis.tu > G.tu) alarme.push({ k: 'tu', text: `Trübung ${akt.tu} NTU (+${r(akt.tu - basis.tu, 1)} NTU zur Basis ${basis.tu})` });
-      if (akt.do !== null && basis.do !== null && basis.do - akt.do > G.do) alarme.push({ k: 'do', text: `Sauerstoff ${akt.do} mg/L (-${r(basis.do - akt.do, 2)} mg/L zur Basis ${basis.do})` });
+      if (akt.do !== null && basis.do !== null && Math.abs(akt.do - basis.do) > G.do) { const d = r(akt.do - basis.do, 2); alarme.push({ k: 'do', text: `pH ${akt.do} (${d > 0 ? '+' : ''}${d} zur Basis ${basis.do})` }); }
     }
     const keep = p => ({ t: p.t, tu: p.tu, do: p.do, ec: p.ec, te: p.te });
     const serie48 = echt.filter(p => p.t >= now - 48 * 3600e3).map(keep);
