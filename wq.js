@@ -7,9 +7,9 @@
   WQ.AB = '2026-11-08 16:17'; // erste gültige Messung im Reservoir, alles davor (Test) wird ignoriert
   WQ.DEF = { ec: 30, tu: 20, do: 2 }; // Alarmgrenzen: EC ±%, Trübung +NTU, Sauerstoff -mg/L gegenüber Basis
   WQ.F = {
-    tu: { label: 'Trübung', kurz: 'Trübung', unit: 'NTU', dec: 1, col: '#B8A04A' },
+    tu: { label: 'Trübung', kurz: 'Trübung', unit: 'NTU', dec: 1, sensor: 'DR-TS1', col: '#B8A04A' },
     do: { label: 'Sauerstoff', kurz: 'O₂', unit: 'mg/L', dec: 2, col: '#5B8FD6' },
-    ec: { label: 'Leitfähigkeit', kurz: 'EC', unit: 'µS/cm', dec: 0, col: '#2E8B62' }
+    ec: { label: 'Leitfähigkeit', kurz: 'EC', unit: 'µS/cm', dec: 0, sensor: 'DR-ECK10.0', col: '#2E8B62' }
   };
   const fin = v => typeof v === 'number' && isFinite(v);
   const r = (v, d) => fin(v) ? Math.round(v * 10 ** d) / 10 ** d : null;
