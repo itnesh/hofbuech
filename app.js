@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.33.1';
+const VERSION = '1.34.0';
 const DSK = () => window.matchMedia('(min-width:1100px)').matches; // Browser-Layout (Laptop/Monitor), Smartphone unverändert
 
 /* ---------- Helfer ---------- */
@@ -395,7 +395,7 @@ const fgLang = (x, g) => x && x.alarm !== false && x[g + '_zu'] === true && Date
 function fgKpi() {
   const x = fgDoc(); if (!x) return '';
   const alt = fgAlt(x);
-  const c = (g, l) => { const zu = x[g + '_zu'], lang = fgLang(x, g); return `<button type="button" class="stat ${lang ? 'low' : ''}" data-act="fgbild"><b><i class="fg-dot ${alt || zu == null ? '' : zu ? 'zu' : 'offen'}" title="${alt || zu == null ? 'unbekannt' : zu ? 'Gitter zu' : 'Gitter offen'}"></i>${alt ? '-' : nf(x[g + '_anzahl'] ?? 0)}${lang ? '<i class="fx" title="lange zu">!</i>' : ''}</b><span>${l} · ${alt ? 'keine Daten' : zu === true ? 'zu ' + fgDauer(x[g + '_seit']) : zu === false ? 'offen' : '?'}</span></button>`; };
+  const c = (g, l) => { const zu = x[g + '_zu'], lang = fgLang(x, g), cls = alt || zu == null ? '' : zu ? 'zu' : 'offen'; return `<button type="button" class="stat ${lang ? 'low' : ''}" data-act="fgbild"><b><i class="fg-dot ${cls}"></i>${alt ? '-' : zu === true ? 'Zu' : zu === false ? 'Offen' : '?'}${lang ? '<i class="fx" title="lange zu">!</i>' : ''}</b><span>${l}${alt ? ' · keine Daten' : zu === true ? ' · seit ' + fgDauer(x[g + '_seit']) : ''}</span></button>`; };
   return `<div class="stats-row"><span class="stats-h">Fress&shy;gitter</span>${FG.map(([g, l]) => c(g, l)).join('')}<span></span></div>`;
 }
 function fgBand() {
@@ -406,7 +406,7 @@ function fgBand() {
 function fgSheet() {
   const x = fgDoc(); if (!x) return;
   const z = (x.zeit || '').replace('T', ' ').slice(0, 16);
-  const zl = ([g, n]) => { const zu = x[g + '_zu']; return `<div class="row one"><i class="bar ${fgLang(x, g) ? 'red' : zu ? 'blue' : 'green'}"></i><div class="main"><span class="t1"><span class="hd">${n}: ${zu === true ? 'Gitter zu' : zu === false ? 'Gitter offen' : 'Status unbekannt'}</span> <span class="ex">${nf(x[g + '_anzahl'] ?? 0)} am Fressen</span></span></div><small class="rt">${zu === true ? fgDauer(x[g + '_seit']) : ''}</small></div>`; };
+  const zl = ([g, n]) => { const zu = x[g + '_zu']; return `<div class="row one"><i class="bar ${fgLang(x, g) ? 'red' : zu ? 'blue' : 'green'}"></i><div class="main"><span class="t1"><span class="hd">${n}: ${zu === true ? 'Gitter zu' : zu === false ? 'Gitter offen' : 'Status unbekannt'}</span></span></div><small class="rt">${zu === true ? fgDauer(x[g + '_seit']) : ''}</small></div>`; };
   openSheet('Fressgitter', `${x.bild ? `<img class="nbild" src="${x.bild}" alt="">` : ''}<p class="small muted">${esc(x.kamera || 'Kamera 3')} · Stand ${esc(z)}${fgAlt(x) ? ' · veraltet, CowCatcher-Laptop prüfen' : ''}</p><div class="list">${FG.map(zl).join('')}</div><button class="btn block" data-act="fganfrage" style="margin-top:12px">Bild jetzt aufnehmen und beurteilen</button><p class="small muted" style="margin:10px 4px">Aktualisierung alle 5 Min. ${x.alarm === false ? 'Alarm (Push) zurzeit ausgeschaltet.' : `Push, wenn ein Gitter länger als ${nf(x.alarm_h || 2)} h zu ist, danach alle 30 Min.`}</p>`, { onlyClose: true });
 }
 // Fressgitter-Training: stuendliches Bild, Matthias erfasst Kuehe/Kaelber am Fressen + Gitterstatus (Abgleich mit Modell)
@@ -419,31 +419,29 @@ function anaFgTraining() {
   const zr = k => { const l = ok.filter(x => x['modell_' + k + '_zu'] !== null && x['modell_' + k + '_zu'] !== undefined); return [l.filter(x => x['modell_' + k + '_zu'] === x['label_' + k + '_zu']).length, l.length]; };
   const [zk, nk] = zr('kuehe'), [zc, nc] = zr('kaelber');
   const st = x => x === true ? 'zu' : x === false ? 'offen' : '?';
-  const row = x => `<button type="button" class="row" data-act="fglabel" data-id="${x.id}"><i class="bar ${x.geprueft === true ? 'green' : x.geprueft ? '' : 'blue'}"></i><div class="main"><span class="t1"><span class="hd">${esc((x.zeit || '').replace('T', ' ').slice(0, 16))}</span> <span class="ex">${x.tag === false ? 'Nacht' : 'Tag'}</span></span><span class="t2">${x.geprueft === true ? `Kühe ${x.label_kuehe} (${st(x.label_kuehe_zu)}) · Kälber ${x.label_kaelber} (${st(x.label_kaelber_zu)})` : x.geprueft ? 'unbrauchbar' : `Modell: Kühe ${x.modell_kuehe} (${st(x.modell_kuehe_zu)}) · Kälber ${x.modell_kaelber} (${st(x.modell_kaelber_zu)})`}</span></div><small class="rt">${x.geprueft === true ? 'geprüft' : x.geprueft ? '' : 'offen'}</small></button>`;
+  const row = x => `<button type="button" class="row" data-act="fglabel" data-id="${x.id}"><i class="bar ${x.geprueft === true ? 'green' : x.geprueft ? '' : 'blue'}"></i><div class="main"><span class="t1"><span class="hd">${esc((x.zeit || '').replace('T', ' ').slice(0, 16))}</span> <span class="ex">${x.tag === false ? 'Nacht' : 'Tag'}</span></span><span class="t2">${x.geprueft === true ? `Kühe ${st(x.label_kuehe_zu)} · Kälber ${st(x.label_kaelber_zu)}` : x.geprueft ? 'unbrauchbar' : `Erkannt: Kühe ${st(x.modell_kuehe_zu)} · Kälber ${st(x.modell_kaelber_zu)}`}</span></div><small class="rt">${x.geprueft === true ? 'geprüft' : x.geprueft ? '' : 'offen'}</small></button>`;
   return `<div class="stats"><div class="stats-row"><span class="stats-h">Bilder</span><span class="stat"><b>${alle.length}</b><span>total</span></span><span class="stat ${offen.length ? 'low' : ''}"><b>${offen.length}</b><span>offen</span></span><span class="stat"><b>${ok.length}</b><span>geprüft</span></span></div>
-  <div class="stats-row"><span class="stats-h">Modell richtig</span><span class="stat"><b>${q(tr('kuehe'), ok.length)}</b><span>Anzahl Kühe</span></span><span class="stat"><b>${q(tr('kaelber'), ok.length)}</b><span>Anzahl Kälber</span></span><span class="stat"><b>${q(zk + zc, nk + nc)}</b><span>Gitterstatus</span></span></div></div>
+  <div class="stats-row"><span class="stats-h">Erkennung richtig</span><span class="stat"><b>${q(zk + zc, nk + nc)}</b><span>Gitterstatus</span></span><span></span><span></span></div></div>
   <div class="toolbar"><button class="btn pri" data-act="fganfrage">Bild jetzt aufnehmen</button>${offen.length ? `<button class="btn" data-act="fglabel" data-id="${offen[0].id}">Offene prüfen (${offen.length})</button>` : ''}</div>
-  <p class="small muted" style="margin:4px 4px 10px">Auf Knopfdruck ein Bild von Kamera 3. Zählen: Tiere, die mit dem Kopf durchs Gitter fressen (8 Plätze links Kühe, 4 rechts Kälber). Vorausgefüllt ist, was das Modell erkannt hat.</p>
+  <p class="small muted" style="margin:4px 4px 10px">Auf Knopfdruck ein Bild von Kamera 3. Vorausgefüllt ist die erkannte Gitterstellung.</p>
   <div class="list">${alle.map(row).join('') || '<div class="empty">Noch keine Bilder - „Bild jetzt aufnehmen“ drücken.</div>'}</div>`;
 }
 function fgLabel(id) {
   const x = S.fgtraining.find(y => y.id === id); if (!x) return;
   const g = x.geprueft === true, v = k => g ? x['label_' + k] : x['modell_' + k];
-  const cnt = (k, l) => `<div class="fld"><span>${l} am Fressen</span><div class="fgcnt"><button type="button" class="btn" data-cnt="-1" data-k="${k}">−</button><input name="${k}" type="number" inputmode="numeric" min="0" max="30" value="${v(k) ?? 0}"><button type="button" class="btn" data-cnt="1" data-k="${k}">+</button></div></div>`;
   const zu = (k, l) => { const w = v(k + '_zu'); return `<div class="fld"><span>Fressgitter ${l}</span><div class="seg" role="radiogroup">${[['1', 'Zu'], ['0', 'Offen']].map(([o, t]) => `<label><input type="radio" name="${k}_zu" value="${o}" ${(w === true && o === '1') || (w === false && o === '0') ? 'checked' : ''}>${t}</label>`).join('')}</div></div>`; };
   const sh = openSheet('Fressgitter ' + (x.zeit || '').replace('T', ' ').slice(5, 16), `<div class="fgzoomw"><div id="fgimg" class="nbild" style="aspect-ratio:16/9;background:#E8E6E0;display:flex;align-items:center;justify-content:center"><span class="small muted">Bild lädt …</span></div></div>
     <p class="small muted" style="margin:6px 4px 0">Bild antippen = vergrössern, dann seitlich verschieben</p>
     <div class="fgheb" id="fgheb"></div>
-    <p class="small muted" style="margin:8px 4px">Modell: Kühe ${x.modell_kuehe} · Kälber ${x.modell_kaelber}${x.tag === false ? ' · Nacht' : ''}</p>
-    ${cnt('kuehe', 'Kühe')}${cnt('kaelber', 'Kälber')}${zu('kuehe', 'Kühe')}${zu('kaelber', 'Kälber')}
+    ${x.tag === false ? '<p class="small muted" style="margin:8px 4px">Nachtbild</p>' : ''}
+    ${zu('kuehe', 'Kühe')}${zu('kaelber', 'Kälber')}
     <button type="button" class="btn block" data-fgweg style="margin-top:14px">Bild unbrauchbar</button>`, {
     saveLabel: 'Sichern', onSave: () => {
       const f = n => sh.querySelector(`[name="${n}"]`), r = n => { const c = sh.querySelector(`[name="${n}"]:checked`); return c ? c.value === '1' : null; };
       if (r('kuehe_zu') === null || r('kaelber_zu') === null) { toast('Bitte Gitterstatus Kühe und Kälber wählen'); return; }
-      fgSichern(x, { label_kuehe: Math.max(0, parseInt(f('kuehe').value, 10) || 0), label_kaelber: Math.max(0, parseInt(f('kaelber').value, 10) || 0), label_kuehe_zu: r('kuehe_zu'), label_kaelber_zu: r('kaelber_zu'), geprueft: true });
+      fgSichern(x, { label_kuehe_zu: r('kuehe_zu'), label_kaelber_zu: r('kaelber_zu'), geprueft: true });
     }
   });
-  sh.querySelectorAll('[data-cnt]').forEach(b => b.onclick = () => { const i = sh.querySelector(`[name="${b.dataset.k}"]`); i.value = Math.max(0, (parseInt(i.value, 10) || 0) + Number(b.dataset.cnt)); });
   sh.querySelector('[data-fgweg]').onclick = () => fgSichern(x, { geprueft: 'unbrauchbar' });
   W.get('fgbilder', id).then(d => {
     const e = $('#fgimg'); if (!e) return;
@@ -499,7 +497,7 @@ function vStart() {
     return `${kpiBlock(k, false, L)}
     <div class="card" style="margin-top:16px"><b>Los geht's</b><p class="muted" style="margin:6px 0 12px">Tiere über den + Button erfassen.</p><div class="btns"><button class="btn pri" data-act="form" data-f="zugang">Tier erfassen</button></div></div>`;
   }
-  const all = agenda(60), late = all.filter(x => x.keep), ag = all.filter(x => !x.keep);
+  const all = agenda(60), late = all.filter(x => x.keep), ag = all.filter(x => !x.keep && x.d >= today());
   const neu = S.meldungen.filter(m => !m.status).sort((a, b) => a.zeit < b.zeit ? 1 : -1);
   const kam = neu.length ? `<button type="button" class="band blue" data-act="meldung" data-nav="offen" data-id="${neu[0].id}"><b>${neu.length} Kamera-${neu.length === 1 ? 'Meldung' : 'Meldungen'} (CowCatcher)</b><span>${esc(neu[0].kamera || '')} · ${esc((neu[0].zeit || '').replace('T', ' ').slice(0, 16))}</span></button>` : '';
   const lateRow = late.length ? `<a class="row one" href="#/labiola"><i class="bar red"></i><div class="main"><span class="t1"><span class="hd">${late.length} Labiola-Pendenzen überfällig</span></span></div><small class="rt">›</small></a>` : '';
@@ -570,7 +568,7 @@ function startKal() {
   kalItems(first, last).forEach(x => (byDay[x.d] = byDay[x.d] || []).push(x));
   const tag = UI.kalTag && UI.kalTag.startsWith(UI.kalMonat) ? UI.kalTag : '';
   const ohne = x => x.cat !== 'auslauf' && x.k !== 'Erledigt' && x.k !== 'Labiola-Schnitt' && x.k !== 'Kamera' && x.ft !== 'duengung'; // ohne Weide/Auslauf, erledigte Labiola-Punkte, Kamera, Düngung
-  const show = (tag ? (byDay[tag] || []) : kalItems(addDays(t, -28), addDays(t, 28))).filter(ohne);
+  const show = (tag ? (byDay[tag] || []) : kalItems(t, addDays(t, 28))).filter(ohne);
   let rows = '', hm = false;
   for (const x of show) {
     if (!tag && !hm && x.d >= t) { rows += '<div class="kal-heute" title="Heute"></div>'; hm = true; }
@@ -579,7 +577,7 @@ function startKal() {
   if (!tag && !hm) rows += '<div class="kal-heute" title="Heute"></div>';
   return `<div class="sec-t kal-kopf" style="margin-top:8px">Kalender <a href="#/kalender" style="font-weight:500;text-transform:none;letter-spacing:0;float:right">Kalender öffnen ›</a></div>
   ${kalGrid(byDay)}
-  <div class="sec-t">${tag ? fmt(tag) + ' <a href="#/start" data-act="kaltag" data-v="" style="font-weight:500;text-transform:none;letter-spacing:0">4 Wochen zurück / voraus</a>' : '4 Wochen zurück / 4 Wochen voraus'}</div>
+  <div class="sec-t">${tag ? fmt(tag) + ' <a href="#/start" data-act="kaltag" data-v="" style="font-weight:500;text-transform:none;letter-spacing:0">Nächste 4 Wochen</a>' : 'Nächste 4 Wochen'}</div>
   <div class="list kal-liste">${rows || '<div class="empty">Keine Einträge.</div>'}</div>`;
 }
 const MON_L = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];

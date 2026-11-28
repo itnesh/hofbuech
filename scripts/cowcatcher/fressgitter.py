@@ -33,6 +33,7 @@ STD = {
     # eigenes Kopf-Modell (auf Bannhalde-Bildern trainiert): zaehlt Koepfe durchs Gitter, hat Vorrang
     'kopfmodell': os.path.join(HIER, 'modelle', 'fg_kopf.onnx'),
     'kopf_conf': 0.25,
+    'zaehlen': False,                                     # Tiere zaehlen aus (zu ungenau), nur Gitterstatus
     'kopf_band': [0.4167, 0.868],                         # y-Bereich Gitter + Futtertisch
     'kopf_kacheln': [[0.0, 0.5156], [0.4844, 1.0]],       # x-Bereiche, je halbe Aufloesung
     'kopf_skala': 0.5,
@@ -464,12 +465,12 @@ def lauf(CFG, basis, log, sitzung, fs_url, fs_wert, push, test=False, training_i
     jetzt = time.time()
     st = stand_laden()
     boxen, kopf = [], False
-    if os.path.exists(c['kopfmodell']):
+    if c.get('zaehlen') and os.path.exists(c['kopfmodell']):
         try:
             boxen = koepfe(im, c); kopf = True
         except Exception as e:
             log.warning('Fressgitter: Kopfmodell fehlgeschlagen: %s', e)
-    if not kopf and os.path.exists(c['modell']):
+    if c.get('zaehlen') and not kopf and os.path.exists(c['modell']):
         try:
             boxen = yolo(im, c)
         except Exception as e:
