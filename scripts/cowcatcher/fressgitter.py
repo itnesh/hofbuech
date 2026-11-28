@@ -46,8 +46,7 @@ STD = {
         # hebel: Ausschnitt um den roten Hebel; zone: Futtertisch vor dem Gitter (x1,y1,x2,y2);
         # linie: y der Gitterunterkante, Tier zaehlt, wenn seine Box unten tiefer reicht
         'kuehe':   {'name': 'Kühe',   'hebel': [0.656, 0.408, 0.720, 0.668], 'zone': [0.08, 0.0, 0.707, 1.0], 'linie': 0.645},
-        'kaelber': {'name': 'Kälber', 'hebel': [0.945, 0.453, 1.000, 0.566], 'zone': [0.707, 0.0, 1.00, 1.0], 'linie': 0.645,
-                   'nacht': False},  # Griff bei Infrarot unsichtbar -> nachts letzter Tagesstatus (bis Reflektor)
+        'kaelber': {'name': 'Kälber', 'hebel': [0.945, 0.453, 1.000, 0.566], 'zone': [0.707, 0.0, 1.00, 1.0], 'linie': 0.645},
     },
 }
 TIERKLASSEN = set(range(14, 24))  # COCO: bird..giraffe (Kaelber von oben landen teils bei dog/sheep/horse)
@@ -175,7 +174,7 @@ def rot_merkmal(crop):
     """Lage des roten Hebelgriffs im Ausschnitt: (x, y, Winkel) relativ, oder None wenn kein Rot sichtbar"""
     a = np.asarray(crop.convert('RGB'), dtype=np.int16)
     r, g, b = a[..., 0], a[..., 1], a[..., 2]
-    m = (r > 65) & (r - g > 28) & (r - b > 12)
+    m = (r > 60) & (r - g > 22) & (r - b > 0) & (b >= g - 5)  # roter/pinker Griff, braunes Fell (b < g) nicht
     if m.sum() < 15:
         return None
     ys, xs = np.nonzero(m)
@@ -188,6 +187,21 @@ def rot_merkmal(crop):
         ang = float(np.degrees(np.arctan2(vx, vy)))  # 0 = senkrecht
         ang = (ang + 90) % 180 - 90
     return (xs.mean() / w, ys.mean() / h, ang)
+
+
+def hell_merkmal(crop):
+    """Nacht: Lage des Reflexaufklebers (hellster Fleck im Infrarotbild) relativ, oder None"""
+    g = np.asarray(crop.convert('L'), dtype=np.float32)
+    thr = max(200.0, float(np.percentile(g, 99.7)))
+    m = (g >= thr) & (g > float(np.median(g)) + 80)
+    if m.sum() < 4:
+        return None
+    ys, xs = np.nonzero(m)
+    # nur den Fleck um das hellste Pixel (andere helle Stellen ignorieren)
+    i = int(np.argmax(g[ys, xs])); cy, cx = ys[i], xs[i]
+    k = (np.abs(ys - cy) < 15) & (np.abs(xs - cx) < 15)
+    h, w = g.shape
+    return (float(xs[k].mean()) / w, float(ys[k].mean()) / h, 0.0)
 
 
 def merkmal_abstand(a, b):
@@ -225,6 +239,16 @@ def gitter_status(im, gid, g):
         return d['zu'] < d['offen'], {'abst_' + k: v for k, v in d.items()}
     if not g.get('nacht', True):
         return None, {'nacht': 'aus'}
+    # Nacht mit Reflexaufkleber: Lage des hellen Flecks
+    m = hell_merkmal(crop)
+    rm = {z: [x for x in (hell_merkmal(r) for r in rs) if x] for z, rs in refs.items()}
+    if rm['zu'] and rm['offen']:
+        if m is None:
+            return None, {'reflex': 'nicht sichtbar'}
+        d = {z: min(merkmal_abstand(m, x) for x in xs) for z, xs in rm.items()}
+        if min(d.values()) > 0.30 or abs(d['zu'] - d['offen']) < 0.05:
+            return None, {'nabst_' + k: v for k, v in d.items()}
+        return d['zu'] < d['offen'], {'nabst_' + k: v for k, v in d.items()}
     akt = kanten(hebel_ausschnitt(im, g['hebel'], 12))
     s = {z: max(vergleich(akt, kanten(r)) for r in rs) for z, rs in refs.items()}
     if max(s.values()) < 0.35 or abs(s['zu'] - s['offen']) < 0.06:
