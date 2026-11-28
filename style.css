@@ -611,3 +611,4 @@ video#mvid{cursor:pointer}
 
 .row.hl-ev{animation:hlEv 3s ease-out}
 @keyframes hlEv{0%,40%{background:var(--greenT)}100%{background:var(--card)}}
+.stat b.fgb{display:flex;align-items:center;gap:6px;min-height:1.15em}.stat b.fgb .fg-dot{margin-right:0;vertical-align:0}

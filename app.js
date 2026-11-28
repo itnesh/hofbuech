@@ -1,5 +1,5 @@
 // hofbuech - Hof-App (PWA). Daten lokal oder in Firestore (hoefe/{schluessel}/...).
-const VERSION = '1.34.0';
+const VERSION = '1.34.1';
 const DSK = () => window.matchMedia('(min-width:1100px)').matches; // Browser-Layout (Laptop/Monitor), Smartphone unverändert
 
 /* ---------- Helfer ---------- */
@@ -395,7 +395,7 @@ const fgLang = (x, g) => x && x.alarm !== false && x[g + '_zu'] === true && Date
 function fgKpi() {
   const x = fgDoc(); if (!x) return '';
   const alt = fgAlt(x);
-  const c = (g, l) => { const zu = x[g + '_zu'], lang = fgLang(x, g), cls = alt || zu == null ? '' : zu ? 'zu' : 'offen'; return `<button type="button" class="stat ${lang ? 'low' : ''}" data-act="fgbild"><b><i class="fg-dot ${cls}"></i>${alt ? '-' : zu === true ? 'Zu' : zu === false ? 'Offen' : '?'}${lang ? '<i class="fx" title="lange zu">!</i>' : ''}</b><span>${l}${alt ? ' · keine Daten' : zu === true ? ' · seit ' + fgDauer(x[g + '_seit']) : ''}</span></button>`; };
+  const c = (g, l) => { const zu = x[g + '_zu'], lang = fgLang(x, g), cls = alt || zu == null ? '' : zu ? 'zu' : 'offen'; return `<button type="button" class="stat ${lang ? 'low' : ''}" data-act="fgbild"><b class="fgb"><i class="fg-dot ${cls}" title="${cls || 'unbekannt'}"></i>${lang ? '<i class="fx" title="lange zu">!</i>' : ''}</b><span>${l} · ${alt ? 'keine Daten' : zu === true ? 'zu ' + fgDauer(x[g + '_seit']) : zu === false ? 'offen' : '?'}</span></button>`; };
   return `<div class="stats-row"><span class="stats-h">Fress&shy;gitter</span>${FG.map(([g, l]) => c(g, l)).join('')}<span></span></div>`;
 }
 function fgBand() {
